@@ -79,27 +79,7 @@ xcodegen --version
 
 预期：当前开发者目录指向 `Xcode.app` 内部，Xcode 报告版本 26，XcodeGen 报告版本 2.43 或更高。如果已安装 Xcode 但尚未选中，请在获得用户批准后运行 `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`。
 
-- [ ] **步骤 2：编写预期失败的会话测试**
-
-创建 `RiverClubTests/AppSessionTests.swift`：
-
-```swift
-import XCTest
-@testable import RiverClub
-
-final class AppSessionTests: XCTestCase {
-    func testGuestLoginOpensLobbyAndLogoutReturnsToLogin() {
-        let session = AppSession()
-        XCTAssertEqual(session.route, .login)
-        session.continueAsGuest()
-        XCTAssertEqual(session.route, .lobby)
-        session.logout()
-        XCTAssertEqual(session.route, .login)
-    }
-}
-```
-
-- [ ] **步骤 3：创建项目定义和最小应用**
+- [ ] **步骤 2：创建可生成的项目骨架**
 
 创建 `project.yml`：
 
@@ -136,6 +116,54 @@ targets:
     dependencies: [{target: RiverClub}]
 ```
 
+创建 `RiverClub/App/RiverClubApp.swift`：
+
+```swift
+import SwiftUI
+
+@main struct RiverClubApp: App {
+    var body: some Scene { WindowGroup { Text("River Club") } }
+}
+```
+
+运行：
+
+```bash
+xcodegen generate
+```
+
+预期：成功生成 `RiverClub.xcodeproj`。项目骨架属于配置与生成步骤；业务行为仍须遵循后续的失败测试优先顺序。
+
+- [ ] **步骤 3：编写并运行预期失败的会话测试**
+
+创建 `RiverClubTests/AppSessionTests.swift`：
+
+```swift
+import XCTest
+@testable import RiverClub
+
+final class AppSessionTests: XCTestCase {
+    func testGuestLoginOpensLobbyAndLogoutReturnsToLogin() {
+        let session = AppSession()
+        XCTAssertEqual(session.route, .login)
+        session.continueAsGuest()
+        XCTAssertEqual(session.route, .lobby)
+        session.logout()
+        XCTAssertEqual(session.route, .login)
+    }
+}
+```
+
+运行：
+
+```bash
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test -project RiverClub.xcodeproj -scheme RiverClub -destination 'platform=iOS Simulator,name=iPhone 16 Pro Max' -only-testing:RiverClubTests/AppSessionTests
+```
+
+预期：编译失败，错误明确指出找不到 `AppSession`；失败原因必须是会话功能尚未实现，而不是项目配置或测试语法错误。
+
+- [ ] **步骤 4：实现最小会话功能并让测试通过**
+
 创建 `RiverClub/App/AppSession.swift`：
 
 ```swift
@@ -153,7 +181,7 @@ final class AppSession {
 }
 ```
 
-创建 `RiverClub/App/RiverClubApp.swift`：
+将 `RiverClub/App/RiverClubApp.swift` 更新为：
 
 ```swift
 import SwiftUI
@@ -183,13 +211,13 @@ struct AppRootView: View {
 }
 ```
 
-- [ ] **步骤 4：生成项目并运行测试**
+重新生成项目并运行测试：
 
 运行：
 
 ```bash
 xcodegen generate
-xcodebuild test -project RiverClub.xcodeproj -scheme RiverClub -destination 'platform=iOS Simulator,name=iPhone 16 Pro Max' -only-testing:RiverClubTests/AppSessionTests
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild test -project RiverClub.xcodeproj -scheme RiverClub -destination 'platform=iOS Simulator,name=iPhone 16 Pro Max' -only-testing:RiverClubTests/AppSessionTests
 ```
 
 预期：`** TEST SUCCEEDED **`。
