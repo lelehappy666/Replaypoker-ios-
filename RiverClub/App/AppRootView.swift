@@ -6,27 +6,63 @@ struct AppRootView: View {
     @State private var selectedTable: PokerTableSummary?
 
     var body: some View {
-        NavigationStack {
-            Group {
-                switch session.route {
-                case .login:
-                    LoginView(
-                        onAppleLogin: session.continueAsGuest,
-                        onGuestLogin: session.continueAsGuest
-                    )
-                case .table:
-                    featurePlaceholder(for: .table)
-                case .lobby, .tournaments, .tables, .profile:
-                    HStack(spacing: 0) {
-                        AppSidebar(selection: session.route, onSelect: session.open)
-                        routedSidebarContent
+        ZStack {
+            NavigationStack {
+                Group {
+                    switch session.route {
+                    case .login:
+                        LoginView(
+                            onAppleLogin: session.continueAsGuest,
+                            onGuestLogin: session.continueAsGuest
+                        )
+                    case .table:
+                        featurePlaceholder(for: .table)
+                    case .lobby, .tournaments, .tables, .profile:
+                        HStack(spacing: 0) {
+                            AppSidebar(selection: session.route, onSelect: session.open)
+                            routedSidebarContent
+                        }
                     }
                 }
+            }
+
+            if let selectedTable {
+                buyInOverlay(for: selectedTable)
+                    .transition(.opacity)
+                    .zIndex(1)
             }
         }
         .background(RCTheme.background)
         .preferredColorScheme(.dark)
-        .sheet(item: $selectedTable) { table in
+        .animation(.easeOut(duration: 0.16), value: selectedTable)
+    }
+
+    @ViewBuilder
+    private var routedSidebarContent: some View {
+        switch session.route {
+        case .lobby:
+            LobbyView(
+                repository: repository,
+                balance: session.chipBalance,
+                onQuickJoin: openBuyInIfJoinable,
+                onAllTables: { session.open(.tables) }
+            )
+        case .tables:
+            TableListView(repository: repository, onSelect: openBuyInIfJoinable)
+        case .tournaments, .profile:
+            featurePlaceholder(for: session.route)
+        case .login, .table:
+            EmptyView()
+        }
+    }
+
+    private func buyInOverlay(for table: PokerTableSummary) -> some View {
+        ZStack {
+            Color.black.opacity(0.58)
+                .ignoresSafeArea()
+                .accessibilityHidden(true)
+                .onTapGesture { selectedTable = nil }
+
             BuyInSheet(
                 table: table,
                 balance: session.chipBalance,
@@ -37,27 +73,18 @@ struct AppRootView: View {
                 },
                 onCancel: { selectedTable = nil }
             )
-            .presentationDetents([.large])
+            .frame(maxWidth: 620, maxHeight: 360)
+            .padding(.horizontal, 36)
+            .padding(.vertical, 16)
         }
+        .safeAreaPadding(.horizontal, 12)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("买入确认弹窗")
     }
 
-    @ViewBuilder
-    private var routedSidebarContent: some View {
-        switch session.route {
-        case .lobby:
-            LobbyView(
-                repository: repository,
-                balance: session.chipBalance,
-                onQuickJoin: { selectedTable = $0 },
-                onAllTables: { session.open(.tables) }
-            )
-        case .tables:
-            TableListView(repository: repository) { selectedTable = $0 }
-        case .tournaments, .profile:
-            featurePlaceholder(for: session.route)
-        case .login, .table:
-            EmptyView()
-        }
+    private func openBuyInIfJoinable(_ table: PokerTableSummary) {
+        guard JoinDisposition(table: table) == .buyIn else { return }
+        selectedTable = table
     }
 
     private func featurePlaceholder(for route: AppRoute) -> some View {

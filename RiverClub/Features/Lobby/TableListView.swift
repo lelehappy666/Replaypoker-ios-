@@ -1,36 +1,46 @@
 import SwiftUI
 
 struct TableListView: View {
-    enum Filter: String, CaseIterable, Identifiable {
-        case all = "全部"
-        case low = "低盲注"
-        case medium = "中盲注"
-        case high = "高盲注"
-        case favorites = "收藏"
-
-        var id: Self { self }
-    }
-
     let repository: any PokerRepository
     let onSelect: (PokerTableSummary) -> Void
 
     @State private var tables: [PokerTableSummary] = []
-    @State private var filter: Filter = .all
+    @State private var filters = TableListFilters()
+    @State private var joinStatusMessage: String?
     @State private var isLoading = true
     @State private var errorMessage: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("全部牌桌")
                 .font(.largeTitle.weight(.bold))
                 .foregroundStyle(RCTheme.primaryText)
 
-            Picker("盲注筛选", selection: $filter) {
-                ForEach(Filter.allCases) { item in
+            Picker("主筛选", selection: $filters.primary) {
+                ForEach(TablePrimaryFilter.allCases) { item in
                     Text(item.rawValue).tag(item)
                 }
             }
             .pickerStyle(.segmented)
+            .frame(minHeight: 44)
+
+            HStack(spacing: 12) {
+                filterMenu("桌型", selection: $filters.tableType, values: TableTypeFilter.allCases)
+                filterMenu(
+                    "空位",
+                    selection: $filters.seatAvailability,
+                    values: SeatAvailabilityFilter.allCases
+                )
+                filterMenu("盲注范围", selection: $filters.blindRange, values: BlindRangeFilter.allCases)
+                Spacer()
+            }
+
+            if let joinStatusMessage {
+                Label(joinStatusMessage, systemImage: "person.2.badge.clock")
+                    .font(.subheadline)
+                    .foregroundStyle(RCTheme.secondaryText)
+                    .accessibilityLabel(joinStatusMessage)
+            }
 
             tableContent
         }
@@ -51,6 +61,7 @@ struct TableListView: View {
                 Text(errorMessage)
             } actions: {
                 Button("重试") { Task { await loadTables() } }
+                    .frame(minHeight: 44)
             }
             .foregroundStyle(RCTheme.primaryText)
         } else if filteredTables.isEmpty {
@@ -59,14 +70,21 @@ struct TableListView: View {
             } description: {
                 Text("清除筛选后再看看。")
             } actions: {
-                Button("清除筛选") { filter = .all }
+                Button("清除筛选") { filters = TableListFilters() }
+                    .frame(minHeight: 44)
             }
             .foregroundStyle(RCTheme.primaryText)
         } else {
             ScrollView {
                 LazyVStack(spacing: 10) {
                     ForEach(filteredTables) { table in
-                        TableRow(table: table) { onSelect(table) }
+                        TableRow(
+                            table: table,
+                            onJoin: { onSelect(table) },
+                            onWaitlist: {
+                                joinStatusMessage = "已加入「\(table.name)」候补，仍留在牌桌列表。"
+                            }
+                        )
                     }
                 }
             }
@@ -74,15 +92,24 @@ struct TableListView: View {
     }
 
     private var filteredTables: [PokerTableSummary] {
-        tables.filter { table in
-            switch filter {
-            case .all: true
-            case .low: table.bigBlind <= 200
-            case .medium: table.bigBlind > 200 && table.bigBlind < 1_000
-            case .high: table.bigBlind >= 1_000
-            case .favorites: table.isFavorite
+        filters.apply(to: tables)
+    }
+
+    private func filterMenu<Value: RawRepresentable & Identifiable & Hashable>(
+        _ title: String,
+        selection: Binding<Value>,
+        values: [Value]
+    ) -> some View where Value.RawValue == String {
+        Picker(title, selection: selection) {
+            ForEach(values) { value in
+                Text("\(title)：\(value.rawValue)").tag(value)
             }
         }
+        .pickerStyle(.menu)
+        .buttonStyle(.bordered)
+        .tint(RCTheme.gold)
+        .frame(minHeight: 44)
+        .accessibilityLabel(title)
     }
 
     @MainActor
@@ -100,10 +127,11 @@ struct TableListView: View {
 
 struct TableRow: View {
     let table: PokerTableSummary
-    let onSelect: () -> Void
+    let onJoin: () -> Void
+    let onWaitlist: () -> Void
 
     var body: some View {
-        Button(action: onSelect) {
+        Button(action: table.hasOpenSeat ? onJoin : onWaitlist) {
             HStack(spacing: 18) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
@@ -115,7 +143,7 @@ struct TableRow: View {
                                 .accessibilityLabel("已收藏")
                         }
                     }
-                    Text("无限注德州扑克")
+                    Text("无限注德州扑克 · 九人桌")
                         .font(.caption)
                         .foregroundStyle(RCTheme.secondaryText)
                 }
@@ -125,18 +153,29 @@ struct TableRow: View {
                 Metric(label: "玩家", value: "\(table.players) / \(table.capacity)")
                 Metric(label: "平均底池", value: table.averagePot.formatted())
 
-                Text(table.players < table.capacity ? "加入" : "候补")
+                Text(table.hasOpenSeat ? "加入" : "候补")
                     .font(.subheadline.weight(.bold))
                     .foregroundStyle(RCTheme.gold)
                     .frame(minWidth: 56)
             }
             .padding(.horizontal, 18)
-            .padding(.vertical, 14)
+            .padding(.vertical, 10)
+            .frame(minHeight: 56)
             .background(RCTheme.surface, in: RoundedRectangle(cornerRadius: RCTheme.corner))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("tableRow.\(table.id.uuidString)")
+        .accessibilityLabel(
+            table.hasOpenSeat
+                ? "\(table.name)，有空位，加入"
+                : "\(table.name)，满桌，候补"
+        )
+        .accessibilityHint(
+            table.hasOpenSeat
+                ? "打开买入确认"
+                : "加入候补并留在当前列表"
+        )
     }
 }
 

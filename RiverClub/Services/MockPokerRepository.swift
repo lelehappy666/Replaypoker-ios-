@@ -43,7 +43,7 @@ struct MockPokerRepository: PokerRepository {
             name: "金色海岸",
             smallBlind: 200,
             bigBlind: 400,
-            players: 8,
+            players: 9,
             capacity: 9,
             averagePot: 7_200,
             isFavorite: false

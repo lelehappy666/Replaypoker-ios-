@@ -8,6 +8,9 @@ struct LobbyView: View {
 
     @State private var featuredTable: PokerTableSummary?
     @State private var tables: [PokerTableSummary] = []
+    @State private var category: LobbyCategory = .recommended
+    @State private var quickBlind: CommonBlindLevel = .oneHundredTwoHundred
+    @State private var joinStatusMessage: String?
     @State private var isLoading = true
     @State private var errorMessage: String?
 
@@ -44,22 +47,44 @@ struct LobbyView: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
-                        if let featuredTable {
+                        Picker("大厅分类", selection: $category) {
+                            ForEach(LobbyCategory.allCases) { item in
+                                Text(item.rawValue).tag(item)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(minHeight: 44)
+
+                        quickJoinControls
+
+                        if category == .recommended, let featuredTable {
                             featuredCard(featuredTable)
                         }
 
                         HStack {
-                            Text("热门牌桌")
+                            Text(category == .recommended ? "热门牌桌" : category.rawValue)
                                 .font(.title3.weight(.bold))
                             Spacer()
                             Button("查看全部", action: onAllTables)
                                 .buttonStyle(.bordered)
                                 .tint(RCTheme.gold)
+                                .frame(minHeight: 44)
                                 .accessibilityIdentifier("lobby.allTables")
                         }
 
-                        ForEach(tables.prefix(3)) { table in
-                            TableRow(table: table) { onQuickJoin(table) }
+                        if let joinStatusMessage {
+                            Label(joinStatusMessage, systemImage: "person.2.badge.clock")
+                                .font(.subheadline)
+                                .foregroundStyle(RCTheme.secondaryText)
+                                .accessibilityLabel(joinStatusMessage)
+                        }
+
+                        ForEach(categoryTables.prefix(3)) { table in
+                            TableRow(
+                                table: table,
+                                onJoin: { onQuickJoin(table) },
+                                onWaitlist: { waitlist(table) }
+                            )
                         }
                     }
                 }
@@ -68,6 +93,40 @@ struct LobbyView: View {
         .foregroundStyle(RCTheme.primaryText)
         .safeAreaPadding(24)
         .task { await loadLobby() }
+    }
+
+    private var quickJoinControls: some View {
+        HStack(spacing: 12) {
+            Text("快速加入")
+                .font(.headline)
+
+            Picker("常用盲注", selection: $quickBlind) {
+                ForEach(CommonBlindLevel.allCases) { level in
+                    Text(level.rawValue).tag(level)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 430, minHeight: 44)
+
+            Button("匹配空位") {
+                if let table = QuickJoinMatcher.match(in: tables, blind: quickBlind) {
+                    joinStatusMessage = nil
+                    onQuickJoin(table)
+                } else {
+                    joinStatusMessage = "当前盲注没有空位，已留在大厅。"
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(RCTheme.gold)
+            .foregroundStyle(RCTheme.background)
+            .frame(minHeight: 44)
+            .accessibilityIdentifier("lobby.quickJoin")
+            .accessibilityHint("按所选盲注匹配一张有空位的牌桌")
+        }
+    }
+
+    private var categoryTables: [PokerTableSummary] {
+        tables.filter(category.includes)
     }
 
     private func featuredCard(_ table: PokerTableSummary) -> some View {
@@ -84,12 +143,28 @@ struct LobbyView: View {
                     .font(.subheadline.monospacedDigit())
             }
             Spacer()
-            Button("快速加入") { onQuickJoin(table) }
+            Button(table.hasOpenSeat ? "立即入桌" : "加入候补") {
+                if table.hasOpenSeat {
+                    onQuickJoin(table)
+                } else {
+                    waitlist(table)
+                }
+            }
                 .buttonStyle(.borderedProminent)
                 .tint(RCTheme.gold)
                 .foregroundStyle(RCTheme.background)
                 .controlSize(.large)
-                .accessibilityIdentifier("lobby.quickJoin")
+                .frame(minHeight: 44)
+                .accessibilityLabel(
+                    table.hasOpenSeat
+                        ? "\(table.name)，立即入桌"
+                        : "\(table.name)，满桌，加入候补"
+                )
+                .accessibilityHint(
+                    table.hasOpenSeat
+                        ? "打开买入确认"
+                        : "加入候补并留在大厅"
+                )
         }
         .padding(22)
         .background(
@@ -104,6 +179,10 @@ struct LobbyView: View {
             RoundedRectangle(cornerRadius: RCTheme.corner)
                 .stroke(RCTheme.gold.opacity(0.3), lineWidth: 1)
         }
+    }
+
+    private func waitlist(_ table: PokerTableSummary) {
+        joinStatusMessage = "已加入「\(table.name)」候补，仍留在大厅。"
     }
 
     @MainActor

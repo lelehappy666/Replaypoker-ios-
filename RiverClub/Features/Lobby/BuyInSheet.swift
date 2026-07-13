@@ -54,7 +54,7 @@ struct BuyInSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("确认买入")
@@ -64,9 +64,13 @@ struct BuyInSheet: View {
                         .foregroundStyle(RCTheme.secondaryText)
                 }
                 Spacer()
-                Button("返回", action: onCancel)
+                Button(action: onCancel) {
+                    Image(systemName: "xmark")
+                        .frame(width: 44, height: 44)
+                }
                     .buttonStyle(.bordered)
                     .tint(RCTheme.gold)
+                    .accessibilityLabel("关闭买入确认")
             }
 
             Divider().overlay(RCTheme.secondaryText.opacity(0.3))
@@ -104,6 +108,7 @@ struct BuyInSheet: View {
 
             Toggle("低于门槛时自动补充娱乐筹码", isOn: $state.autoTopUp)
                 .tint(RCTheme.gold)
+                .frame(minHeight: 44)
 
             if state.balance < state.minimum {
                 Label(
@@ -126,14 +131,18 @@ struct BuyInSheet: View {
             .tint(RCTheme.gold)
             .foregroundStyle(RCTheme.background)
             .controlSize(.large)
+            .frame(minHeight: 44)
             .disabled(!state.canConfirm)
             .accessibilityIdentifier("buyIn.confirm")
         }
         .foregroundStyle(RCTheme.primaryText)
-        .padding(24)
-        .frame(minWidth: 480, idealWidth: 540)
-        .background(RCTheme.surfaceRaised)
-        .presentationBackground(RCTheme.surfaceRaised)
-        .presentationCornerRadius(RCTheme.corner)
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(RCTheme.surfaceRaised, in: RoundedRectangle(cornerRadius: RCTheme.corner))
+        .overlay {
+            RoundedRectangle(cornerRadius: RCTheme.corner)
+                .stroke(RCTheme.gold.opacity(0.24), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.38), radius: 24, y: 10)
     }
 }
