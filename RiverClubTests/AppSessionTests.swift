@@ -2,6 +2,10 @@ import XCTest
 @testable import RiverClub
 
 final class AppSessionTests: XCTestCase {
+    func testSidebarRoutesAreStable() {
+        XCTAssertEqual(AppRoute.sidebarRoutes, [.lobby, .tournaments, .tables, .profile])
+    }
+
     @MainActor
     func testGuestLoginOpensLobbyAndLogoutReturnsToLogin() {
         let session = AppSession()
