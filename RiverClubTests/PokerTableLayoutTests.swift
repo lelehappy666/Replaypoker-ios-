@@ -3,7 +3,7 @@ import XCTest
 @testable import RiverClub
 
 final class PokerTableLayoutTests: XCTestCase {
-    private let canvas = CGSize(width: 956, height: 440)
+    private let canvas = CGSize(width: 932, height: 424)
 
     func testNineSeatLayoutUsesDistinctNormalizedCenters() {
         let positions = PokerTableLayout.positions(for: canvas)

@@ -6,8 +6,8 @@ enum PokerTableLayout {
 
     static let normalizedCenters: [CGPoint] = [
         .init(x: 0.25, y: 0.16), .init(x: 0.50, y: 0.12), .init(x: 0.75, y: 0.16),
-        .init(x: 0.88, y: 0.28), .init(x: 0.88, y: 0.51), .init(x: 0.18, y: 0.72),
-        .init(x: 0.12, y: 0.50), .init(x: 0.14, y: 0.27), .init(x: 0.50, y: 0.86),
+        .init(x: 0.88, y: 0.26), .init(x: 0.88, y: 0.48), .init(x: 0.18, y: 0.72),
+        .init(x: 0.12, y: 0.50), .init(x: 0.135, y: 0.27), .init(x: 0.50, y: 0.86),
     ]
 
     static func positions(for _: CGSize) -> [CGPoint] {
