@@ -111,6 +111,7 @@ private struct TournamentCard: View {
                 Image(systemName: "clock")
             }
             Text("报名 \(tournament.registered) / \(tournament.capacity)")
+                .monospacedDigit()
             Text("娱乐筹码奖池 \(tournament.prizePool.formatted())")
                 .font(.body.monospacedDigit())
 

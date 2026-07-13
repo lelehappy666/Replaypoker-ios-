@@ -48,6 +48,7 @@ struct ProfileView: View {
                     profileLink("账户与安全", icon: "lock.shield")
                     profileLink("声音与震动", icon: "speaker.wave.2")
                 }
+                .accessibilityIdentifier("profile.settings")
             } else {
                 ProgressView("正在加载个人资料")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
