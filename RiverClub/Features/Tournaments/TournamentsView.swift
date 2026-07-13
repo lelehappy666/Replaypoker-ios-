@@ -19,11 +19,9 @@ enum TournamentTab: String, CaseIterable, Identifiable, Sendable {
         case .registered:
             tournaments.filter { registeredIDs.contains($0.id) }
         case .active:
-            tournaments.filter {
-                $0.startTime <= now && $0.startTime > now.addingTimeInterval(-7_200)
-            }
+            tournaments.filter { $0.startTime <= now && $0.endTime > now }
         case .finished:
-            tournaments.filter { $0.startTime <= now.addingTimeInterval(-7_200) }
+            tournaments.filter { $0.endTime <= now }
         }
     }
 

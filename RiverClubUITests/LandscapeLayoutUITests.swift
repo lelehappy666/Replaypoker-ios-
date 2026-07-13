@@ -35,6 +35,8 @@ final class LandscapeLayoutUITests: XCTestCase {
         for setting in ["牌局记录", "成就徽章", "账户与安全", "声音与震动"] {
             XCTAssertTrue(app.buttons[setting].exists)
         }
+        app.buttons["牌局记录"].tap()
+        XCTAssertTrue(app.otherElements["profile.unavailable"].waitForExistence(timeout: 3))
         assertNoCurrencySymbols(in: app)
 
         let lobbyNavigation = app.buttons["sidebar.lobby"]
@@ -59,6 +61,23 @@ final class LandscapeLayoutUITests: XCTestCase {
 
         let localSeat = app.otherElements["table.seat.8"]
         XCTAssertTrue(localSeat.waitForExistence(timeout: 5))
+        let safeCanvas = app.otherElements["table.safeCanvas"]
+        XCTAssertTrue(safeCanvas.waitForExistence(timeout: 5))
+        let safeCanvasFrame = safeCanvas.frame
+        XCTAssertFalse(safeCanvasFrame.isEmpty)
+        XCTAssertTrue(windowFrame.contains(safeCanvasFrame))
+
+        let reservedRegions = [
+            app.otherElements["table.betControls"],
+            app.otherElements["table.topBar"],
+            app.otherElements["table.centerBoard"],
+        ]
+        for region in reservedRegions {
+            XCTAssertTrue(region.exists)
+            XCTAssertFalse(region.frame.isEmpty)
+        }
+
+        var seatFrames: [CGRect] = []
         for index in 0..<9 {
             let seat = app.otherElements["table.seat.\(index)"]
             XCTAssertTrue(seat.exists)
@@ -66,9 +85,15 @@ final class LandscapeLayoutUITests: XCTestCase {
             XCTAssertFalse(seatFrame.isEmpty)
             XCTAssertGreaterThan(seatFrame.width, 0)
             XCTAssertGreaterThan(seatFrame.height, 0)
-            XCTAssertTrue(windowFrame.contains(seatFrame), "第 \(index) 个座位超出窗口")
-            if index != 8 {
-                XCTAssertFalse(seatFrame.intersects(localSeat.frame))
+            XCTAssertTrue(safeCanvasFrame.contains(seatFrame), "第 \(index) 个座位超出安全画布")
+            for region in reservedRegions {
+                XCTAssertFalse(seatFrame.intersects(region.frame))
+            }
+            seatFrames.append(seatFrame)
+        }
+        for first in 0..<seatFrames.count {
+            for second in (first + 1)..<seatFrames.count {
+                XCTAssertFalse(seatFrames[first].intersects(seatFrames[second]))
             }
         }
 
@@ -83,9 +108,13 @@ final class LandscapeLayoutUITests: XCTestCase {
     }
 
     private func assertNoCurrencySymbols(in app: XCUIApplication) {
-        for text in app.staticTexts.allElementsBoundByIndex {
+        for element in app.descendants(matching: .any).allElementsBoundByIndex {
+            let visibleValues = [element.label, element.value as? String ?? ""]
             for symbol in currencySymbols {
-                XCTAssertFalse(text.label.contains(symbol), "发现真实货币符号：\(symbol)")
+                XCTAssertFalse(
+                    visibleValues.contains { $0.contains(symbol) },
+                    "发现真实货币符号：\(symbol)"
+                )
             }
         }
     }

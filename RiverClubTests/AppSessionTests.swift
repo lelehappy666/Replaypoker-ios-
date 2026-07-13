@@ -2,6 +2,11 @@ import XCTest
 @testable import RiverClub
 
 final class AppSessionTests: XCTestCase {
+    func testReducedMotionDisablesBuyInAnimation() {
+        XCTAssertFalse(MotionPolicy.shouldAnimate(reduceMotion: true))
+        XCTAssertTrue(MotionPolicy.shouldAnimate(reduceMotion: false))
+    }
+
     func testSidebarRoutesAreStable() {
         XCTAssertEqual(AppRoute.sidebarRoutes, [.lobby, .tournaments, .tables, .profile])
     }

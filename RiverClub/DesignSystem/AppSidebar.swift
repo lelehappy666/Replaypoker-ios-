@@ -36,10 +36,10 @@ struct AppSidebar: View {
 private extension AppRoute {
     var sidebarLabel: String {
         switch self {
-        case .lobby: "Lobby"
-        case .tournaments: "Tournaments"
-        case .tables: "Tables"
-        case .profile: "Profile"
+        case .lobby: "游戏大厅"
+        case .tournaments: "锦标赛"
+        case .tables: "我的牌局"
+        case .profile: "个人中心"
         case .login, .table: ""
         }
     }

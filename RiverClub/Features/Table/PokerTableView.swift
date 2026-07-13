@@ -17,21 +17,36 @@ struct PokerTableView: View {
             let positions = PokerTableLayout.positions(for: proxy.size)
 
             ZStack {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .accessibilityElement()
+                    .accessibilityLabel("牌桌安全画布")
+                    .accessibilityIdentifier("table.safeCanvas")
+
                 tableSurface
 
                 centerBoard
-                    .position(x: proxy.size.width * 0.5, y: proxy.size.height * 0.49)
+                    .frame(
+                        width: PokerTableLayout.centerBoardRegion(for: proxy.size).width,
+                        height: PokerTableLayout.centerBoardRegion(for: proxy.size).height
+                    )
+                    .position(
+                        x: PokerTableLayout.centerBoardRegion(for: proxy.size).midX,
+                        y: PokerTableLayout.centerBoardRegion(for: proxy.size).midY
+                    )
+                    .accessibilityIdentifier("table.centerBoard")
 
                 ForEach(Array(orderedSeats.enumerated()), id: \.element.id) { index, seat in
                     PokerSeatView(seat: seat, isActing: index == 0)
                         .position(
-                            x: positions[index].x * proxy.size.width,
-                            y: positions[index].y * proxy.size.height
+                            x: positions[index].x,
+                            y: positions[index].y
                         )
                         .accessibilityIdentifier("table.seat.\(index)")
                 }
 
                 topBar
+                    .accessibilityIdentifier("table.topBar")
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
                 chatControls
@@ -43,6 +58,7 @@ struct PokerTableView: View {
                         height: PokerTableLayout.betControlSize.height,
                         alignment: .bottomTrailing
                     )
+                    .accessibilityIdentifier("table.betControls")
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
             }
         }

@@ -1,10 +1,15 @@
 import SwiftUI
 
+enum MotionPolicy {
+    static func shouldAnimate(reduceMotion: Bool) -> Bool { !reduceMotion }
+}
+
 struct AppRootView: View {
     @Bindable var session: AppSession
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let repository: any PokerRepository = MockPokerRepository()
     @State private var pendingBuyInTable: PokerTableSummary?
-    @State private var tableSeats: [PokerSeat] = []
+    @State private var tableSeatState: LoadableState<[PokerSeat]> = .loading
     @State private var tableReturnRoute: AppRoute = .lobby
 
     var body: some View {
@@ -19,15 +24,23 @@ struct AppRootView: View {
                         )
                     case .table:
                         if let table = session.selectedTable {
-                            PokerTableView(
-                                table: table,
-                                seats: tableSeats,
-                                session: session,
-                                onExit: { session.leaveTable(returningTo: tableReturnRoute) }
-                            )
-                            .task {
-                                tableSeats = (try? await repository.seats()) ?? []
+                            LoadableContent(
+                                state: tableSeatState,
+                                hasActiveFilters: false,
+                                isEmpty: { $0.count != 9 },
+                                emptyTitle: "牌桌座位数据不完整",
+                                emptyDescription: "请重试后再继续牌局。",
+                                onRetry: { Task { await loadTableSeats() } },
+                                onClearFilters: {}
+                            ) { seats in
+                                PokerTableView(
+                                    table: table,
+                                    seats: seats,
+                                    session: session,
+                                    onExit: { session.leaveTable(returningTo: tableReturnRoute) }
+                                )
                             }
+                            .task(id: table.id) { await loadTableSeats() }
                         }
                     case .lobby, .tournaments, .tables, .profile:
                         HStack(spacing: 0) {
@@ -40,13 +53,18 @@ struct AppRootView: View {
 
             if let pendingBuyInTable {
                 buyInOverlay(for: pendingBuyInTable)
-                    .transition(.opacity)
+                    .transition(MotionPolicy.shouldAnimate(reduceMotion: reduceMotion) ? .opacity : .identity)
                     .zIndex(1)
             }
         }
         .background(RCTheme.background)
         .preferredColorScheme(.dark)
-        .animation(.easeOut(duration: 0.16), value: pendingBuyInTable)
+        .animation(
+            MotionPolicy.shouldAnimate(reduceMotion: reduceMotion)
+                ? .easeOut(duration: 0.16)
+                : nil,
+            value: pendingBuyInTable
+        )
     }
 
     @ViewBuilder
@@ -102,21 +120,20 @@ struct AppRootView: View {
         pendingBuyInTable = table
     }
 
-    private func featurePlaceholder(for route: AppRoute) -> some View {
-        Text(title(for: route))
-            .font(.title.weight(.semibold))
-            .foregroundStyle(RCTheme.primaryText)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private func title(for route: AppRoute) -> String {
-        switch route {
-        case .login: "登录"
-        case .lobby: "游戏大厅"
-        case .tables: "牌桌列表"
-        case .table: "已进入牌桌"
-        case .tournaments: "锦标赛"
-        case .profile: "个人中心"
+    @MainActor
+    private func loadTableSeats() async {
+        let cached = tableSeatState.content
+        if cached == nil { tableSeatState = .loading }
+        do {
+            let seats = try await repository.seats()
+            guard seats.count == 9 else { throw TableSeatLoadError.incomplete }
+            tableSeatState = .loaded(seats)
+        } catch {
+            tableSeatState = cached == nil
+                ? .failed(message: "无法加载牌桌座位，请重试。")
+                : .offline(cached: cached)
         }
     }
 }
+
+private enum TableSeatLoadError: Error { case incomplete }

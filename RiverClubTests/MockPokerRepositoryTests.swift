@@ -89,18 +89,37 @@ final class MockPokerRepositoryTests: XCTestCase {
         )
     }
 
+    func testActiveAndFinishedTournamentsUseExplicitEndTimeBoundaries() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let active = tournament(
+            id: 1,
+            startTime: now.addingTimeInterval(-1),
+            endTime: now.addingTimeInterval(1)
+        )
+        let startsNow = tournament(id: 2, startTime: now, endTime: now.addingTimeInterval(1))
+        let endsNow = tournament(id: 3, startTime: now.addingTimeInterval(-1), endTime: now)
+
+        XCTAssertEqual(TournamentTab.active.filtered([active, startsNow, endsNow], now: now), [active, startsNow])
+        XCTAssertEqual(TournamentTab.finished.filtered([active, startsNow, endsNow], now: now), [endsNow])
+    }
+
     func testProfileFixtureVPIPIsAUnitIntervalRatio() async throws {
         let profile = try await repository.profile()
 
         XCTAssertTrue((0...1).contains(profile.voluntaryPutInPot))
     }
 
-    private func tournament(id: Int, startTime: Date) -> TournamentSummary {
+    private func tournament(
+        id: Int,
+        startTime: Date,
+        endTime: Date? = nil
+    ) -> TournamentSummary {
         TournamentSummary(
             id: UUID(uuidString: String(format: "30000000-0000-0000-0000-%012d", id))!,
             kind: .classic,
             name: "测试赛事\(id)",
             startTime: startTime,
+            endTime: endTime ?? startTime.addingTimeInterval(3_600),
             registered: 12,
             capacity: 64,
             prizePool: 100_000,

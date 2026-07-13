@@ -160,7 +160,7 @@ struct PokerSeat: Identifiable, Equatable, Sendable {
 
 struct TournamentSummary: Identifiable, Equatable, Sendable {
     enum Kind: String, Sendable { case beginner, classic, turbo }
-    let id: UUID; let kind: Kind; let name: String; let startTime: Date
+    let id: UUID; let kind: Kind; let name: String; let startTime: Date; let endTime: Date
     let registered: Int; let capacity: Int; let prizePool: Int; let entryChips: Int
 }
 
