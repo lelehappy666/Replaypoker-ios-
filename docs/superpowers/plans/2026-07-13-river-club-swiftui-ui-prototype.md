@@ -1,75 +1,75 @@
-# River Club SwiftUI UI Prototype Implementation Plan
+# River Club SwiftUI UI 原型实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向执行代理：** 必须使用子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans，逐项实施本计划。各步骤使用复选框（`- [ ]`）语法进行跟踪。
 
-**Goal:** Build a runnable, landscape-only SwiftUI prototype of the seven approved River Club screens using local fixtures and deterministic UI state.
+**目标：** 使用本地固定数据和确定性 UI 状态，构建一个可运行、仅支持横屏的 SwiftUI 原型，覆盖已批准的七个 River Club 界面。
 
-**Architecture:** Use a small feature-oriented SwiftUI app with one observable `AppSession`, protocol-based local repositories, and reusable design-system components. The prototype contains no poker rules engine or networking; buttons drive deterministic local state so every approved flow can be reviewed and tested independently.
+**架构：** 使用一个小型、按功能组织的 SwiftUI 应用，包含一个可观察的 `AppSession`、基于协议的本地仓库，以及可复用的设计系统组件。原型不包含扑克规则引擎或网络功能；按钮驱动确定性的本地状态，使每个已批准流程都能独立审查和测试。
 
-**Tech Stack:** Swift 6, SwiftUI, Observation, XCTest/XCUITest, Xcode 26, iOS 18+, XcodeGen 2.44+ as a development-only project generator.
+**技术栈：** Swift 6、SwiftUI、Observation、XCTest/XCUITest、Xcode 26、iOS 18+，以及仅用于开发阶段的项目生成器 XcodeGen 2.43+。
 
-## Global Constraints
+## 全局约束
 
-- Target iPhone 16 Pro Max and support landscape left/right only.
-- Deployment target is iOS 18.0.
-- Use only entertainment chips with no cash value, withdrawal, exchange, or real-currency symbols.
-- First release supports No-Limit Texas Hold’em only.
-- Show exactly nine seats at a full table: eight opponents and the local player.
-- Keep the local player avatar circular and prevent horizontal compression.
-- Place the pot below the community cards and the chip stack below the pot.
-- Respect the Dynamic Island and Home Indicator safe areas.
-- Use original River Club names and assets; do not copy Replay Poker trademarks, logos, illustrations, or proprietary visual assets.
-- Runtime dependencies must remain Apple-native; XcodeGen is development-only.
-- This plan implements UI behavior with mock data, not a poker rules engine, real-time multiplayer, authentication server, or chip-economy backend.
+- 以 iPhone 16 Pro Max 为目标设备，且仅支持向左和向右横屏。
+- 部署目标为 iOS 18.0。
+- 仅使用不具现金价值、不可提现、不可兑换且不含真实货币符号的娱乐筹码。
+- 首个版本仅支持无限注德州扑克。
+- 满桌时必须准确显示九个座位：八名对手和本地玩家。
+- 本地玩家头像须保持圆形，并防止水平方向压缩。
+- 奖池放在公共牌下方，筹码堆放在奖池下方。
+- 遵守灵动岛和主屏幕指示条的安全区域。
+- 使用原创的 River Club 名称和素材；不得复制 Replay Poker 的商标、徽标、插图或专有视觉素材。
+- 运行时依赖必须保持为 Apple 原生框架；XcodeGen 仅用于开发阶段。
+- 本计划使用模拟数据实现 UI 行为，不实现扑克规则引擎、实时多人游戏、身份认证服务器或筹码经济后端。
 
 ---
 
-## Planned File Structure
+## 规划的文件结构
 
 ```text
-project.yml                                  XcodeGen project definition
-RiverClub/App/RiverClubApp.swift             Application entry and orientation policy
-RiverClub/App/AppRootView.swift              Session routing and root composition
-RiverClub/App/AppSession.swift               Observable navigation/session state
-RiverClub/DesignSystem/Theme.swift           Colors, spacing, type, shadows
-RiverClub/DesignSystem/AppSidebar.swift      Shared landscape navigation
-RiverClub/DesignSystem/ChipBalancePill.swift Shared virtual-chip display
-RiverClub/Models/PokerModels.swift           UI domain models
-RiverClub/Services/PokerRepository.swift     Data contract
-RiverClub/Services/MockPokerRepository.swift Deterministic fixture data
-RiverClub/Features/Auth/LoginView.swift       Login screen
-RiverClub/Features/Lobby/LobbyView.swift      Featured and quick-join lobby
-RiverClub/Features/Lobby/TableListView.swift Filterable table list
-RiverClub/Features/Lobby/BuyInSheet.swift     Buy-in confirmation
-RiverClub/Features/Table/PokerTableView.swift Nine-seat poker table
-RiverClub/Features/Table/PokerSeatView.swift Reusable seat presentation
-RiverClub/Features/Table/BetControlBar.swift Bet presets and slider
-RiverClub/Features/Tournaments/TournamentsView.swift Tournament cards
-RiverClub/Features/Profile/ProfileView.swift Profile and settings links
-RiverClub/Features/Shared/LoadableContent.swift Loading/empty/offline/error states
-RiverClubTests/AppSessionTests.swift          Navigation/session unit tests
-RiverClubTests/MockPokerRepositoryTests.swift Fixture and seat-count tests
-RiverClubTests/BuyInTests.swift               Buy-in validation tests
-RiverClubUITests/CoreFlowUITests.swift        End-to-end UI flow
-RiverClubUITests/LandscapeLayoutUITests.swift Landscape and accessibility checks
+project.yml                                  XcodeGen 项目定义
+RiverClub/App/RiverClubApp.swift             应用入口和屏幕方向策略
+RiverClub/App/AppRootView.swift              会话路由和根视图组合
+RiverClub/App/AppSession.swift               可观察的导航/会话状态
+RiverClub/DesignSystem/Theme.swift           颜色、间距、字体、阴影
+RiverClub/DesignSystem/AppSidebar.swift      共用横屏导航
+RiverClub/DesignSystem/ChipBalancePill.swift 共用虚拟筹码显示
+RiverClub/Models/PokerModels.swift           UI 领域模型
+RiverClub/Services/PokerRepository.swift     数据契约
+RiverClub/Services/MockPokerRepository.swift 确定性固定数据
+RiverClub/Features/Auth/LoginView.swift       登录界面
+RiverClub/Features/Lobby/LobbyView.swift      精选和快速加入大厅
+RiverClub/Features/Lobby/TableListView.swift 可筛选的牌桌列表
+RiverClub/Features/Lobby/BuyInSheet.swift     买入确认
+RiverClub/Features/Table/PokerTableView.swift 九座扑克桌
+RiverClub/Features/Table/PokerSeatView.swift 可复用座位展示
+RiverClub/Features/Table/BetControlBar.swift 下注预设和滑块
+RiverClub/Features/Tournaments/TournamentsView.swift 锦标赛卡片
+RiverClub/Features/Profile/ProfileView.swift 个人资料和设置链接
+RiverClub/Features/Shared/LoadableContent.swift 加载/空数据/离线/错误状态
+RiverClubTests/AppSessionTests.swift          导航/会话单元测试
+RiverClubTests/MockPokerRepositoryTests.swift 固定数据和座位数量测试
+RiverClubTests/BuyInTests.swift               买入验证测试
+RiverClubUITests/CoreFlowUITests.swift        端到端 UI 流程
+RiverClubUITests/LandscapeLayoutUITests.swift 横屏布局和无障碍检查
 ```
 
-## Task 1: Bootstrap the Landscape SwiftUI App
+## 任务 1：搭建横屏 SwiftUI 应用
 
-**Files:**
-- Create: `project.yml`
-- Create: `RiverClub/App/RiverClubApp.swift`
-- Create: `RiverClub/App/AppRootView.swift`
-- Create: `RiverClub/App/AppSession.swift`
-- Create: `RiverClubTests/AppSessionTests.swift`
+**文件：**
+- 创建：`project.yml`
+- 创建：`RiverClub/App/RiverClubApp.swift`
+- 创建：`RiverClub/App/AppRootView.swift`
+- 创建：`RiverClub/App/AppSession.swift`
+- 创建：`RiverClubTests/AppSessionTests.swift`
 
-**Interfaces:**
-- Produces: `enum AppRoute`, `@Observable final class AppSession`, and `AppRootView`.
-- Consumes: no earlier task.
+**接口：**
+- 产出：`enum AppRoute`、`@Observable final class AppSession` 和 `AppRootView`。
+- 依赖：无前置任务。
 
-- [ ] **Step 1: Confirm implementation prerequisites**
+- [ ] **步骤 1：确认实施前置条件**
 
-Run:
+运行：
 
 ```bash
 xcode-select -p
@@ -77,11 +77,11 @@ xcodebuild -version
 xcodegen --version
 ```
 
-Expected: the active developer directory points inside `Xcode.app`, Xcode reports version 26, and XcodeGen reports 2.44 or newer. If Xcode is installed but not selected, run `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` after user approval.
+预期：当前开发者目录指向 `Xcode.app` 内部，Xcode 报告版本 26，XcodeGen 报告版本 2.43 或更高。如果已安装 Xcode 但尚未选中，请在获得用户批准后运行 `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`。
 
-- [ ] **Step 2: Write the failing session test**
+- [ ] **步骤 2：编写预期失败的会话测试**
 
-Create `RiverClubTests/AppSessionTests.swift`:
+创建 `RiverClubTests/AppSessionTests.swift`：
 
 ```swift
 import XCTest
@@ -99,9 +99,9 @@ final class AppSessionTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 3: Create the project definition and minimal app**
+- [ ] **步骤 3：创建项目定义和最小应用**
 
-Create `project.yml`:
+创建 `project.yml`：
 
 ```yaml
 name: RiverClub
@@ -136,7 +136,7 @@ targets:
     dependencies: [{target: RiverClub}]
 ```
 
-Create `RiverClub/App/AppSession.swift`:
+创建 `RiverClub/App/AppSession.swift`：
 
 ```swift
 import Observation
@@ -153,7 +153,7 @@ final class AppSession {
 }
 ```
 
-Create `RiverClub/App/RiverClubApp.swift`:
+创建 `RiverClub/App/RiverClubApp.swift`：
 
 ```swift
 import SwiftUI
@@ -164,7 +164,7 @@ import SwiftUI
 }
 ```
 
-Create `RiverClub/App/AppRootView.swift`:
+创建 `RiverClub/App/AppRootView.swift`：
 
 ```swift
 import SwiftUI
@@ -183,40 +183,40 @@ struct AppRootView: View {
 }
 ```
 
-- [ ] **Step 4: Generate the project and run the test**
+- [ ] **步骤 4：生成项目并运行测试**
 
-Run:
+运行：
 
 ```bash
 xcodegen generate
 xcodebuild test -project RiverClub.xcodeproj -scheme RiverClub -destination 'platform=iOS Simulator,name=iPhone 16 Pro Max' -only-testing:RiverClubTests/AppSessionTests
 ```
 
-Expected: `** TEST SUCCEEDED **`.
+预期：`** TEST SUCCEEDED **`。
 
-- [ ] **Step 5: Commit the bootstrap**
+- [ ] **步骤 5：提交初始搭建内容**
 
 ```bash
 git add project.yml RiverClub RiverClubTests
 git commit -m "feat: bootstrap River Club landscape app"
 ```
 
-## Task 2: Add the Design System and Shared Shell
+## 任务 2：添加设计系统和共用外壳
 
-**Files:**
-- Create: `RiverClub/DesignSystem/Theme.swift`
-- Create: `RiverClub/DesignSystem/AppSidebar.swift`
-- Create: `RiverClub/DesignSystem/ChipBalancePill.swift`
-- Modify: `RiverClub/App/AppRootView.swift`
-- Test: `RiverClubTests/AppSessionTests.swift`
+**文件：**
+- 创建：`RiverClub/DesignSystem/Theme.swift`
+- 创建：`RiverClub/DesignSystem/AppSidebar.swift`
+- 创建：`RiverClub/DesignSystem/ChipBalancePill.swift`
+- 修改：`RiverClub/App/AppRootView.swift`
+- 测试：`RiverClubTests/AppSessionTests.swift`
 
-**Interfaces:**
-- Consumes: `AppSession.open(_:)`, `AppRoute`.
-- Produces: `RCTheme`, `AppSidebar(selection:onSelect:)`, and `ChipBalancePill(balance:)`.
+**接口：**
+- 依赖：`AppSession.open(_:)`、`AppRoute`。
+- 产出：`RCTheme`、`AppSidebar(selection:onSelect:)` 和 `ChipBalancePill(balance:)`。
 
-- [ ] **Step 1: Add a failing sidebar-route contract test**
+- [ ] **步骤 1：添加预期失败的侧边栏路由契约测试**
 
-Append to `AppSessionTests`:
+追加到 `AppSessionTests`：
 
 ```swift
 func testSidebarRoutesAreStable() {
@@ -224,15 +224,15 @@ func testSidebarRoutesAreStable() {
 }
 ```
 
-- [ ] **Step 2: Run the focused test**
+- [ ] **步骤 2：运行聚焦测试**
 
-Run the Task 1 `xcodebuild test` command with `-only-testing:RiverClubTests/AppSessionTests/testSidebarRoutesAreStable`.
+运行任务 1 中的 `xcodebuild test` 命令，并添加 `-only-testing:RiverClubTests/AppSessionTests/testSidebarRoutesAreStable`。
 
-Expected: FAIL because `AppRoute.sidebarRoutes` does not exist.
+预期：失败，因为 `AppRoute.sidebarRoutes` 不存在。
 
-- [ ] **Step 3: Implement theme tokens and shared components**
+- [ ] **步骤 3：实现主题令牌和共用组件**
 
-Create `Theme.swift`:
+创建 `Theme.swift`：
 
 ```swift
 import SwiftUI
@@ -248,7 +248,7 @@ enum RCTheme {
 }
 ```
 
-Add the shared navigation contract to `AppRoute`:
+向 `AppRoute` 添加共用导航契约：
 
 ```swift
 extension AppRoute {
@@ -256,9 +256,9 @@ extension AppRoute {
 }
 ```
 
-Create `AppSidebar.swift` with four labeled buttons for `.lobby`, `.tournaments`, `.tables`, and `.profile`; apply `.accessibilityIdentifier("sidebar.<route>")` to each button and call `onSelect(route)`.
+创建 `AppSidebar.swift`，为 `.lobby`、`.tournaments`、`.tables` 和 `.profile` 提供四个带标签的按钮；为每个按钮应用 `.accessibilityIdentifier("sidebar.<route>")`，并调用 `onSelect(route)`。
 
-Create `ChipBalancePill.swift`:
+创建 `ChipBalancePill.swift`：
 
 ```swift
 import SwiftUI
@@ -276,50 +276,50 @@ struct ChipBalancePill: View {
 }
 ```
 
-Modify `AppRootView` so authenticated routes render an `HStack(spacing: 0)` containing `AppSidebar` and the current feature placeholder, while `.table` renders without the sidebar.
+修改 `AppRootView`，使已认证路由渲染一个包含 `AppSidebar` 和当前功能占位视图的 `HStack(spacing: 0)`，而 `.table` 不渲染侧边栏。
 
-- [ ] **Step 4: Run unit tests**
+- [ ] **步骤 4：运行单元测试**
 
-Run:
+运行：
 
 ```bash
 xcodebuild test -project RiverClub.xcodeproj -scheme RiverClub -destination 'platform=iOS Simulator,name=iPhone 16 Pro Max' -only-testing:RiverClubTests
 ```
 
-Expected: `** TEST SUCCEEDED **`.
+预期：`** TEST SUCCEEDED **`。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add RiverClub/DesignSystem RiverClub/App RiverClubTests
 git commit -m "feat: add River Club design system shell"
 ```
 
-## Task 3: Define UI Models and Deterministic Fixtures
+## 任务 3：定义 UI 模型和确定性固定数据
 
-**Files:**
-- Create: `RiverClub/Models/PokerModels.swift`
-- Create: `RiverClub/Services/PokerRepository.swift`
-- Create: `RiverClub/Services/MockPokerRepository.swift`
-- Create: `RiverClubTests/MockPokerRepositoryTests.swift`
+**文件：**
+- 创建：`RiverClub/Models/PokerModels.swift`
+- 创建：`RiverClub/Services/PokerRepository.swift`
+- 创建：`RiverClub/Services/MockPokerRepository.swift`
+- 创建：`RiverClubTests/MockPokerRepositoryTests.swift`
 
-**Interfaces:**
-- Produces: `PokerTableSummary`, `PokerSeat`, `TournamentSummary`, `ProfileSummary`, `PokerRepository`, and `MockPokerRepository`.
-- Consumes: no view code.
+**接口：**
+- 产出：`PokerTableSummary`、`PokerSeat`、`TournamentSummary`、`ProfileSummary`、`PokerRepository` 和 `MockPokerRepository`。
+- 依赖：不依赖视图代码。
 
-- [ ] **Step 1: Write fixture contract tests**
+- [ ] **步骤 1：编写固定数据契约测试**
 
-Create `MockPokerRepositoryTests.swift` verifying `tables()` returns at least three tables, `featuredTable()` has an open seat, `seats()` returns exactly nine unique positions with exactly one `isLocalPlayer`, and no formatted value contains `¥`, `$`, `€`, or `£`.
+创建 `MockPokerRepositoryTests.swift`，验证 `tables()` 至少返回三张牌桌，`featuredTable()` 至少有一个空位，`seats()` 返回正好九个唯一位置且其中正好一个 `isLocalPlayer`，并且任何格式化后的值都不包含 `¥`、`$`、`€` 或 `£`。
 
-- [ ] **Step 2: Run tests and confirm missing-type failures**
+- [ ] **步骤 2：运行测试并确认因类型缺失而失败**
 
-Run `xcodebuild test` limited to `RiverClubTests/MockPokerRepositoryTests`.
+运行 `xcodebuild test`，仅执行 `RiverClubTests/MockPokerRepositoryTests`。
 
-Expected: FAIL because the repository types do not exist.
+预期：失败，因为仓库类型不存在。
 
-- [ ] **Step 3: Implement models and repository**
+- [ ] **步骤 3：实现模型和仓库**
 
-Define these exact signatures in `PokerModels.swift`:
+在 `PokerModels.swift` 中定义以下精确签名：
 
 ```swift
 import Foundation
@@ -343,7 +343,7 @@ struct ProfileSummary: Equatable, Sendable {
 }
 ```
 
-Define `PokerRepository` with these exact signatures:
+使用以下精确签名定义 `PokerRepository`：
 
 ```swift
 protocol PokerRepository: Sendable {
@@ -355,36 +355,36 @@ protocol PokerRepository: Sendable {
 }
 ```
 
-Implement `MockPokerRepository` with the approved names 翡翠湾、金色海岸、午夜俱乐部 and nine deterministic seats. Use fixed UUID literals so UI tests remain stable.
+使用已批准的名称“翡翠湾”“金色海岸”“午夜俱乐部”和九个确定性座位实现 `MockPokerRepository`。使用固定的 UUID 字面量，以保证 UI 测试稳定。
 
-- [ ] **Step 4: Run repository tests**
+- [ ] **步骤 4：运行仓库测试**
 
-Expected: all fixture contract tests pass.
+预期：所有固定数据契约测试通过。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add RiverClub/Models RiverClub/Services RiverClubTests/MockPokerRepositoryTests.swift
 git commit -m "feat: add deterministic poker UI fixtures"
 ```
 
-## Task 4: Implement Login, Lobby, Table List, and Buy-In Flow
+## 任务 4：实现登录、大厅、牌桌列表和买入流程
 
-**Files:**
-- Create: `RiverClub/Features/Auth/LoginView.swift`
-- Create: `RiverClub/Features/Lobby/LobbyView.swift`
-- Create: `RiverClub/Features/Lobby/TableListView.swift`
-- Create: `RiverClub/Features/Lobby/BuyInSheet.swift`
-- Create: `RiverClubTests/BuyInTests.swift`
-- Modify: `RiverClub/App/AppRootView.swift`
+**文件：**
+- 创建：`RiverClub/Features/Auth/LoginView.swift`
+- 创建：`RiverClub/Features/Lobby/LobbyView.swift`
+- 创建：`RiverClub/Features/Lobby/TableListView.swift`
+- 创建：`RiverClub/Features/Lobby/BuyInSheet.swift`
+- 创建：`RiverClubTests/BuyInTests.swift`
+- 修改：`RiverClub/App/AppRootView.swift`
 
-**Interfaces:**
-- Consumes: `AppSession`, `PokerRepository`, `PokerTableSummary`, shared design system.
-- Produces: `BuyInState`, `LoginView`, `LobbyView`, `TableListView`, and `BuyInSheet`.
+**接口：**
+- 依赖：`AppSession`、`PokerRepository`、`PokerTableSummary` 和共用设计系统。
+- 产出：`BuyInState`、`LoginView`、`LobbyView`、`TableListView` 和 `BuyInSheet`。
 
-- [ ] **Step 1: Write buy-in validation tests**
+- [ ] **步骤 1：编写买入验证测试**
 
-Create `BuyInTests.swift`:
+创建 `BuyInTests.swift`：
 
 ```swift
 import XCTest
@@ -405,60 +405,60 @@ final class BuyInTests: XCTestCase {
 }
 ```
 
-- [ ] **Step 2: Run tests and confirm failure**
+- [ ] **步骤 2：运行测试并确认失败**
 
-Expected: FAIL because `BuyInState` is undefined.
+预期：失败，因为 `BuyInState` 未定义。
 
-- [ ] **Step 3: Implement the flow**
+- [ ] **步骤 3：实现流程**
 
-Implement `BuyInState` in `BuyInSheet.swift` with `minimum`, `maximum`, `balance`, mutable `amount`, `autoTopUp`, `canConfirm`, and `normalize()` clamping to `min(maximum, balance)`.
+在 `BuyInSheet.swift` 中实现 `BuyInState`，包含 `minimum`、`maximum`、`balance`、可变的 `amount`、`autoTopUp`、`canConfirm`，以及将值限制到 `min(maximum, balance)` 的 `normalize()`。
 
-Implement the four approved screens using `NavigationStack`, `safeAreaPadding`, reusable rows, and accessibility identifiers: `login.apple`, `login.guest`, `lobby.quickJoin`, `lobby.allTables`, `tableRow.<uuid>`, `buyIn.slider`, and `buyIn.confirm`.
+使用 `NavigationStack`、`safeAreaPadding`、可复用行和以下无障碍标识符，实现四个已批准界面：`login.apple`、`login.guest`、`lobby.quickJoin`、`lobby.allTables`、`tableRow.<uuid>`、`buyIn.slider` 和 `buyIn.confirm`。
 
-Wire guest login to `.lobby`, “查看全部” to `.tables`, row selection to the sheet, and successful confirmation to `.table`. Keep balance insufficient errors inside the sheet.
+将访客登录连接到 `.lobby`，将“查看全部”连接到 `.tables`，将行选择连接到弹出表单，并在确认成功后转到 `.table`。余额不足错误应保留在弹出表单内部显示。
 
-- [ ] **Step 4: Run unit tests and build**
+- [ ] **步骤 4：运行单元测试并构建**
 
-Run:
+运行：
 
 ```bash
 xcodebuild test -project RiverClub.xcodeproj -scheme RiverClub -destination 'platform=iOS Simulator,name=iPhone 16 Pro Max' -only-testing:RiverClubTests
 xcodebuild build -project RiverClub.xcodeproj -scheme RiverClub -destination 'platform=iOS Simulator,name=iPhone 16 Pro Max'
 ```
 
-Expected: tests pass and build succeeds.
+预期：测试通过且构建成功。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add RiverClub/Features/Auth RiverClub/Features/Lobby RiverClub/App RiverClubTests/BuyInTests.swift
 git commit -m "feat: implement lobby and buy-in prototype flow"
 ```
 
-## Task 5: Implement the Nine-Seat Poker Table
+## 任务 5：实现九座扑克桌
 
-**Files:**
-- Create: `RiverClub/Features/Table/PokerSeatView.swift`
-- Create: `RiverClub/Features/Table/BetControlBar.swift`
-- Create: `RiverClub/Features/Table/PokerTableView.swift`
-- Create: `RiverClubTests/PokerTableLayoutTests.swift`
-- Modify: `RiverClub/App/AppRootView.swift`
+**文件：**
+- 创建：`RiverClub/Features/Table/PokerSeatView.swift`
+- 创建：`RiverClub/Features/Table/BetControlBar.swift`
+- 创建：`RiverClub/Features/Table/PokerTableView.swift`
+- 创建：`RiverClubTests/PokerTableLayoutTests.swift`
+- 修改：`RiverClub/App/AppRootView.swift`
 
-**Interfaces:**
-- Consumes: `[PokerSeat]`, `AppSession`, `RCTheme`.
-- Produces: `PokerTableLayout.positions(for:)`, `PokerSeatView`, `BetControlBar`, `PokerTableView`.
+**接口：**
+- 依赖：`[PokerSeat]`、`AppSession`、`RCTheme`。
+- 产出：`PokerTableLayout.positions(for:)`、`PokerSeatView`、`BetControlBar`、`PokerTableView`。
 
-- [ ] **Step 1: Write layout invariant tests**
+- [ ] **步骤 1：编写布局不变量测试**
 
-Test that `PokerTableLayout.positions(for: CGSize(width: 956, height: 440))` returns nine distinct normalized points, local-player index 8 is below the table center, all points are inside `0...1`, and the eight opponent frames do not intersect the local-player frame.
+测试 `PokerTableLayout.positions(for: CGSize(width: 956, height: 440))` 返回九个不同的归一化点，本地玩家索引 8 位于牌桌中心下方，所有点均位于 `0...1` 内，并且八名对手的边框均不与本地玩家边框相交。
 
-- [ ] **Step 2: Run tests and confirm failure**
+- [ ] **步骤 2：运行测试并确认失败**
 
-Expected: FAIL because `PokerTableLayout` is undefined.
+预期：失败，因为 `PokerTableLayout` 未定义。
 
-- [ ] **Step 3: Implement layout and table components**
+- [ ] **步骤 3：实现布局和牌桌组件**
 
-Use normalized seat centers:
+使用以下归一化座位中心点：
 
 ```swift
 static let normalizedCenters: [CGPoint] = [
@@ -468,82 +468,82 @@ static let normalizedCenters: [CGPoint] = [
 ]
 ```
 
-In `PokerSeatView`, render the avatar with `.frame(width: 42, height: 42)`, `.clipShape(Circle())`, and `.fixedSize()` so it never compresses. Use `ViewThatFits` for long nicknames.
+在 `PokerSeatView` 中，使用 `.frame(width: 42, height: 42)`、`.clipShape(Circle())` 和 `.fixedSize()` 渲染头像，确保头像永不压缩。对较长昵称使用 `ViewThatFits`。
 
-In `PokerTableView`, place community cards at center, pot below them, and chips below the pot. Place fold/call/raise controls in a bottom-trailing safe-area inset and chat controls bottom-leading. Add `table.seat.0` through `table.seat.8`, `table.pot`, `action.fold`, `action.call`, and `action.raise` identifiers.
+在 `PokerTableView` 中，将公共牌置于中心，奖池放在公共牌下方，筹码放在奖池下方。将弃牌/跟注/加注控件放在右下方安全区域内边距中，并将聊天控件放在左下方。添加从 `table.seat.0` 到 `table.seat.8`、`table.pot`、`action.fold`、`action.call` 和 `action.raise` 的标识符。
 
-- [ ] **Step 4: Run layout tests and build**
+- [ ] **步骤 4：运行布局测试并构建**
 
-Expected: nine-seat invariants pass and the app builds for iPhone 16 Pro Max.
+预期：九座布局不变量测试通过，且应用可针对 iPhone 16 Pro Max 成功构建。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add RiverClub/Features/Table RiverClub/App RiverClubTests/PokerTableLayoutTests.swift
 git commit -m "feat: add accessible nine-seat poker table UI"
 ```
 
-## Task 6: Implement Tournaments and Profile
+## 任务 6：实现锦标赛和个人资料
 
-**Files:**
-- Create: `RiverClub/Features/Tournaments/TournamentsView.swift`
-- Create: `RiverClub/Features/Profile/ProfileView.swift`
-- Modify: `RiverClub/App/AppRootView.swift`
-- Modify: `RiverClubTests/MockPokerRepositoryTests.swift`
+**文件：**
+- 创建：`RiverClub/Features/Tournaments/TournamentsView.swift`
+- 创建：`RiverClub/Features/Profile/ProfileView.swift`
+- 修改：`RiverClub/App/AppRootView.swift`
+- 修改：`RiverClubTests/MockPokerRepositoryTests.swift`
 
-**Interfaces:**
-- Consumes: `TournamentSummary`, `ProfileSummary`, `PokerRepository`.
-- Produces: `TournamentTab.filtered(_:)`, approved tournament cards, and profile summary/settings links.
+**接口：**
+- 依赖：`TournamentSummary`、`ProfileSummary`、`PokerRepository`。
+- 产出：`TournamentTab.filtered(_:)`、已批准的锦标赛卡片，以及个人资料摘要/设置链接。
 
-- [ ] **Step 1: Write tournament filtering tests**
+- [ ] **步骤 1：编写锦标赛筛选测试**
 
-Create tests asserting `.upcoming.filtered(fixtures)` excludes past start times, `.registered` includes only registered identifiers supplied to the filter, and fixture profile VPIP is within `0...1`.
+创建测试，断言 `.upcoming.filtered(fixtures)` 排除已过去的开始时间，`.registered` 仅包含提供给筛选器的已报名标识符，并且固定个人资料数据中的 VPIP 位于 `0...1` 内。
 
-- [ ] **Step 2: Run the focused repository tests**
+- [ ] **步骤 2：运行聚焦的仓库测试**
 
-Expected: FAIL because `TournamentTab.filtered(_:)` does not exist.
+预期：失败，因为 `TournamentTab.filtered(_:)` 不存在。
 
-- [ ] **Step 3: Implement both screens**
+- [ ] **步骤 3：实现两个界面**
 
-Define `TournamentTab` as `upcoming`, `registered`, `active`, and `finished`, with `filtered(_:now:registeredIDs:) -> [TournamentSummary]`. Build the matching tabs; each card shows start time, registration count, prize chips, and a free/register state. Build profile identity, level progress, three approved statistics, and links for hand history, achievements, account/security, and sound/haptics.
+将 `TournamentTab` 定义为 `upcoming`、`registered`、`active` 和 `finished`，并提供 `filtered(_:now:registeredIDs:) -> [TournamentSummary]`。构建对应的标签页；每张卡片显示开始时间、报名人数、奖励筹码以及免费/报名状态。构建个人身份信息、等级进度、三项已批准的统计数据，以及牌局历史、成就、账户与安全、声音与触感反馈的链接。
 
-Add identifiers `tournaments.tab.<state>`, `tournament.<uuid>`, `profile.nickname`, and `profile.settings`.
+添加标识符 `tournaments.tab.<state>`、`tournament.<uuid>`、`profile.nickname` 和 `profile.settings`。
 
-- [ ] **Step 4: Run tests and build**
+- [ ] **步骤 4：运行测试并构建**
 
-Expected: unit tests pass and all root routes compile.
+预期：单元测试通过，且所有根路由均可编译。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add RiverClub/Features/Tournaments RiverClub/Features/Profile RiverClub/App RiverClubTests
 git commit -m "feat: add tournament and profile screens"
 ```
 
-## Task 7: Add Loadable, Offline, Empty, and Failure States
+## 任务 7：添加加载中、离线、空数据和失败状态
 
-**Files:**
-- Create: `RiverClub/Features/Shared/LoadableContent.swift`
-- Modify: `RiverClub/Features/Lobby/LobbyView.swift`
-- Modify: `RiverClub/Features/Lobby/TableListView.swift`
-- Modify: `RiverClub/Features/Tournaments/TournamentsView.swift`
-- Create: `RiverClubTests/LoadableStateTests.swift`
+**文件：**
+- 创建：`RiverClub/Features/Shared/LoadableContent.swift`
+- 修改：`RiverClub/Features/Lobby/LobbyView.swift`
+- 修改：`RiverClub/Features/Lobby/TableListView.swift`
+- 修改：`RiverClub/Features/Tournaments/TournamentsView.swift`
+- 创建：`RiverClubTests/LoadableStateTests.swift`
 
-**Interfaces:**
-- Produces: `enum LoadableState<Value>` and `LoadableContent`.
-- Consumes: feature content views and repository errors.
+**接口：**
+- 产出：`enum LoadableState<Value>` 和 `LoadableContent`。
+- 依赖：功能内容视图和仓库错误。
 
-- [ ] **Step 1: Write state-mapping tests**
+- [ ] **步骤 1：编写状态映射测试**
 
-Test deterministic mappings for loading, loaded-empty, loaded-content, offline, and failed states. Verify retry is offered for offline/failed, clear-filter is offered only for filtered empty results, and sidebar state remains unchanged.
+测试加载中、已加载空数据、已加载有内容、离线和失败状态的确定性映射。验证离线/失败时提供重试，仅对筛选后的空结果提供清除筛选，并且侧边栏状态保持不变。
 
-- [ ] **Step 2: Run tests and confirm failure**
+- [ ] **步骤 2：运行测试并确认失败**
 
-Expected: FAIL because `LoadableState` does not exist.
+预期：失败，因为 `LoadableState` 不存在。
 
-- [ ] **Step 3: Implement explicit state views**
+- [ ] **步骤 3：实现明确的状态视图**
 
-Define:
+定义：
 
 ```swift
 enum LoadableState<Value> {
@@ -554,69 +554,69 @@ enum LoadableState<Value> {
 }
 ```
 
-Implement skeleton rows for loading, a clear-filter action for filtered empty lists, a nonmodal offline banner when cached data exists, and an inline retry action for uncached failure. Never replace the full root view with a transient toast.
+为加载状态实现骨架行，为筛选后的空列表实现清除筛选操作，在存在缓存数据时显示非模态离线横幅，并为无缓存的失败状态提供行内重试操作。绝不能使用临时 Toast 替换整个根视图。
 
-- [ ] **Step 4: Run state tests and full unit suite**
+- [ ] **步骤 4：运行状态测试和完整单元测试套件**
 
-Expected: all unit tests pass.
+预期：所有单元测试通过。
 
-- [ ] **Step 5: Commit**
+- [ ] **步骤 5：提交**
 
 ```bash
 git add RiverClub/Features RiverClubTests/LoadableStateTests.swift
 git commit -m "feat: add resilient UI loading and error states"
 ```
 
-## Task 8: Add End-to-End UI Verification
+## 任务 8：添加端到端 UI 验证
 
-**Files:**
-- Create: `RiverClubUITests/CoreFlowUITests.swift`
-- Create: `RiverClubUITests/LandscapeLayoutUITests.swift`
+**文件：**
+- 创建：`RiverClubUITests/CoreFlowUITests.swift`
+- 创建：`RiverClubUITests/LandscapeLayoutUITests.swift`
 
-**Interfaces:**
-- Consumes: accessibility identifiers from Tasks 2–7.
-- Produces: automated acceptance evidence for the approved UI flow and layout invariants.
+**接口：**
+- 依赖：任务 2–7 中的无障碍标识符。
+- 产出：针对已批准 UI 流程和布局不变量的自动化验收证据。
 
-- [ ] **Step 1: Write the core-flow UI test**
+- [ ] **步骤 1：编写核心流程 UI 测试**
 
-Launch with `-uiTesting`, tap `login.guest`, verify the lobby, open all tables, select the first row, set buy-in, confirm, and assert `table.seat.0...8`, `table.pot`, and all three action buttons exist.
+使用 `-uiTesting` 启动应用，点击 `login.guest`，验证大厅，打开全部牌桌，选择第一行，设置买入金额并确认，然后断言 `table.seat.0...8`、`table.pot` 和全部三个操作按钮均存在。
 
-- [ ] **Step 2: Write landscape and compliance UI tests**
+- [ ] **步骤 2：编写横屏和合规性 UI 测试**
 
-Assert the window width exceeds height, all nine seat frames are hittable or visible and do not intersect the local-player frame, the local avatar width equals height within one point, and app static text contains none of `¥`, `$`, `€`, or `£`.
+断言窗口宽度大于高度，全部九个座位边框均可点击或可见且不与本地玩家边框相交，本地头像的宽高差不超过一个点，并且应用静态文本不包含 `¥`、`$`、`€` 或 `£` 中的任何一个。
 
-- [ ] **Step 3: Run UI tests on iPhone 16 Pro Max**
+- [ ] **步骤 3：在 iPhone 16 Pro Max 上运行 UI 测试**
 
-Run:
+运行：
 
 ```bash
 xcodebuild test -project RiverClub.xcodeproj -scheme RiverClub -destination 'platform=iOS Simulator,name=iPhone 16 Pro Max' -only-testing:RiverClubUITests
 ```
 
-Expected: `** TEST SUCCEEDED **` with the full flow completing in landscape.
+预期：显示 `** TEST SUCCEEDED **`，且完整流程在横屏模式下完成。
 
-- [ ] **Step 4: Run the complete verification suite**
+- [ ] **步骤 4：运行完整验证套件**
 
-Run:
+运行：
 
 ```bash
 xcodebuild clean test -project RiverClub.xcodeproj -scheme RiverClub -destination 'platform=iOS Simulator,name=iPhone 16 Pro Max'
 ```
 
-Expected: clean build and all unit/UI tests pass.
+预期：干净构建成功，且所有单元测试/UI 测试均通过。
 
-- [ ] **Step 5: Commit verification**
+- [ ] **步骤 5：提交验证内容**
 
 ```bash
 git add RiverClubUITests
 git commit -m "test: verify River Club core landscape flow"
 ```
 
-## Follow-Up Plans After UI Prototype Approval
+## UI 原型获批后的后续计划
 
-The following independent subsystems require separate specifications and implementation plans:
+以下独立子系统需要单独制定规格和实施计划：
 
-1. Texas Hold’em rules engine: deck, dealing, betting rounds, legal actions, side pots, showdown, hand evaluation, deterministic simulations, and property tests.
-2. Real-time multiplayer platform: table matchmaking, authoritative game server, reconnection, action timers, anti-cheat boundaries, observability, and load testing.
-3. Accounts and entertainment-chip service: Sign in with Apple server validation, profiles, chip ledger, daily grants, idempotency, moderation, privacy, and account deletion.
-4. Client/server integration and release: API contracts, WebSocket protocol, localization, analytics consent, App Store metadata, TestFlight, and production rollout.
+1. 德州扑克规则引擎：牌组、发牌、下注轮次、合法操作、边池、摊牌、牌型评估、确定性模拟和属性测试。
+2. 实时多人游戏平台：牌桌匹配、权威游戏服务器、断线重连、操作计时器、反作弊边界、可观测性和负载测试。
+3. 账户与娱乐筹码服务：Sign in with Apple 服务端验证、个人资料、筹码账本、每日发放、幂等性、内容治理、隐私和账户删除。
+4. 客户端/服务端集成与发布：API 契约、WebSocket 协议、本地化、分析同意、App Store 元数据、TestFlight 和生产环境发布。
