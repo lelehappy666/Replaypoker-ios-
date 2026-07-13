@@ -1,0 +1,31 @@
+name: RiverClub
+options:
+  bundleIdPrefix: com.dafengshuyi
+settings:
+  base:
+    IPHONEOS_DEPLOYMENT_TARGET: 18.0
+    SWIFT_VERSION: 6.0
+targets:
+  RiverClub:
+    type: application
+    platform: iOS
+    sources: [RiverClub]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.dafengshuyi.riverclub
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: true
+        INFOPLIST_KEY_UILaunchScreen_Generation: true
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone:
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+  RiverClubTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [RiverClubTests]
+    dependencies: [{target: RiverClub}]
+  RiverClubUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [RiverClubUITests]
+    dependencies: [{target: RiverClub}]

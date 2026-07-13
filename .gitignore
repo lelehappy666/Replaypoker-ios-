@@ -1,6 +1,9 @@
 .superpowers/
 .worktrees/
 DerivedData/
+.derived-data/
+build/
+RiverClub.xcodeproj/
 *.xcuserstate
 xcuserdata/
 .DS_Store
