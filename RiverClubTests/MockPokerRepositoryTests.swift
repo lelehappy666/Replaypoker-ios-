@@ -63,4 +63,48 @@ final class MockPokerRepositoryTests: XCTestCase {
             XCTAssertFalse(values.contains { $0.contains(symbol) })
         }
     }
+
+    func testUpcomingTournamentsExcludePastStartTimes() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let past = tournament(id: 1, startTime: now.addingTimeInterval(-1))
+        let future = tournament(id: 2, startTime: now.addingTimeInterval(1))
+
+        XCTAssertEqual(
+            TournamentTab.upcoming.filtered([past, future], now: now),
+            [future]
+        )
+    }
+
+    func testRegisteredTournamentsOnlyIncludeProvidedIdentifiers() {
+        let first = tournament(id: 1, startTime: Date(timeIntervalSince1970: 2_001))
+        let second = tournament(id: 2, startTime: Date(timeIntervalSince1970: 2_002))
+
+        XCTAssertEqual(
+            TournamentTab.registered.filtered(
+                [first, second],
+                now: Date(timeIntervalSince1970: 2_000),
+                registeredIDs: [second.id]
+            ),
+            [second]
+        )
+    }
+
+    func testProfileFixtureVPIPIsAUnitIntervalRatio() async throws {
+        let profile = try await repository.profile()
+
+        XCTAssertTrue((0...1).contains(profile.voluntaryPutInPot))
+    }
+
+    private func tournament(id: Int, startTime: Date) -> TournamentSummary {
+        TournamentSummary(
+            id: UUID(uuidString: String(format: "30000000-0000-0000-0000-%012d", id))!,
+            kind: .classic,
+            name: "测试赛事\(id)",
+            startTime: startTime,
+            registered: 12,
+            capacity: 64,
+            prizePool: 100_000,
+            entryChips: 2_000
+        )
+    }
 }

@@ -61,8 +61,10 @@ struct AppRootView: View {
             )
         case .tables:
             TableListView(repository: repository, onSelect: openBuyInIfJoinable)
-        case .tournaments, .profile:
-            featurePlaceholder(for: session.route)
+        case .tournaments:
+            TournamentsView(repository: repository)
+        case .profile:
+            ProfileView(repository: repository)
         case .login, .table:
             EmptyView()
         }

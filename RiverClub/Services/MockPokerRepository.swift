@@ -22,7 +22,7 @@ struct MockPokerRepository: PokerRepository {
             nickname: "RiverAce",
             level: 18,
             handsPlayed: 2_486,
-            voluntaryPutInPot: 24.6,
+            voluntaryPutInPot: 0.246,
             tournamentAwards: 12
         )
     }
@@ -153,7 +153,7 @@ struct MockPokerRepository: PokerRepository {
             registered: 36,
             capacity: 64,
             prizePool: 120_000,
-            entryChips: 2_000
+            entryChips: 0
         ),
         TournamentSummary(
             id: UUID(uuidString: "30000000-0000-0000-0000-000000000002")!,
