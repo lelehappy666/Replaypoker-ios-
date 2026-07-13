@@ -4,6 +4,8 @@ struct AppRootView: View {
     @Bindable var session: AppSession
     private let repository: any PokerRepository = MockPokerRepository()
     @State private var selectedTable: PokerTableSummary?
+    @State private var tableSeats: [PokerSeat] = []
+    @State private var tableReturnRoute: AppRoute = .lobby
 
     var body: some View {
         ZStack {
@@ -16,7 +18,14 @@ struct AppRootView: View {
                             onGuestLogin: session.continueAsGuest
                         )
                     case .table:
-                        featurePlaceholder(for: .table)
+                        PokerTableView(
+                            seats: tableSeats,
+                            session: session,
+                            onExit: { session.open(tableReturnRoute) }
+                        )
+                        .task {
+                            tableSeats = (try? await repository.seats()) ?? []
+                        }
                     case .lobby, .tournaments, .tables, .profile:
                         HStack(spacing: 0) {
                             AppSidebar(selection: session.route, onSelect: session.open)
@@ -84,6 +93,7 @@ struct AppRootView: View {
 
     private func openBuyInIfJoinable(_ table: PokerTableSummary) {
         guard JoinDisposition(table: table) == .buyIn else { return }
+        tableReturnRoute = session.route
         selectedTable = table
     }
 
