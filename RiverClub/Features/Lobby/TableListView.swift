@@ -4,11 +4,9 @@ struct TableListView: View {
     let repository: any PokerRepository
     let onSelect: (PokerTableSummary) -> Void
 
-    @State private var tables: [PokerTableSummary] = []
+    @State private var loadState: LoadableState<[PokerTableSummary]> = .loading
     @State private var filters = TableListFilters()
     @State private var joinStatusMessage: String?
-    @State private var isLoading = true
-    @State private var errorMessage: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -50,34 +48,18 @@ struct TableListView: View {
 
     @ViewBuilder
     private var tableContent: some View {
-        if isLoading {
-            ProgressView("正在加载牌桌…")
-                .tint(RCTheme.gold)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let errorMessage {
-            ContentUnavailableView {
-                Label("暂时无法连接", systemImage: "wifi.slash")
-            } description: {
-                Text(errorMessage)
-            } actions: {
-                Button("重试") { Task { await loadTables() } }
-                    .frame(minHeight: 44)
-            }
-            .foregroundStyle(RCTheme.primaryText)
-        } else if filteredTables.isEmpty {
-            ContentUnavailableView {
-                Label("没有符合条件的牌桌", systemImage: "line.3.horizontal.decrease.circle")
-            } description: {
-                Text("清除筛选后再看看。")
-            } actions: {
-                Button("清除筛选") { filters = TableListFilters() }
-                    .frame(minHeight: 44)
-            }
-            .foregroundStyle(RCTheme.primaryText)
-        } else {
+        LoadableContent(
+            state: loadState,
+            hasActiveFilters: filters != TableListFilters(),
+            isEmpty: { filters.apply(to: $0).isEmpty },
+            emptyTitle: "没有符合条件的牌桌",
+            emptyDescription: "清除筛选后再看看。",
+            onRetry: { Task { await loadTables() } },
+            onClearFilters: { filters = TableListFilters() }
+        ) { tables in
             ScrollView {
                 LazyVStack(spacing: 10) {
-                    ForEach(filteredTables) { table in
+                    ForEach(filters.apply(to: tables)) { table in
                         TableRow(
                             table: table,
                             onJoin: { onSelect(table) },
@@ -89,10 +71,6 @@ struct TableListView: View {
                 }
             }
         }
-    }
-
-    private var filteredTables: [PokerTableSummary] {
-        filters.apply(to: tables)
     }
 
     private func filterMenu<Value: RawRepresentable & Identifiable & Hashable>(
@@ -114,14 +92,15 @@ struct TableListView: View {
 
     @MainActor
     private func loadTables() async {
-        isLoading = true
-        errorMessage = nil
+        let cached = loadState.content
+        if cached == nil { loadState = .loading }
         do {
-            tables = try await repository.tables()
+            loadState = .loaded(try await repository.tables())
         } catch {
-            errorMessage = "请检查网络连接后重试。"
+            loadState = cached == nil
+                ? .failed(message: "请检查网络连接后重试。")
+                : .offline(cached: cached)
         }
-        isLoading = false
     }
 }
 

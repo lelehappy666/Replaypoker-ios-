@@ -40,7 +40,7 @@ enum TournamentTab: String, CaseIterable, Identifiable, Sendable {
 struct TournamentsView: View {
     let repository: any PokerRepository
     @State private var selectedTab: TournamentTab = .upcoming
-    @State private var tournaments: [TournamentSummary] = []
+    @State private var loadState: LoadableState<[TournamentSummary]> = .loading
     @State private var registeredIDs: Set<UUID> = []
 
     var body: some View {
@@ -59,21 +59,22 @@ struct TournamentsView: View {
                 }
             }
 
-            let visible = selectedTab.filtered(
-                tournaments,
-                registeredIDs: registeredIDs
-            )
-            if visible.isEmpty {
-                ContentUnavailableView(
-                    "暂无赛事",
-                    systemImage: "trophy",
-                    description: Text("此分类暂时没有赛事")
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
+            LoadableContent(
+                state: loadState,
+                hasActiveFilters: selectedTab != .upcoming,
+                isEmpty: {
+                    selectedTab.filtered($0, registeredIDs: registeredIDs).isEmpty
+                },
+                emptyTitle: "暂无赛事",
+                emptyDescription: "此分类暂时没有赛事。",
+                onRetry: { Task { await loadTournaments() } },
+                onClearFilters: { selectedTab = .upcoming }
+            ) { tournaments in
                 ScrollView(.horizontal) {
                     LazyHStack(spacing: 16) {
-                        ForEach(visible) { tournament in
+                        ForEach(
+                            selectedTab.filtered(tournaments, registeredIDs: registeredIDs)
+                        ) { tournament in
                             TournamentCard(
                                 tournament: tournament,
                                 isRegistered: registeredIDs.contains(tournament.id),
@@ -86,8 +87,19 @@ struct TournamentsView: View {
         }
         .padding(24)
         .background(RCTheme.background)
-        .task {
-            tournaments = (try? await repository.tournaments()) ?? []
+        .task { await loadTournaments() }
+    }
+
+    @MainActor
+    private func loadTournaments() async {
+        let cached = loadState.content
+        if cached == nil { loadState = .loading }
+        do {
+            loadState = .loaded(try await repository.tournaments())
+        } catch {
+            loadState = cached == nil
+                ? .failed(message: "请检查网络连接后重试。")
+                : .offline(cached: cached)
         }
     }
 }

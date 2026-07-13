@@ -6,13 +6,10 @@ struct LobbyView: View {
     let onQuickJoin: (PokerTableSummary) -> Void
     let onAllTables: () -> Void
 
-    @State private var featuredTable: PokerTableSummary?
-    @State private var tables: [PokerTableSummary] = []
+    @State private var loadState: LoadableState<LobbySnapshot> = .loading
     @State private var category: LobbyCategory = .recommended
     @State private var quickBlind: CommonBlindLevel = .oneHundredTwoHundred
     @State private var joinStatusMessage: String?
-    @State private var isLoading = true
-    @State private var errorMessage: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -32,19 +29,18 @@ struct LobbyView: View {
                 ChipBalancePill(balance: balance)
             }
 
-            if isLoading {
-                ProgressView("正在准备大厅…")
-                    .tint(RCTheme.gold)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let errorMessage {
-                ContentUnavailableView {
-                    Label("大厅暂时离线", systemImage: "wifi.slash")
-                } description: {
-                    Text(errorMessage)
-                } actions: {
-                    Button("重试") { Task { await loadLobby() } }
-                }
-            } else {
+            LoadableContent(
+                state: loadState,
+                hasActiveFilters: category != .recommended,
+                isEmpty: { snapshot in
+                    snapshot.tables.filter(category.includes).isEmpty
+                        && (category != .recommended || snapshot.featuredTable == nil)
+                },
+                emptyTitle: "没有符合条件的牌桌",
+                emptyDescription: "清除筛选后再看看。",
+                onRetry: { Task { await loadLobby() } },
+                onClearFilters: { category = .recommended }
+            ) { _ in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
                         Picker("大厅分类", selection: $category) {
@@ -129,6 +125,14 @@ struct LobbyView: View {
         tables.filter(category.includes)
     }
 
+    private var tables: [PokerTableSummary] {
+        loadState.content?.tables ?? []
+    }
+
+    private var featuredTable: PokerTableSummary? {
+        loadState.content?.featuredTable
+    }
+
     private func featuredCard(_ table: PokerTableSummary) -> some View {
         HStack(spacing: 24) {
             VStack(alignment: .leading, spacing: 8) {
@@ -187,16 +191,26 @@ struct LobbyView: View {
 
     @MainActor
     private func loadLobby() async {
-        isLoading = true
-        errorMessage = nil
+        let cached = loadState.content
+        if cached == nil { loadState = .loading }
         do {
             async let featured = repository.featuredTable()
             async let allTables = repository.tables()
-            featuredTable = try await featured
-            tables = try await allTables
+            loadState = .loaded(
+                LobbySnapshot(
+                    featuredTable: try await featured,
+                    tables: try await allTables
+                )
+            )
         } catch {
-            errorMessage = "请检查网络连接后重试。"
+            loadState = cached == nil
+                ? .failed(message: "请检查网络连接后重试。")
+                : .offline(cached: cached)
         }
-        isLoading = false
     }
+}
+
+private struct LobbySnapshot {
+    let featuredTable: PokerTableSummary?
+    let tables: [PokerTableSummary]
 }
