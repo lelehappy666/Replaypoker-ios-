@@ -37,6 +37,14 @@ final class LoadableStateTests: XCTestCase {
         XCTAssertTrue(state.allowsRetry)
     }
 
+    func testOfflineWithoutCacheUsesRecoveryWithoutCachedContentBanner() {
+        let state = LoadableState<[Int]>.offline(cached: nil)
+
+        XCTAssertNil(state.content)
+        XCTAssertFalse(state.showsOfflineBanner)
+        XCTAssertTrue(state.allowsRetry)
+    }
+
     func testFailedMapsToInlineRetryWithoutContent() {
         let state = LoadableState<[Int]>.failed(message: "网络不可用")
 

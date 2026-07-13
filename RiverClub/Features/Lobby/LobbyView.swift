@@ -37,7 +37,7 @@ struct LobbyView: View {
                         && (category != .recommended || snapshot.featuredTable == nil)
                 },
                 emptyTitle: "没有符合条件的牌桌",
-                emptyDescription: "清除筛选后再看看。",
+                emptyDescription: "当前没有可加入的牌桌。",
                 onRetry: { Task { await loadLobby() } },
                 onClearFilters: { category = .recommended }
             ) { _ in

@@ -19,7 +19,7 @@ enum LoadableState<Value> {
     }
 
     var showsOfflineBanner: Bool {
-        if case .offline = self { true } else { false }
+        if case let .offline(cached) = self { cached != nil } else { false }
     }
 
     var allowsRetry: Bool {
@@ -139,6 +139,7 @@ private struct LoadableSkeleton: View {
                     .accessibilityHidden(true)
             }
         }
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("正在加载")
     }
 }
