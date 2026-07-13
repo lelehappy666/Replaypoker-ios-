@@ -9,7 +9,9 @@ final class CoreFlowUITests: XCTestCase {
         app.launchArguments = ["-uiTesting"]
         app.launch()
 
-        app.buttons["login.guest"].tap()
+        let guestLogin = app.buttons["login.guest"]
+        XCTAssertTrue(guestLogin.waitForExistence(timeout: 5))
+        guestLogin.tap()
         XCTAssertTrue(app.buttons["lobby.allTables"].waitForExistence(timeout: 5))
         app.buttons["lobby.allTables"].tap()
 

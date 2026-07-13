@@ -10,10 +10,37 @@ final class LandscapeLayoutUITests: XCTestCase {
         app.launchArguments = ["-uiTesting"]
         app.launch()
 
+        let guestLogin = app.buttons["login.guest"]
+        XCTAssertTrue(guestLogin.waitForExistence(timeout: 5))
         assertNoCurrencySymbols(in: app)
-        app.buttons["login.guest"].tap()
+        guestLogin.tap()
         XCTAssertTrue(app.buttons["lobby.allTables"].waitForExistence(timeout: 5))
         assertNoCurrencySymbols(in: app)
+
+        let tournamentsNavigation = app.buttons["sidebar.tournaments"]
+        XCTAssertTrue(tournamentsNavigation.exists)
+        tournamentsNavigation.tap()
+        for state in ["upcoming", "registered", "active", "finished"] {
+            let tab = app.buttons["tournaments.tab.\(state)"]
+            XCTAssertTrue(tab.waitForExistence(timeout: 5))
+            tab.tap()
+            assertNoCurrencySymbols(in: app)
+        }
+
+        let profileNavigation = app.buttons["sidebar.profile"]
+        XCTAssertTrue(profileNavigation.exists)
+        profileNavigation.tap()
+        XCTAssertTrue(app.staticTexts["profile.nickname"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.otherElements["profile.settings"].exists)
+        for setting in ["牌局记录", "成就徽章", "账户与安全", "声音与震动"] {
+            XCTAssertTrue(app.buttons[setting].exists)
+        }
+        assertNoCurrencySymbols(in: app)
+
+        let lobbyNavigation = app.buttons["sidebar.lobby"]
+        XCTAssertTrue(lobbyNavigation.exists)
+        lobbyNavigation.tap()
+        XCTAssertTrue(app.buttons["lobby.allTables"].waitForExistence(timeout: 5))
         app.buttons["lobby.allTables"].tap()
 
         let firstTable = app.buttons[firstTableIdentifier]
@@ -26,22 +53,32 @@ final class LandscapeLayoutUITests: XCTestCase {
 
         let window = app.windows.element(boundBy: 0)
         XCTAssertTrue(window.waitForExistence(timeout: 5))
-        XCTAssertGreaterThan(window.frame.width, window.frame.height)
+        let windowFrame = window.frame
+        XCTAssertFalse(windowFrame.isEmpty)
+        XCTAssertGreaterThan(windowFrame.width, windowFrame.height)
 
         let localSeat = app.otherElements["table.seat.8"]
         XCTAssertTrue(localSeat.waitForExistence(timeout: 5))
         for index in 0..<9 {
             let seat = app.otherElements["table.seat.\(index)"]
             XCTAssertTrue(seat.exists)
-            XCTAssertTrue(seat.isHittable || !seat.frame.isEmpty)
+            let seatFrame = seat.frame
+            XCTAssertFalse(seatFrame.isEmpty)
+            XCTAssertGreaterThan(seatFrame.width, 0)
+            XCTAssertGreaterThan(seatFrame.height, 0)
+            XCTAssertTrue(windowFrame.contains(seatFrame), "第 \(index) 个座位超出窗口")
             if index != 8 {
-                XCTAssertFalse(seat.frame.intersects(localSeat.frame))
+                XCTAssertFalse(seatFrame.intersects(localSeat.frame))
             }
         }
 
         let localAvatar = app.otherElements["table.localAvatar"]
-        XCTAssertTrue(localAvatar.exists)
-        XCTAssertLessThanOrEqual(abs(localAvatar.frame.width - localAvatar.frame.height), 1)
+        XCTAssertTrue(localAvatar.waitForExistence(timeout: 5))
+        let avatarFrame = localAvatar.frame
+        XCTAssertFalse(avatarFrame.isEmpty)
+        XCTAssertGreaterThan(avatarFrame.width, 0)
+        XCTAssertGreaterThan(avatarFrame.height, 0)
+        XCTAssertLessThanOrEqual(abs(avatarFrame.width - avatarFrame.height), 1)
         assertNoCurrencySymbols(in: app)
     }
 
