@@ -51,6 +51,10 @@ struct PokerSeatView: View {
                 Circle()
                     .stroke(isActing ? RCTheme.gold : RCTheme.secondaryText.opacity(0.55), lineWidth: isActing ? 3 : 2)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier(
+                seat.isLocalPlayer ? "table.localAvatar" : "table.avatar.\(seat.position)"
+            )
 
             ViewThatFits(in: .horizontal) {
                 Text(seat.name)
@@ -74,7 +78,7 @@ struct PokerSeatView: View {
         }
         .foregroundStyle(RCTheme.primaryText)
         .frame(width: PokerTableLayout.seatSize.width, height: PokerTableLayout.seatSize.height, alignment: .top)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("\(seat.isLocalPlayer ? "本人" : "玩家")\(seat.name)，娱乐筹码 \(seat.chips)\(isActing ? "，行动中，剩余 18 秒" : seat.status.map { "，\($0)" } ?? "")")
     }
 }
