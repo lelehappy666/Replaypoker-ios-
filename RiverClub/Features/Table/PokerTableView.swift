@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct PokerTableView: View {
+    let table: PokerTableSummary
     let seats: [PokerSeat]
     @Bindable var session: AppSession
     let onExit: () -> Void
@@ -37,6 +38,11 @@ struct PokerTableView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
 
                 BetControlBar(callAmount: 800, onFold: {}, onCall: {}, onRaise: { _ in })
+                    .frame(
+                        width: PokerTableLayout.betControlSize.width,
+                        height: PokerTableLayout.betControlSize.height,
+                        alignment: .bottomTrailing
+                    )
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
             }
         }
@@ -99,7 +105,7 @@ struct PokerTableView: View {
             .buttonStyle(.bordered)
             .tint(RCTheme.gold)
 
-            Text("翡翠湾 · 100 / 200")
+            Text(PokerTablePresentation.title(for: table))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(RCTheme.primaryText)
 

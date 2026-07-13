@@ -1,14 +1,32 @@
 import SwiftUI
 
 enum PokerTableLayout {
+    static let seatSize = CGSize(width: 104, height: 92)
+    static let betControlSize = CGSize(width: 330, height: 164)
+
     static let normalizedCenters: [CGPoint] = [
-        .init(x: 0.25, y: 0.16), .init(x: 0.50, y: 0.10), .init(x: 0.75, y: 0.16),
-        .init(x: 0.88, y: 0.34), .init(x: 0.86, y: 0.62), .init(x: 0.18, y: 0.68),
-        .init(x: 0.12, y: 0.48), .init(x: 0.14, y: 0.27), .init(x: 0.50, y: 0.86),
+        .init(x: 0.25, y: 0.16), .init(x: 0.50, y: 0.12), .init(x: 0.75, y: 0.16),
+        .init(x: 0.88, y: 0.28), .init(x: 0.88, y: 0.51), .init(x: 0.18, y: 0.72),
+        .init(x: 0.12, y: 0.50), .init(x: 0.14, y: 0.27), .init(x: 0.50, y: 0.86),
     ]
 
     static func positions(for _: CGSize) -> [CGPoint] {
         normalizedCenters
+    }
+
+    static func betControlRegion(for canvas: CGSize) -> CGRect {
+        CGRect(
+            x: canvas.width - betControlSize.width,
+            y: canvas.height - betControlSize.height,
+            width: betControlSize.width,
+            height: betControlSize.height
+        )
+    }
+}
+
+enum PokerTablePresentation {
+    static func title(for table: PokerTableSummary) -> String {
+        "\(table.name) · \(table.smallBlind.formatted()) / \(table.bigBlind.formatted())"
     }
 }
 
@@ -55,7 +73,7 @@ struct PokerSeatView: View {
             }
         }
         .foregroundStyle(RCTheme.primaryText)
-        .frame(width: 104)
+        .frame(width: PokerTableLayout.seatSize.width, height: PokerTableLayout.seatSize.height, alignment: .top)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(seat.isLocalPlayer ? "本人" : "玩家")\(seat.name)，娱乐筹码 \(seat.chips)\(isActing ? "，行动中，剩余 18 秒" : seat.status.map { "，\($0)" } ?? "")")
     }

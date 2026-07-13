@@ -7,6 +7,18 @@ struct PokerTableSummary: Identifiable, Equatable, Sendable {
     var hasOpenSeat: Bool { players < capacity }
 }
 
+struct TableSessionState: Equatable, Sendable {
+    private(set) var selectedTable: PokerTableSummary?
+
+    mutating func enter(_ table: PokerTableSummary) {
+        selectedTable = table
+    }
+
+    mutating func leave() {
+        selectedTable = nil
+    }
+}
+
 enum LobbyCategory: String, CaseIterable, Identifiable, Sendable {
     case recommended = "为你推荐"
     case regular = "常规牌桌"

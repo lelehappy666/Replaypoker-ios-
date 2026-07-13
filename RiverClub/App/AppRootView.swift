@@ -3,7 +3,7 @@ import SwiftUI
 struct AppRootView: View {
     @Bindable var session: AppSession
     private let repository: any PokerRepository = MockPokerRepository()
-    @State private var selectedTable: PokerTableSummary?
+    @State private var pendingBuyInTable: PokerTableSummary?
     @State private var tableSeats: [PokerSeat] = []
     @State private var tableReturnRoute: AppRoute = .lobby
 
@@ -18,13 +18,16 @@ struct AppRootView: View {
                             onGuestLogin: session.continueAsGuest
                         )
                     case .table:
-                        PokerTableView(
-                            seats: tableSeats,
-                            session: session,
-                            onExit: { session.open(tableReturnRoute) }
-                        )
-                        .task {
-                            tableSeats = (try? await repository.seats()) ?? []
+                        if let table = session.selectedTable {
+                            PokerTableView(
+                                table: table,
+                                seats: tableSeats,
+                                session: session,
+                                onExit: { session.leaveTable(returningTo: tableReturnRoute) }
+                            )
+                            .task {
+                                tableSeats = (try? await repository.seats()) ?? []
+                            }
                         }
                     case .lobby, .tournaments, .tables, .profile:
                         HStack(spacing: 0) {
@@ -35,15 +38,15 @@ struct AppRootView: View {
                 }
             }
 
-            if let selectedTable {
-                buyInOverlay(for: selectedTable)
+            if let pendingBuyInTable {
+                buyInOverlay(for: pendingBuyInTable)
                     .transition(.opacity)
                     .zIndex(1)
             }
         }
         .background(RCTheme.background)
         .preferredColorScheme(.dark)
-        .animation(.easeOut(duration: 0.16), value: selectedTable)
+        .animation(.easeOut(duration: 0.16), value: pendingBuyInTable)
     }
 
     @ViewBuilder
@@ -70,17 +73,17 @@ struct AppRootView: View {
             Color.black.opacity(0.58)
                 .ignoresSafeArea()
                 .accessibilityHidden(true)
-                .onTapGesture { selectedTable = nil }
+                .onTapGesture { pendingBuyInTable = nil }
 
             BuyInSheet(
                 table: table,
                 balance: session.chipBalance,
                 onConfirm: { amount, _ in
                     session.chipBalance -= amount
-                    selectedTable = nil
-                    session.open(.table)
+                    pendingBuyInTable = nil
+                    session.enterTable(table)
                 },
-                onCancel: { selectedTable = nil }
+                onCancel: { pendingBuyInTable = nil }
             )
             .frame(maxWidth: 620, maxHeight: 360)
             .padding(.horizontal, 36)
@@ -94,7 +97,7 @@ struct AppRootView: View {
     private func openBuyInIfJoinable(_ table: PokerTableSummary) {
         guard JoinDisposition(table: table) == .buyIn else { return }
         tableReturnRoute = session.route
-        selectedTable = table
+        pendingBuyInTable = table
     }
 
     private func featurePlaceholder(for route: AppRoute) -> some View {
