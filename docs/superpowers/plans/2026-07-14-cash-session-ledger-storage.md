@@ -633,6 +633,8 @@ package struct CashGameSession: Codable, Equatable, Sendable {
 }
 ```
 
+同时实现 package `addChips(_:to:)`：仅 `.readyForHand` 可调用，使用受检加法；真人补充后的总桌上筹码必须位于 40–100BB。进行中和待提交阶段拒绝补充。`startHand` 要求本手九个座位筹码均大于零；机器人座位归零后的自动补充留给后续机器人协调计划，本任务不凭空创建机器人筹码。
+
 每次动作从 checkpoint 恢复临时 `HoldemGame`，成功后写回新 checkpoint；失败不替换旧 checkpoint。若观察进入 `.complete`，立即生成 `PendingCashHand` 并把 phase 改为 `.settlementPending`。提交后使用 `record.finalStacks` 更新 stacks，庄位按 SeatID 循环到下一座位。
 
 - [ ] **步骤 4：运行会话和完整包测试**
@@ -805,6 +807,18 @@ git commit -m "feat: 实现版本化原子文件存档"
     #expect(store.accountBalance == try Chips(130_750))
     #expect(store.cashSession == nil)
 }
+
+@Test func humanRebuyAtomicallyDebitsAccountAndRaisesTableStack() throws {
+    let store = try Fixtures.storeReadyForRebuy(humanStack: 0)
+    try store.rebuyHuman(
+        amount: try Chips(4_000), businessID: try BusinessID("rebuy-jade-1")
+    )
+    #expect(store.accountBalance == try Chips(124_500))
+    #expect(
+        store.cashSession?.seats.first(where: { $0.id == try SeatID(0) })?.stack
+        == try Chips(4_000)
+    )
+}
 ```
 
 另测：进行中或待提交时离桌失败；相同业务编号重复买入、离桌、赠送和救济幂等；保存失败后内存状态与最后提交文件一致。
@@ -910,11 +924,12 @@ public func apply(_ action: PlayerAction, by seat: SeatID) throws -> GameTransit
 public func advanceIfRoundComplete() throws -> GameTransition
 public func commitPendingHand(transactionID: BusinessID) throws -> StoredHandRecord
 public func leave(businessID: BusinessID) throws
+public func rebuyHuman(amount: Chips, businessID: BusinessID) throws -> CashSessionView
 public func claimDailyGift(businessID: BusinessID) throws -> LedgerEntry
 public func claimRelief(businessID: BusinessID) throws -> LedgerEntry
 ```
 
-公开工厂 `LocalPokerStore.open(directory:clock:)` 创建文件仓库。`sitDown` 在同一 candidate 中执行账本买入与会话创建。`startHand`、`apply`、`advanceIfRoundComplete` 每次成功后保存 checkpoint。`commitPendingHand` 用稳定 handID 去重，同时写记录、更新统计并调用会话 `markHandCommitted`。`leave` 在同一 candidate 中退回真人 stack 并清除活跃会话。
+公开工厂 `LocalPokerStore.open(directory:clock:)` 创建文件仓库。`sitDown` 在同一 candidate 中执行账本买入与会话创建。`rebuyHuman` 在同一 candidate 中执行账本扣款和真人桌上筹码补充，并校验补充后为 40–100BB。`startHand`、`apply`、`advanceIfRoundComplete` 每次成功后保存 checkpoint。`commitPendingHand` 用稳定 handID 去重，同时写记录、更新统计并调用会话 `markHandCommitted`。`leave` 在同一 candidate 中退回真人 stack 并清除活跃会话。
 
 统计计算使用 `CompletedHandRecord`：投入为真人 `settledCommitments`，净变化为 `chipDeltas`，真人获得奖励时计为获胜，正净变化更新最大单手赢取；所有加法使用受检算术。
 
