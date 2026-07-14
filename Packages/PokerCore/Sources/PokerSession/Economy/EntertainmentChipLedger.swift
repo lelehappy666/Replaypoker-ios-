@@ -198,6 +198,7 @@ public struct EntertainmentChipLedger: Codable, Equatable, Sendable {
                 }
             case let .bankruptcyRelief(day):
                 guard entry.delta > 0,
+                      entry.balanceBefore < SessionEconomy.reliefThreshold,
                       entry.balanceAfter == SessionEconomy.reliefTarget,
                       reliefDays.insert(day).inserted
                 else {

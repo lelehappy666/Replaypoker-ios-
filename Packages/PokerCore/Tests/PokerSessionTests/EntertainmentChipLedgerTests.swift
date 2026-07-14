@@ -382,6 +382,21 @@ struct CorruptLedgerFixture: CustomTestStringConvertible, Sendable {
                 )
             ),
             Self(
+                name: "救济前余额未低于领取阈值",
+                payload: LedgerPayload(
+                    balance: try! Chips(20_000),
+                    entries: [
+                        entry(
+                            id: firstID,
+                            reason: .bankruptcyRelief(day: day),
+                            before: 19_000,
+                            delta: 1_000,
+                            after: 20_000
+                        ),
+                    ]
+                )
+            ),
+            Self(
                 name: "救济同日重复",
                 payload: LedgerPayload(
                     balance: try! Chips(20_000),
