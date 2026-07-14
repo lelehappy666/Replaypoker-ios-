@@ -158,6 +158,29 @@ private enum CompletedHandRecordValidator {
         guard finalTotal == record.initialTotalChips, deltaTotal == 0 else {
             throw invalid("record chip conservation mismatch")
         }
+
+        let replayed = try HoldemEngine.replay(record)
+        let replayedHoleCards = Dictionary(uniqueKeysWithValues: replayed.dealtInSeats.map {
+            ($0.id, $0.holeCards)
+        })
+        let replayedFinalStacks = Dictionary(uniqueKeysWithValues: replayed.seats.map {
+            ($0.id, $0.stack)
+        })
+        guard replayed.config == record.config,
+              replayedHoleCards == record.holeCardsBySeat,
+              replayed.communityCards == record.communityCards,
+              replayed.actionHistory == record.actions,
+              replayed.settledPots == record.pots,
+              replayed.awards == record.awards,
+              replayed.uncalledReturns == record.uncalledReturns,
+              replayed.startingStacks == record.startingStacks,
+              replayed.settledCommitments == record.settledCommitments,
+              replayed.settledContributions == record.settledContributions,
+              replayed.initialTotalChips == record.initialTotalChips,
+              replayedFinalStacks == record.finalStacks
+        else {
+            throw invalid("record replay mismatch")
+        }
     }
 
     private static func checkedSum(_ values: [Int]) throws -> Int {

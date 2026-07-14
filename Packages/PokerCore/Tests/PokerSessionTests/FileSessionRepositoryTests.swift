@@ -114,7 +114,11 @@ func atomicWriteFailurePreservesCommittedFileAndCleansTemporaryFile(
 private func aggregateDecodingRejectsStructuralAndStatisticalCorruption(
     corruption: AggregateCorruption
 ) throws {
-    let validState = try persistedStateWithRecord()
+    let validState = try persistedStateWithRecord(
+        record: corruption.requiresRaisedAction
+            ? completedRecordWithRaise()
+            : completedRecord()
+    )
     let encoder = JSONEncoder()
     let data = try encoder.encode(validState)
     var object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
@@ -200,6 +204,18 @@ private func aggregateDecodingRejectsStructuralAndStatisticalCorruption(
     )
 }
 
+@Test func aggregateAllowsFullRunoutAndEarlyFoldActionHistories() throws {
+    for record in [try completedRecord(), try completedRecordWithFullRunout()] {
+        let state = try persistedStateWithRecord(record: record)
+        #expect(
+            try JSONDecoder().decode(
+                PersistedAppState.self,
+                from: JSONEncoder().encode(state)
+            ) == state
+        )
+    }
+}
+
 private enum AggregateCorruption: String, CaseIterable, Sendable, CustomTestStringConvertible {
     case recordKeyDoesNotMatchID
     case duplicateRecordOrder
@@ -215,8 +231,16 @@ private enum AggregateCorruption: String, CaseIterable, Sendable, CustomTestStri
     case recordChipDeltaMismatch
     case recordFinalStackKeysMismatch
     case recordContainsDuplicateCard
+    case recordActionsAreEmpty
+    case recordFoldChangedToCheck
+    case recordActionStreetChanged
+    case recordRaiseAmountChanged
 
     var testDescription: String { rawValue }
+
+    var requiresRaisedAction: Bool {
+        self == .recordRaiseAmountChanged
+    }
 
     func apply(to object: inout [String: Any]) throws {
         switch self {
@@ -269,7 +293,59 @@ private enum AggregateCorruption: String, CaseIterable, Sendable, CustomTestStri
                 cardsBySeat[3] = secondCards
                 record["holeCardsBySeat"] = cardsBySeat
             }
+        case .recordActionsAreEmpty:
+            try mutateCompletedRecord(in: &object) { record in
+                record["actions"] = []
+            }
+        case .recordFoldChangedToCheck:
+            try mutateFirstAction(in: &object) { action in
+                action["action"] = try JSONSerialization.jsonObject(
+                    with: JSONEncoder().encode(PlayerAction.check)
+                )
+            }
+        case .recordActionStreetChanged:
+            try mutateFirstAction(in: &object) { action in
+                action["street"] = Street.flop.rawValue
+            }
+        case .recordRaiseAmountChanged:
+            try mutateFirstAction(in: &object) { action in
+                action["action"] = replacingInteger(
+                    in: try #require(action["action"]),
+                    from: 300,
+                    to: 301
+                )
+            }
         }
+    }
+
+    private func mutateFirstAction(
+        in object: inout [String: Any],
+        mutation: (inout [String: Any]) throws -> Void
+    ) throws {
+        try mutateCompletedRecord(in: &object) { record in
+            var actions = try #require(record["actions"] as? [[String: Any]])
+            try mutation(&actions[0])
+            record["actions"] = actions
+        }
+    }
+
+    private func replacingInteger(
+        in value: Any,
+        from oldValue: Int,
+        to newValue: Int
+    ) -> Any {
+        if let integer = value as? Int, integer == oldValue {
+            return newValue
+        }
+        if let array = value as? [Any] {
+            return array.map { replacingInteger(in: $0, from: oldValue, to: newValue) }
+        }
+        if let dictionary = value as? [String: Any] {
+            return dictionary.mapValues {
+                replacingInteger(in: $0, from: oldValue, to: newValue)
+            }
+        }
+        return value
     }
 
     private func mutateCompletedRecord(
@@ -373,11 +449,27 @@ private func persistedStateWithLedgerAndSession() throws -> PersistedAppState {
     )
 }
 
-private func persistedStateWithRecord() throws -> PersistedAppState {
+private func persistedStateWithRecord(
+    record: CompletedHandRecord? = nil
+) throws -> PersistedAppState {
     let stored = try storedRecord(id: "hand-1", sessionID: "session-history", handNumber: 1)
     let id = stored.id
+    let storedRecord = if let record {
+        StoredHandRecord(
+            id: stored.id,
+            sessionID: stored.sessionID,
+            table: stored.table,
+            startedAt: stored.startedAt,
+            endedAt: stored.endedAt,
+            localDay: stored.localDay,
+            handNumber: stored.handNumber,
+            record: record
+        )
+    } else {
+        stored
+    }
     return PersistedAppState(
-        records: [id: stored],
+        records: [id: storedRecord],
         recordOrder: [id],
         statistics: PlayerStatistics(
             completedHands: 1,
@@ -455,6 +547,42 @@ private func completedRecord() throws -> CompletedHandRecord {
     )
     let actor = try #require(game.spectatorObservation().currentActor)
     try game.apply(.fold, by: actor)
+    try game.advanceIfRoundComplete()
+    return try game.completedRecord()
+}
+
+private func completedRecordWithRaise() throws -> CompletedHandRecord {
+    let seat0 = try SeatID(0)
+    let seat1 = try SeatID(1)
+    let game = try HoldemGame.start(
+        config: try HandConfig(
+            smallBlind: try Chips(50),
+            bigBlind: try Chips(100),
+            dealer: seat0
+        ),
+        stacks: [seat0: try Chips(4_000), seat1: try Chips(4_000)],
+        seed: 17
+    )
+    try game.apply(.raiseTo(try Chips(300)), by: seat0)
+    try game.apply(.fold, by: seat1)
+    try game.advanceIfRoundComplete()
+    return try game.completedRecord()
+}
+
+private func completedRecordWithFullRunout() throws -> CompletedHandRecord {
+    let seat0 = try SeatID(0)
+    let seat1 = try SeatID(1)
+    let game = try HoldemGame.start(
+        config: try HandConfig(
+            smallBlind: try Chips(50),
+            bigBlind: try Chips(100),
+            dealer: seat0
+        ),
+        stacks: [seat0: try Chips(4_000), seat1: try Chips(4_000)],
+        seed: 23
+    )
+    try game.apply(.raiseTo(try Chips(4_000)), by: seat0)
+    try game.apply(.call, by: seat1)
     try game.advanceIfRoundComplete()
     return try game.completedRecord()
 }

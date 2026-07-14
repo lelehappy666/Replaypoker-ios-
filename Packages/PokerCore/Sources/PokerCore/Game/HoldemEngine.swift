@@ -4,6 +4,69 @@ enum HoldemEngine {
         stacks: [SeatID: Chips],
         seed: UInt64
     ) throws -> EngineResult {
+        try start(
+            config: config,
+            stacks: stacks,
+            deck: .shuffled(seed: seed),
+            initialEvents: [.handStarted(seed: seed)]
+        )
+    }
+
+    static func replay(_ record: CompletedHandRecord) throws -> HoldemState {
+        let orderedIDs = record.startingStacks.keys.sorted()
+        let dealingOrder = circularOrder(after: record.config.dealer, among: orderedIDs)
+        var dealtCards: [Card] = []
+        for cardIndex in 0..<2 {
+            for id in dealingOrder {
+                guard let cards = record.holeCardsBySeat[id], cards.count == 2 else {
+                    throw PokerRuleError.invalidState("record hole cards mismatch")
+                }
+                dealtCards.append(cards[cardIndex])
+            }
+        }
+        let knownCards = dealtCards + record.communityCards
+        guard Set(knownCards).count == knownCards.count else {
+            throw PokerRuleError.invalidState("record duplicate cards")
+        }
+        let knownCardSet = Set(knownCards)
+        let replayDeck = Deck(
+            cards: knownCards + Card.fullDeck.filter { !knownCardSet.contains($0) },
+            nextIndex: 0
+        )
+        var state = try start(
+            config: record.config,
+            stacks: record.startingStacks,
+            deck: replayDeck,
+            initialEvents: []
+        ).state
+
+        for recordedAction in record.actions {
+            guard state.street == recordedAction.street else {
+                throw PokerRuleError.invalidState("record action street mismatch")
+            }
+            state = try applying(
+                recordedAction.action,
+                by: recordedAction.seat,
+                to: state
+            ).state
+        }
+
+        while state.street != .complete {
+            let advanced = try advanceIfRoundComplete(state).state
+            guard advanced != state else {
+                throw PokerRuleError.invalidState("record action history incomplete")
+            }
+            state = advanced
+        }
+        return state
+    }
+
+    private static func start(
+        config: HandConfig,
+        stacks: [SeatID: Chips],
+        deck: Deck,
+        initialEvents: [GameEvent]
+    ) throws -> EngineResult {
         guard stacks.count >= 2 else {
             throw PokerRuleError.insufficientPlayers
         }
@@ -41,7 +104,7 @@ enum HoldemEngine {
         let initialTotalChips = try checkedSum(seats.map { $0.stack.rawValue })
         var state = HoldemState(
             config: config,
-            deck: Deck.shuffled(seed: seed),
+            deck: deck,
             seats: seats,
             dealer: config.dealer,
             smallBlindSeat: smallBlindSeat,
@@ -64,7 +127,7 @@ enum HoldemEngine {
             unallocatedPot: Chips(rawValue: 0)!,
             initialTotalChips: initialTotalChips
         )
-        var events: [GameEvent] = [.handStarted(seed: seed)]
+        var events = initialEvents
 
         let postedSmallBlind = try postBlind(config.smallBlind, by: smallBlindSeat, to: &state)
         events.append(.blindPosted(seat: smallBlindSeat, amount: postedSmallBlind))
