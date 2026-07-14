@@ -14,5 +14,6 @@ let package = Package(
     targets: [
         .target(name: "PokerCore"),
         .testTarget(name: "PokerCoreTests", dependencies: ["PokerCore"]),
+        .testTarget(name: "PokerCorePublicAPITests", dependencies: ["PokerCore"]),
     ]
 )

@@ -63,7 +63,7 @@ public struct Pot: Codable, Equatable, Sendable {
     public let eligible: Set<SeatID>
 }
 
-public struct HoldemState: Codable, Equatable, Sendable {
+struct HoldemState: Codable, Equatable, Sendable {
     public var config: HandConfig
     public var deck: Deck
     public var seats: [SeatState]

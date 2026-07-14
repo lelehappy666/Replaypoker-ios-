@@ -10,7 +10,7 @@ public struct PublicSeat: Codable, Equatable, Sendable {
     public let isAllIn: Bool
     public let isSittingOut: Bool
 
-    public init(_ seat: SeatState) {
+    init(_ seat: SeatState) {
         id = seat.id
         stack = seat.stack
         committedThisStreet = seat.committedThisStreet
@@ -35,7 +35,7 @@ public struct PlayerObservation: Codable, Equatable, Sendable {
     public let legalActions: LegalActionSet?
     public let actions: [RecordedAction]
 
-    public init(state: HoldemState, viewer: SeatID) throws {
+    init(state: HoldemState, viewer: SeatID) throws {
         guard let seat = state.seats.first(where: { $0.id == viewer }) else {
             throw PokerRuleError.invalidSeat
         }
@@ -63,7 +63,7 @@ public struct SpectatorObservation: Codable, Equatable, Sendable {
     public let currentBet: Chips
     public let actions: [RecordedAction]
 
-    public init(state: HoldemState) {
+    init(state: HoldemState) {
         communityCards = state.communityCards
         publicSeats = state.seats.map(PublicSeat.init)
         currentActor = state.currentActor
@@ -88,10 +88,43 @@ public struct CompletedHandRecord: Codable, Equatable, Sendable {
     public let settledCommitments: [SeatID: Chips]
     public let settledContributions: [SeatID: Chips]
     public let initialTotalChips: Int
+    public let handRanksBySeat: [SeatID: HandRank]
+    public let finalStacks: [SeatID: Chips]
+    public let chipDeltas: [SeatID: Int]
 
-    public init(state: HoldemState) throws {
+    init(state: HoldemState) throws {
         guard state.street == .complete else {
             throw PokerRuleError.illegalAction("hand not complete")
+        }
+        try StateValidator.validate(state)
+
+        let finalStacks = Dictionary(uniqueKeysWithValues: state.seats.map {
+            ($0.id, $0.stack)
+        })
+        guard finalStacks.keys == state.startingStacks.keys else {
+            throw PokerRuleError.invalidState("record stack mismatch")
+        }
+        var chipDeltas: [SeatID: Int] = [:]
+        for (seat, startingStack) in state.startingStacks {
+            guard let finalStack = finalStacks[seat] else {
+                throw PokerRuleError.invalidState("record stack mismatch")
+            }
+            let (delta, overflow) = finalStack.rawValue.subtractingReportingOverflow(
+                startingStack.rawValue
+            )
+            guard !overflow else {
+                throw PokerRuleError.invalidState("chip arithmetic overflow")
+            }
+            chipDeltas[seat] = delta
+        }
+
+        let handRanksBySeat: [SeatID: HandRank]
+        if state.communityCards.count == 5 {
+            handRanksBySeat = try Dictionary(uniqueKeysWithValues: state.dealtInSeats.map {
+                ($0.id, try HandEvaluator.best(of: $0.holeCards + state.communityCards))
+            })
+        } else {
+            handRanksBySeat = [:]
         }
 
         config = state.config
@@ -107,5 +140,8 @@ public struct CompletedHandRecord: Codable, Equatable, Sendable {
         settledCommitments = state.settledCommitments
         settledContributions = state.settledContributions
         initialTotalChips = state.initialTotalChips
+        self.handRanksBySeat = handRanksBySeat
+        self.finalStacks = finalStacks
+        self.chipDeltas = chipDeltas
     }
 }

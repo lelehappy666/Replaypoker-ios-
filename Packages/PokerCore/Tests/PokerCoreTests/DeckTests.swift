@@ -2,6 +2,81 @@ import Foundation
 import Testing
 @testable import PokerCore
 
+@Test(arguments: [-1, 53])
+func decodingRejectsOutOfRangeDeckIndex(_ nextIndex: Int) throws {
+    let deck = Deck.shuffled(seed: 99)
+    let encoded = try JSONEncoder().encode(deck)
+    var object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    object["nextIndex"] = nextIndex
+    let damaged = try JSONSerialization.data(withJSONObject: object)
+
+    #expect(throws: DecodingError.self) {
+        try JSONDecoder().decode(Deck.self, from: damaged)
+    }
+}
+
+@Test func decodingRejectsDeckWithDuplicateCard() throws {
+    let deck = Deck.shuffled(seed: 100)
+    let encoded = try JSONEncoder().encode(deck)
+    var object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    var cards = try #require(object["cards"] as? [[String: Any]])
+    cards[1] = cards[0]
+    object["cards"] = cards
+    let damaged = try JSONSerialization.data(withJSONObject: object)
+
+    #expect(throws: DecodingError.self) {
+        try JSONDecoder().decode(Deck.self, from: damaged)
+    }
+}
+
+@Test(arguments: [0, 51])
+func decodingRejectsDeckWithoutExactlyFiftyTwoCards(_ keptCount: Int) throws {
+    let encoded = try JSONEncoder().encode(Deck.shuffled(seed: 101))
+    var object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    let cards = try #require(object["cards"] as? [[String: Any]])
+    object["cards"] = Array(cards.prefix(keptCount))
+    object["nextIndex"] = 0
+    let damaged = try JSONSerialization.data(withJSONObject: object)
+
+    #expect(throws: DecodingError.self) {
+        try JSONDecoder().decode(Deck.self, from: damaged)
+    }
+}
+
+@Test func decodingRejectsDeckWithFiftyThreeCards() throws {
+    let encoded = try JSONEncoder().encode(Deck.shuffled(seed: 102))
+    var object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    var cards = try #require(object["cards"] as? [[String: Any]])
+    cards.append(cards[0])
+    object["cards"] = cards
+    let damaged = try JSONSerialization.data(withJSONObject: object)
+
+    #expect(throws: DecodingError.self) {
+        try JSONDecoder().decode(Deck.self, from: damaged)
+    }
+}
+
+@Test func decodingRejectsDeckWithIllegalCardValue() throws {
+    let encoded = try JSONEncoder().encode(Deck.shuffled(seed: 103))
+    var object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    var cards = try #require(object["cards"] as? [[String: Any]])
+    cards[0]["suit"] = 99
+    object["cards"] = cards
+    let damaged = try JSONSerialization.data(withJSONObject: object)
+
+    #expect(throws: DecodingError.self) {
+        try JSONDecoder().decode(Deck.self, from: damaged)
+    }
+}
+
+@Test func drawDefensivelyRejectsNegativeInternalPosition() throws {
+    var deck = Deck(cards: Card.fullDeck, nextIndex: -1)
+
+    #expect(throws: PokerRuleError.invalidState("invalid deck position")) {
+        try deck.draw()
+    }
+}
+
 @Test func equalSeedsProduceEqualDecks() throws {
     var first = Deck.shuffled(seed: 42)
     var second = Deck.shuffled(seed: 42)

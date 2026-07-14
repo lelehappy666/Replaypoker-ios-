@@ -94,6 +94,37 @@ import Testing
     #expect(record.settledCommitments == state.settledCommitments)
     #expect(record.settledContributions == state.settledContributions)
     #expect(record.initialTotalChips == state.initialTotalChips)
+    #expect(record.finalStacks == Dictionary(uniqueKeysWithValues: state.seats.map { ($0.id, $0.stack) }))
+    #expect(Set(record.chipDeltas.keys) == Set(state.startingStacks.keys))
+    #expect(Set(record.handRanksBySeat.keys) == Set(state.dealtInSeats.map(\.id)))
+}
+
+@Test func completedRecordRejectsForgedCompleteState() throws {
+    var state = try Fixtures.resolveThreeWayAllInWithTwoSidePots().state
+    let winner = try #require(state.awards.keys.first)
+    state.awards[winner] = try Chips(state.awards[winner]!.rawValue + 1)
+
+    #expect(throws: PokerRuleError.self) {
+        try CompletedHandRecord(state: state)
+    }
+}
+
+@Test func completedRecordFreezesRanksStacksAndSignedDeltas() throws {
+    let state = try Fixtures.resolveThreeWayAllInWithTwoSidePots().state
+    let record = try CompletedHandRecord(state: state)
+
+    for seat in state.dealtInSeats {
+        let expectedRank = try HandEvaluator.best(of: seat.holeCards + state.communityCards)
+        #expect(record.handRanksBySeat[seat.id] == expectedRank)
+        #expect(record.finalStacks[seat.id] == seat.stack)
+        #expect(record.chipDeltas[seat.id] == seat.stack.rawValue - state.startingStacks[seat.id]!.rawValue)
+    }
+}
+
+@Test func foldCompletionWithoutFullBoardHasNoSyntheticHandRanks() throws {
+    let state = try completedHandWithFoldedPlayers()
+
+    #expect(try CompletedHandRecord(state: state).handRanksBySeat.isEmpty)
 }
 
 @Test func publicSnapshotsAndCompletedRecordRoundTripThroughCodable() throws {

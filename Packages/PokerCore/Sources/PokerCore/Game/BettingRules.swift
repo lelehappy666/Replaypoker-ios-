@@ -1,4 +1,4 @@
-public enum BettingRules {
+enum BettingRules {
     public static func legalActions(
         for seat: SeatID,
         in state: HoldemState

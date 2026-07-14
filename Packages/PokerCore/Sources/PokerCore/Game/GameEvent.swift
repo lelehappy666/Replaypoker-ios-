@@ -1,4 +1,4 @@
-public struct EngineResult: Equatable, Sendable {
+struct EngineResult: Equatable, Sendable {
     public let state: HoldemState
     public let events: [GameEvent]
 
@@ -8,7 +8,7 @@ public struct EngineResult: Equatable, Sendable {
     }
 }
 
-public enum GameEvent: Equatable, Sendable {
+enum GameEvent: Equatable, Sendable {
     case handStarted(seed: UInt64)
     case blindPosted(seat: SeatID, amount: Chips)
     case holeCardsDealt(seat: SeatID)

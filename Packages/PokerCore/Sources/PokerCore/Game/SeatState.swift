@@ -1,4 +1,4 @@
-public struct SeatState: Codable, Equatable, Sendable {
+struct SeatState: Codable, Equatable, Sendable {
     public let id: SeatID
     public var stack: Chips
     public var committedThisStreet: Chips

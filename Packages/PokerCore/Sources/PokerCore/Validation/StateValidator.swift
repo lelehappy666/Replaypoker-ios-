@@ -1,4 +1,4 @@
-public enum StateValidator {
+enum StateValidator {
     public static func validate(_ state: HoldemState) throws {
         try BettingRules.validateStructuralState(state)
 

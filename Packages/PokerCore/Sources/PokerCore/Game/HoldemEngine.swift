@@ -1,4 +1,4 @@
-public enum HoldemEngine {
+enum HoldemEngine {
     public static func start(
         config: HandConfig,
         stacks: [SeatID: Chips],
