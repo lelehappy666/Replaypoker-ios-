@@ -198,6 +198,22 @@ import Testing
     }
 }
 
+@Test func cashSessionRejectsRealTwoSeatCheckpointInsideNineSeatSession() throws {
+    var session = try cashSession()
+    try session.startHand(id: try HandID("h-nine"), seed: 41, startedAt: .distantPast)
+
+    let twoSeatGame = try makeTwoSeatGame()
+    let checkpointData = try JSONEncoder().encode(twoSeatGame.makeCheckpoint())
+    let twoSeatCheckpoint = try JSONSerialization.jsonObject(with: checkpointData)
+    var victimJSON = try cashSessionJSONObject(session)
+    victimJSON["checkpoint"] = twoSeatCheckpoint
+    let corrupted = try JSONSerialization.data(withJSONObject: victimJSON)
+
+    #expect(throws: DecodingError.self) {
+        try JSONDecoder().decode(CashGameSession.self, from: corrupted)
+    }
+}
+
 @Test func cashSessionRejectsPendingSettlementFromAnotherSession() throws {
     var session = try cashSession()
     try session.startHand(id: try HandID("h-victim"), seed: 41, startedAt: .distantPast)
@@ -224,6 +240,25 @@ import Testing
     #expect(throws: DecodingError.self) {
         try JSONDecoder().decode(CashGameSession.self, from: corrupted)
     }
+}
+
+@Test func committingCashHandRejectsTamperedTwoSeatRecordWithoutMutation() throws {
+    var session = try cashSession()
+    try session.startHand(id: try HandID("h-nine"), seed: 41, startedAt: .distantPast)
+    try finishCashHandByFolding(session: &session)
+    let pending = try #require(session.pendingHand)
+
+    session.pendingHand = PendingCashHand(
+        id: pending.id,
+        startedAt: pending.startedAt,
+        record: try makeCompletedTwoSeatRecord()
+    )
+    let beforeCommit = session
+
+    #expect(throws: PokerSessionError.corruptSnapshot) {
+        try session.markHandCommitted(pending.id)
+    }
+    #expect(session == beforeCommit)
 }
 
 @Test func cashSessionAddChipsIsCheckedAndOnlyAllowedWhileReady() throws {
@@ -298,4 +333,26 @@ private func cashSessionJSONObject(
 ) throws -> [String: Any] {
     let data = try JSONEncoder().encode(session)
     return try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+}
+
+private func makeTwoSeatGame() throws -> HoldemGame {
+    let seat0 = try SeatID(0)
+    let seat1 = try SeatID(1)
+    return try HoldemGame.start(
+        config: HandConfig(
+            smallBlind: try Chips(50),
+            bigBlind: try Chips(100),
+            dealer: seat0
+        ),
+        stacks: [seat0: try Chips(4_000), seat1: try Chips(4_000)],
+        seed: 73
+    )
+}
+
+private func makeCompletedTwoSeatRecord() throws -> CompletedHandRecord {
+    let game = try makeTwoSeatGame()
+    let actor = try #require(game.spectatorObservation().currentActor)
+    try game.apply(.fold, by: actor)
+    try game.advanceIfRoundComplete()
+    return try game.completedRecord()
 }

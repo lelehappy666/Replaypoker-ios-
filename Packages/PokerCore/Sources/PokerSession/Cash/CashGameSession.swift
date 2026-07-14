@@ -260,9 +260,10 @@ package struct CashGameSession: Codable, Equatable, Sendable {
         guard phase == .settlementPending else {
             throw PokerSessionError.handNotComplete
         }
-        guard let pendingHand, pendingHand.id == id else {
+        guard pendingHand?.id == id else {
             throw PokerSessionError.handNotComplete
         }
+        let pendingHand = try validatedPendingSettlement()
 
         let nextDealer = try SeatID((config.dealer.rawValue + 1) % 9)
         let nextConfig = try HandConfig(
@@ -405,39 +406,66 @@ package struct CashGameSession: Codable, Equatable, Sendable {
             guard pendingHand == nil,
                   activeHandID != nil,
                   activeHandStartedAt != nil,
-                  let checkpoint,
-                  checkpoint.config == config,
-                  checkpoint.startingStacks == stacks,
-                  checkpoint.seatIDs == Set(stacks.keys),
-                  checkpoint.seatIDs.count == 9
+                  checkpoint != nil
             else {
                 throw PokerSessionError.corruptSnapshot
             }
-            let game = try HoldemGame.restore(from: checkpoint)
-            guard game.spectatorObservation().street != .complete else {
-                throw PokerSessionError.corruptSnapshot
-            }
+            _ = try validatedInProgressGame()
         case .settlementPending:
-            guard let pendingHand,
-                  pendingHand.id == activeHandID,
-                  pendingHand.startedAt == activeHandStartedAt,
-                  let checkpoint,
-                  checkpoint.config == config,
-                  checkpoint.startingStacks == stacks,
-                  checkpoint.seatIDs == Set(stacks.keys),
-                  checkpoint.seatIDs.count == 9,
-                  pendingHand.record.config == config,
-                  pendingHand.record.startingStacks == stacks,
-                  Set(pendingHand.record.finalStacks.keys) == Set(stacks.keys)
-            else {
+            _ = try validatedPendingSettlement()
+        }
+    }
+
+    private func validatedInProgressGame() throws -> HoldemGame {
+        guard let checkpoint else { throw PokerSessionError.corruptSnapshot }
+        let game = try validatedGame(from: checkpoint)
+        guard game.spectatorObservation().street != .complete else {
+            throw PokerSessionError.corruptSnapshot
+        }
+        return game
+    }
+
+    private func validatedPendingSettlement() throws -> PendingCashHand {
+        guard let pendingHand,
+              pendingHand.id == activeHandID,
+              pendingHand.startedAt == activeHandStartedAt,
+              let checkpoint,
+              pendingHand.record.config == config,
+              pendingHand.record.startingStacks == stacks,
+              pendingHand.record.finalStacks.count == 9,
+              Set(pendingHand.record.finalStacks.keys) == Set(stacks.keys)
+        else {
+            throw PokerSessionError.corruptSnapshot
+        }
+
+        let game = try validatedGame(from: checkpoint)
+        guard game.spectatorObservation().street == .complete else {
+            throw PokerSessionError.corruptSnapshot
+        }
+        do {
+            guard try game.completedRecord() == pendingHand.record else {
                 throw PokerSessionError.corruptSnapshot
             }
-            let game = try HoldemGame.restore(from: checkpoint)
-            guard game.spectatorObservation().street == .complete,
-                  try game.completedRecord() == pendingHand.record
-            else {
-                throw PokerSessionError.corruptSnapshot
-            }
+        } catch {
+            throw PokerSessionError.corruptSnapshot
+        }
+        return pendingHand
+    }
+
+    private func validatedGame(from checkpoint: HoldemCheckpoint) throws -> HoldemGame {
+        let seatIDs = Set(stacks.keys)
+        guard seatIDs.count == 9,
+              checkpoint.config == config,
+              checkpoint.startingStacks == stacks,
+              checkpoint.seatIDs == seatIDs,
+              checkpoint.seatIDs.count == 9
+        else {
+            throw PokerSessionError.corruptSnapshot
+        }
+        do {
+            return try HoldemGame.restore(from: checkpoint)
+        } catch {
+            throw PokerSessionError.corruptSnapshot
         }
     }
 }
