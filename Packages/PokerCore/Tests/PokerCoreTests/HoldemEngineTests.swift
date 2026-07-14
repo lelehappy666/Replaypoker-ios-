@@ -142,6 +142,124 @@ import Testing
     ])
 }
 
+@Test func foldingLeavesMatchedBigBlindToRunOutWithoutChecking() throws {
+    let started = try HoldemEngine.start(
+        config: standardConfig(),
+        stacks: [
+            SeatID(rawValue: 0)!: Chips(rawValue: 100)!,
+            SeatID(rawValue: 1)!: Chips(rawValue: 1_000)!,
+            SeatID(rawValue: 2)!: Chips(rawValue: 1_000)!,
+        ],
+        seed: 14
+    )
+    let utgAllIn = try HoldemEngine.applying(.allIn, by: SeatID(0), to: started.state)
+
+    let smallBlindFolded = try HoldemEngine.applying(
+        .fold,
+        by: SeatID(1),
+        to: utgAllIn.state
+    )
+
+    #expect(smallBlindFolded.state.street == .showdown)
+    #expect(smallBlindFolded.state.communityCards.count == 5)
+    #expect(smallBlindFolded.state.currentActor == nil)
+    #expect(smallBlindFolded.events.first == .actionApplied(
+        seat: SeatID(rawValue: 1)!,
+        action: .fold
+    ))
+    #expect(smallBlindFolded.events.dropFirst().compactMap { event -> Street? in
+        guard case let .streetChanged(street) = event else { return nil }
+        return street
+    } == [.flop, .turn, .river, .showdown])
+}
+
+@Test func foldingLeavesUnmatchedBigBlindToCallOrFold() throws {
+    let started = try HoldemEngine.start(
+        config: standardConfig(),
+        stacks: [
+            SeatID(rawValue: 0)!: Chips(rawValue: 150)!,
+            SeatID(rawValue: 1)!: Chips(rawValue: 1_000)!,
+            SeatID(rawValue: 2)!: Chips(rawValue: 1_000)!,
+        ],
+        seed: 15
+    )
+    let utgAllIn = try HoldemEngine.applying(.allIn, by: SeatID(0), to: started.state)
+
+    let smallBlindFolded = try HoldemEngine.applying(
+        .fold,
+        by: SeatID(1),
+        to: utgAllIn.state
+    )
+
+    #expect(smallBlindFolded.state.street == .preflop)
+    #expect(smallBlindFolded.state.currentActor == SeatID(rawValue: 2)!)
+    let legal = try BettingRules.legalActions(for: SeatID(2), in: smallBlindFolded.state)
+    #expect(legal.callAmount == Chips(rawValue: 50)!)
+    #expect(legal.canFold)
+}
+
+@Test func terminalStatesAreNoOpForPublicAdvance() throws {
+    let started = try HoldemEngine.start(
+        config: standardConfig(),
+        stacks: Fixtures.twoStacks(1_000),
+        seed: 16
+    )
+    let showdown = try HoldemEngine.applying(.fold, by: SeatID(0), to: started.state).state
+
+    let showdownResult = try HoldemEngine.advanceIfRoundComplete(showdown)
+    #expect(showdownResult == EngineResult(state: showdown, events: []))
+
+    var complete = showdown
+    complete.street = .complete
+    let completeResult = try HoldemEngine.advanceIfRoundComplete(complete)
+    #expect(completeResult == EngineResult(state: complete, events: []))
+}
+
+@Test func allInBettingStateWithoutActorCanAdvance() throws {
+    let started = try HoldemEngine.start(
+        config: standardConfig(),
+        stacks: Fixtures.twoStacks(100),
+        seed: 17
+    )
+    var allIn = try BettingRules.applying(.call, by: SeatID(0), to: started.state)
+    allIn.currentActor = nil
+
+    let result = try HoldemEngine.advanceIfRoundComplete(allIn)
+
+    #expect(result.state.street == .showdown)
+    #expect(result.state.communityCards.count == 5)
+    #expect(result.state.currentActor == nil)
+}
+
+@Test func bettingStateWithActionablePlayerRequiresActorBeforeAdvance() throws {
+    var state = try HoldemEngine.start(
+        config: standardConfig(),
+        stacks: Fixtures.twoStacks(1_000),
+        seed: 18
+    ).state
+    state.currentActor = nil
+    let snapshot = state
+
+    #expect(throws: PokerRuleError.invalidState("invalid actor")) {
+        try HoldemEngine.advanceIfRoundComplete(state)
+    }
+    #expect(state == snapshot)
+}
+
+@Test func terminalNoOpStillRejectsCorruptedAccounting() throws {
+    let started = try HoldemEngine.start(
+        config: standardConfig(),
+        stacks: Fixtures.twoStacks(1_000),
+        seed: 19
+    )
+    var showdown = try HoldemEngine.applying(.fold, by: SeatID(0), to: started.state).state
+    showdown.unallocatedPot = Chips(rawValue: showdown.unallocatedPot.rawValue + 1)!
+
+    #expect(throws: PokerRuleError.invalidState("unallocated pot mismatch")) {
+        try HoldemEngine.advanceIfRoundComplete(showdown)
+    }
+}
+
 @Test func publicAdvanceRejectsCorruptedAccountingAndActorState() throws {
     let valid = try Fixtures.completePreflopState()
 

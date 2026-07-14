@@ -106,7 +106,7 @@ public enum HoldemEngine {
             return EngineResult(state: result, events: events)
         }
 
-        if roundIsComplete(result) {
+        if roundIsComplete(result) || noFurtherBettingIsPossible(result) {
             let advanced = try advanceOneStreet(result)
             events.append(contentsOf: advanced.events)
             return EngineResult(state: advanced.state, events: events)
@@ -120,7 +120,7 @@ public enum HoldemEngine {
     }
 
     public static func advanceIfRoundComplete(_ state: HoldemState) throws -> EngineResult {
-        try BettingRules.validate(state)
+        try BettingRules.validateStructuralState(state)
         guard [.preflop, .flop, .turn, .river].contains(state.street) else {
             return EngineResult(state: state, events: [])
         }
@@ -131,7 +131,7 @@ public enum HoldemEngine {
             result.forcedBringIn = Chips(rawValue: 0)!
             return EngineResult(state: result, events: [.streetChanged(.showdown)])
         }
-        guard roundIsComplete(state) || actionablePlayers(in: state).isEmpty else {
+        guard roundIsComplete(state) || noFurtherBettingIsPossible(state) else {
             return EngineResult(state: state, events: [])
         }
         return try advanceOneStreet(state)
@@ -191,19 +191,24 @@ public enum HoldemEngine {
     }
 
     private static func advanceIfNoActionIsPossible(_ state: HoldemState) throws -> EngineResult {
-        let actionable = actionablePlayers(in: state)
-        let noFurtherBetting: Bool
-        if actionable.isEmpty {
-            noFurtherBetting = true
-        } else if actionable.count == 1 {
-            noFurtherBetting = actionable[0].committedThisStreet == state.currentBet
-        } else {
-            noFurtherBetting = false
-        }
-        guard remainingPlayers(in: state).count > 1, noFurtherBetting else {
+        guard noFurtherBettingIsPossible(state) else {
             return EngineResult(state: state, events: [])
         }
         return try advanceOneStreet(state)
+    }
+
+    private static func noFurtherBettingIsPossible(_ state: HoldemState) -> Bool {
+        guard remainingPlayers(in: state).count >= 2 else {
+            return false
+        }
+        let actionable = actionablePlayers(in: state)
+        if actionable.isEmpty {
+            return true
+        }
+        if actionable.count == 1 {
+            return actionable[0].committedThisStreet >= state.currentBet
+        }
+        return false
     }
 
     private static func roundIsComplete(_ state: HoldemState) -> Bool {

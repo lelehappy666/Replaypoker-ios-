@@ -3,7 +3,7 @@ public enum BettingRules {
         for seat: SeatID,
         in state: HoldemState
     ) throws -> LegalActionSet {
-        try validate(state)
+        try validateActionState(state)
         guard state.currentActor == seat else {
             throw PokerRuleError.illegalAction("not current actor")
         }
@@ -176,7 +176,7 @@ public enum BettingRules {
         state.seats[seatIndex].isAllIn = state.seats[seatIndex].stack.rawValue == 0
     }
 
-    static func validate(_ state: HoldemState) throws {
+    static func validateStructuralState(_ state: HoldemState) throws {
         guard Set(state.seats.map(\.id)).count == state.seats.count else {
             throw PokerRuleError.invalidState("duplicate seat ids")
         }
@@ -244,7 +244,30 @@ public enum BettingRules {
         guard accountedChips == state.initialTotalChips else {
             throw PokerRuleError.invalidState("chip conservation")
         }
-        guard let actor = state.currentActor, state.canAct(actor) else {
+        let isBettingStreet = [.preflop, .flop, .turn, .river].contains(state.street)
+        if isBettingStreet {
+            let actionableSeats = state.seats.filter { state.canAct($0.id) }
+            if actionableSeats.isEmpty {
+                guard state.currentActor == nil else {
+                    throw PokerRuleError.invalidState("invalid actor")
+                }
+            } else {
+                guard let actor = state.currentActor, state.canAct(actor) else {
+                    throw PokerRuleError.invalidState("invalid actor")
+                }
+            }
+        } else {
+            guard state.currentActor == nil else {
+                throw PokerRuleError.invalidState("invalid actor")
+            }
+        }
+    }
+
+    private static func validateActionState(_ state: HoldemState) throws {
+        try validateStructuralState(state)
+        guard [.preflop, .flop, .turn, .river].contains(state.street),
+              let actor = state.currentActor,
+              state.canAct(actor) else {
             throw PokerRuleError.invalidState("invalid actor")
         }
     }
