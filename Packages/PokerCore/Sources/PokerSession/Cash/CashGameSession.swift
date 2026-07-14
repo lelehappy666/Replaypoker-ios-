@@ -405,7 +405,11 @@ package struct CashGameSession: Codable, Equatable, Sendable {
             guard pendingHand == nil,
                   activeHandID != nil,
                   activeHandStartedAt != nil,
-                  let checkpoint
+                  let checkpoint,
+                  checkpoint.config == config,
+                  checkpoint.startingStacks == stacks,
+                  checkpoint.seatIDs == Set(stacks.keys),
+                  checkpoint.seatIDs.count == 9
             else {
                 throw PokerSessionError.corruptSnapshot
             }
@@ -417,7 +421,14 @@ package struct CashGameSession: Codable, Equatable, Sendable {
             guard let pendingHand,
                   pendingHand.id == activeHandID,
                   pendingHand.startedAt == activeHandStartedAt,
-                  let checkpoint
+                  let checkpoint,
+                  checkpoint.config == config,
+                  checkpoint.startingStacks == stacks,
+                  checkpoint.seatIDs == Set(stacks.keys),
+                  checkpoint.seatIDs.count == 9,
+                  pendingHand.record.config == config,
+                  pendingHand.record.startingStacks == stacks,
+                  Set(pendingHand.record.finalStacks.keys) == Set(stacks.keys)
             else {
                 throw PokerSessionError.corruptSnapshot
             }

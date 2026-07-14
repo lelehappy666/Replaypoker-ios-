@@ -7,6 +7,12 @@ package struct HoldemCheckpoint: Codable, Equatable, Sendable {
         self.lastTransition = lastTransition
     }
 
+    package var config: HandConfig { state.config }
+
+    package var startingStacks: [SeatID: Chips] { state.startingStacks }
+
+    package var seatIDs: Set<SeatID> { Set(state.seats.map(\.id)) }
+
     package func restoredGame() throws -> HoldemGame {
         try StateValidator.validate(state)
         return HoldemGame(restoredState: state, lastTransition: lastTransition)

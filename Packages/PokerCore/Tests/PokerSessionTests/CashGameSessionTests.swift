@@ -175,6 +175,57 @@ import Testing
     }
 }
 
+@Test func cashSessionRejectsActiveCheckpointFromAnotherSession() throws {
+    var session = try cashSession()
+    try session.startHand(id: try HandID("h-victim"), seed: 41, startedAt: .distantPast)
+
+    var donor = try CashGameSession.make(
+        id: try SessionID("session-donor"),
+        table: try TableID("ruby"),
+        config: try cashConfig(dealer: 1),
+        humanSeat: try SeatID(0),
+        stacks: try cashStacks(human: 5_000)
+    )
+    try donor.startHand(id: try HandID("h-donor"), seed: 99, startedAt: .distantFuture)
+
+    var victimJSON = try cashSessionJSONObject(session)
+    let donorJSON = try cashSessionJSONObject(donor)
+    victimJSON["checkpoint"] = donorJSON["checkpoint"]
+    let corrupted = try JSONSerialization.data(withJSONObject: victimJSON)
+
+    #expect(throws: DecodingError.self) {
+        try JSONDecoder().decode(CashGameSession.self, from: corrupted)
+    }
+}
+
+@Test func cashSessionRejectsPendingSettlementFromAnotherSession() throws {
+    var session = try cashSession()
+    try session.startHand(id: try HandID("h-victim"), seed: 41, startedAt: .distantPast)
+    try finishCashHandByFolding(session: &session)
+
+    var donor = try CashGameSession.make(
+        id: try SessionID("session-donor"),
+        table: try TableID("ruby"),
+        config: try cashConfig(dealer: 1),
+        humanSeat: try SeatID(0),
+        stacks: try cashStacks(human: 5_000)
+    )
+    try donor.startHand(id: try HandID("h-donor"), seed: 99, startedAt: .distantFuture)
+    try finishCashHandByFolding(session: &donor)
+
+    var victimJSON = try cashSessionJSONObject(session)
+    let donorJSON = try cashSessionJSONObject(donor)
+    victimJSON["checkpoint"] = donorJSON["checkpoint"]
+    victimJSON["pendingHand"] = donorJSON["pendingHand"]
+    victimJSON["activeHandID"] = donorJSON["activeHandID"]
+    victimJSON["activeHandStartedAt"] = donorJSON["activeHandStartedAt"]
+    let corrupted = try JSONSerialization.data(withJSONObject: victimJSON)
+
+    #expect(throws: DecodingError.self) {
+        try JSONDecoder().decode(CashGameSession.self, from: corrupted)
+    }
+}
+
 @Test func cashSessionAddChipsIsCheckedAndOnlyAllowedWhileReady() throws {
     var session = try cashSession(human: 4_000)
     let human = try SeatID(0)
@@ -240,4 +291,11 @@ private func finishCashHandByFolding(session: inout CashGameSession) throws {
     if session.view.phase == .handInProgress {
         try session.advanceIfRoundComplete()
     }
+}
+
+private func cashSessionJSONObject(
+    _ session: CashGameSession
+) throws -> [String: Any] {
+    let data = try JSONEncoder().encode(session)
+    return try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
 }
