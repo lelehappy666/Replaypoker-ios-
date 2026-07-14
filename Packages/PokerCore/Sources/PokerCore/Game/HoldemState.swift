@@ -8,13 +8,47 @@ public struct HandConfig: Codable, Equatable, Sendable {
     public let dealer: SeatID
 
     public init(smallBlind: Chips, bigBlind: Chips, dealer: SeatID) throws {
+        let (minimumBigBlind, overflow) = smallBlind.rawValue.multipliedReportingOverflow(by: 2)
+        guard !overflow else {
+            throw PokerRuleError.invalidState("chip arithmetic overflow")
+        }
         guard smallBlind.rawValue > 0,
-              bigBlind.rawValue >= smallBlind.rawValue * 2 else {
+              bigBlind.rawValue >= minimumBigBlind else {
             throw PokerRuleError.invalidState("invalid blinds")
         }
         self.smallBlind = smallBlind
         self.bigBlind = bigBlind
         self.dealer = dealer
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let smallBlind = try container.decode(Chips.self, forKey: .smallBlind)
+        let bigBlind = try container.decode(Chips.self, forKey: .bigBlind)
+        let dealer = try container.decode(SeatID.self, forKey: .dealer)
+
+        do {
+            try self.init(smallBlind: smallBlind, bigBlind: bigBlind, dealer: dealer)
+        } catch {
+            throw DecodingError.dataCorrupted(
+                .init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "Invalid HandConfig",
+                    underlyingError: error
+                )
+            )
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(smallBlind, forKey: .smallBlind)
+        try container.encode(bigBlind, forKey: .bigBlind)
+        try container.encode(dealer, forKey: .dealer)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case smallBlind, bigBlind, dealer
     }
 }
 
@@ -42,6 +76,7 @@ public struct HoldemState: Codable, Equatable, Sendable {
     public var currentBet: Chips
     public var lastFullRaiseSize: Chips
     public var actedSinceLastFullRaise: Set<SeatID>
+    public var lastActedAtBet: [SeatID: Chips]
     public var actionHistory: [RecordedAction]
     public var settledPots: [Pot]
     public var awards: [SeatID: Chips]
@@ -65,13 +100,25 @@ public struct HoldemState: Codable, Equatable, Sendable {
     }
 
     public var totalSeatChips: Int {
-        seats.reduce(0) { $0 + $1.stack.rawValue }
+        (try? checkedTotalSeatChips()) ?? Int.max
     }
 
     public func canAct(_ id: SeatID) -> Bool {
         seats.contains {
             $0.id == id && !$0.hasFolded && !$0.isAllIn && !$0.isSittingOut
         }
+    }
+
+    func checkedTotalSeatChips() throws -> Int {
+        var total = 0
+        for seat in seats {
+            let (next, overflow) = total.addingReportingOverflow(seat.stack.rawValue)
+            guard !overflow else {
+                throw PokerRuleError.invalidState("chip arithmetic overflow")
+            }
+            total = next
+        }
+        return total
     }
 }
 

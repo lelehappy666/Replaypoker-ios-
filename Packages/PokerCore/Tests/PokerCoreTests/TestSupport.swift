@@ -81,6 +81,7 @@ enum Fixtures {
             currentBet: Chips(rawValue: currentBet)!,
             lastFullRaiseSize: Chips(rawValue: lastFullRaise)!,
             actedSinceLastFullRaise: [],
+            lastActedAtBet: [:],
             actionHistory: [],
             settledPots: [],
             awards: [:],
@@ -102,6 +103,7 @@ enum Fixtures {
         )
         state.currentActor = SeatID(rawValue: 1)!
         state.actedSinceLastFullRaise = [SeatID(rawValue: 0)!]
+        state.lastActedAtBet = [SeatID(rawValue: 0)!: Chips(rawValue: 300)!]
         state.seats[1].stack = Chips(rawValue: 350)!
         state.seats[3].stack = Chips(rawValue: 1_650)!
         let result = try! BettingRules.applying(.allIn, by: SeatID(rawValue: 1)!, to: state)
