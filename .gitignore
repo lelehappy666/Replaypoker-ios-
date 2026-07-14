@@ -3,6 +3,7 @@
 DerivedData/
 .derived-data/
 build/
+.build/
 RiverClub.xcodeproj/
 *.xcuserstate
 xcuserdata/
