@@ -1,0 +1,441 @@
+import Foundation
+import PokerCore
+
+public struct CashTableRequest: Codable, Equatable, Sendable {
+    public let sessionID: SessionID
+    public let table: TableID
+    public let config: HandConfig
+    public let humanSeat: SeatID
+    public let stacks: [SeatID: Chips]
+
+    public init(
+        sessionID: SessionID,
+        table: TableID,
+        config: HandConfig,
+        humanSeat: SeatID,
+        stacks: [SeatID: Chips]
+    ) {
+        self.sessionID = sessionID
+        self.table = table
+        self.config = config
+        self.humanSeat = humanSeat
+        self.stacks = stacks
+    }
+}
+
+public final class LocalPokerStore {
+    private let repository: any SessionRepository
+    private let clock: any SessionClock
+    private var committed: PersistedAppState
+
+    package init(repository: any SessionRepository, clock: any SessionClock) throws {
+        self.repository = repository
+        self.clock = clock
+        committed = try repository.load()
+    }
+
+    public static func open(
+        directory: URL,
+        clock: any SessionClock
+    ) throws -> LocalPokerStore {
+        try LocalPokerStore(
+            repository: FileSessionRepository(directory: directory),
+            clock: clock
+        )
+    }
+
+    public var accountBalance: Chips { committed.ledger.balance }
+
+    public var cashSession: CashSessionView? {
+        committed.activeCashSession?.view
+    }
+
+    public var spectatorObservation: SpectatorObservation? {
+        committed.activeCashSession?.spectatorObservation()
+    }
+
+    public func playerObservation(for seat: SeatID) throws -> PlayerObservation? {
+        try committed.activeCashSession?.playerObservation(for: seat)
+    }
+
+    public var statistics: PlayerStatisticsView {
+        PlayerStatisticsView(committed.statistics)
+    }
+
+    public func handRecords(filter: HandRecordFilter = .init()) -> [StoredHandRecord] {
+        committed.recordOrder.reversed().compactMap { id in
+            guard let record = committed.records[id],
+                  filter.table == nil || record.table == filter.table,
+                  filter.localDay == nil || record.localDay == filter.localDay
+            else {
+                return nil
+            }
+            return record
+        }
+    }
+
+    public func sitDown(
+        request: CashTableRequest,
+        businessID: BusinessID
+    ) throws -> CashSessionView {
+        if let receipt = committed.commandReceipts[businessID] {
+            guard case let .sitDown(storedRequest, result) = receipt,
+                  storedRequest == request
+            else {
+                throw PokerSessionError.businessIDConflict
+            }
+            return result
+        }
+        try requireAvailableForLedgerCommand(businessID)
+        if let existing = ledgerEntry(for: businessID) {
+            try validateBuyInEntry(
+                existing,
+                amount: try humanStack(in: request),
+                table: request.table
+            )
+            guard let session = committed.activeCashSession,
+                  session.id == request.sessionID,
+                  session.table == request.table,
+                  session.humanSeat == request.humanSeat,
+                  session.config == request.config
+            else {
+                throw PokerSessionError.businessIDConflict
+            }
+            if session.phase == .readyForHand, session.completedHands == 0,
+               session.stacks != request.stacks {
+                throw PokerSessionError.businessIDConflict
+            }
+            return session.view
+        }
+
+        return try transact { state in
+            guard state.activeCashSession == nil else {
+                throw PokerSessionError.invalidLifecycle
+            }
+            let session = try CashGameSession.make(
+                id: request.sessionID,
+                table: request.table,
+                config: request.config,
+                humanSeat: request.humanSeat,
+                stacks: request.stacks
+            )
+            _ = try state.ledger.buyIn(
+                amount: try humanStack(in: request),
+                table: request.table,
+                id: businessID,
+                at: clock.now
+            )
+            state.activeCashSession = session
+            state.commandReceipts[businessID] = .sitDown(
+                request: request,
+                result: session.view
+            )
+            return session.view
+        }
+    }
+
+    public func startHand(id: HandID, seed: UInt64) throws -> GameTransition {
+        try transact { state in
+            guard state.records[id] == nil else {
+                throw PokerSessionError.businessIDConflict
+            }
+            guard var session = state.activeCashSession else {
+                throw PokerSessionError.invalidLifecycle
+            }
+            let transition = try session.startHand(id: id, seed: seed, startedAt: clock.now)
+            state.activeCashSession = session
+            return transition
+        }
+    }
+
+    public func apply(_ action: PlayerAction, by seat: SeatID) throws -> GameTransition {
+        try transact { state in
+            guard var session = state.activeCashSession else {
+                throw PokerSessionError.invalidLifecycle
+            }
+            let transition = try session.apply(action, by: seat)
+            state.activeCashSession = session
+            return transition
+        }
+    }
+
+    public func advanceIfRoundComplete() throws -> GameTransition {
+        try transact { state in
+            guard var session = state.activeCashSession else {
+                throw PokerSessionError.invalidLifecycle
+            }
+            let transition = try session.advanceIfRoundComplete()
+            state.activeCashSession = session
+            return transition
+        }
+    }
+
+    public func commitPendingHand(
+        transactionID: BusinessID
+    ) throws -> StoredHandRecord {
+        guard ledgerEntry(for: transactionID) == nil,
+              committed.commandReceipts[transactionID] == nil
+        else {
+            throw PokerSessionError.businessIDConflict
+        }
+        if let existing = committed.records.values.first(where: {
+            $0.transactionID == transactionID
+        }) {
+            if committed.activeCashSession?.pendingHand != nil {
+                throw PokerSessionError.businessIDConflict
+            }
+            return existing
+        }
+
+        return try transact { state in
+            guard var session = state.activeCashSession,
+                  let pending = session.pendingHand
+            else {
+                throw PokerSessionError.handNotComplete
+            }
+            if let existing = state.records[pending.id] {
+                guard existing.transactionID == transactionID else {
+                    throw PokerSessionError.businessIDConflict
+                }
+                return existing
+            }
+
+            let (handNumber, handNumberOverflow) = session.completedHands
+                .addingReportingOverflow(1)
+            guard !handNumberOverflow else {
+                throw PokerSessionError.chipArithmeticOverflow
+            }
+            let stored = StoredHandRecord(
+                id: pending.id,
+                transactionID: transactionID,
+                sessionID: session.id,
+                table: session.table,
+                startedAt: pending.startedAt,
+                endedAt: clock.now,
+                localDay: clock.currentDay,
+                handNumber: handNumber,
+                record: pending.record
+            )
+            try updateStatistics(
+                &state.statistics,
+                record: pending.record,
+                humanSeat: session.humanSeat
+            )
+            try session.markHandCommitted(pending.id)
+            state.records[pending.id] = stored
+            state.recordOrder.append(pending.id)
+            state.activeCashSession = session
+            return stored
+        }
+    }
+
+    public func leave(businessID: BusinessID) throws {
+        if let receipt = committed.commandReceipts[businessID] {
+            guard case .zeroStackLeave = receipt,
+                  committed.activeCashSession == nil
+            else {
+                throw PokerSessionError.businessIDConflict
+            }
+            return
+        }
+        try requireAvailableForLedgerCommand(businessID)
+        if let existing = ledgerEntry(for: businessID) {
+            guard case .cashOut = existing.reason else {
+                throw PokerSessionError.businessIDConflict
+            }
+            guard committed.activeCashSession == nil else {
+                throw PokerSessionError.businessIDConflict
+            }
+            return
+        }
+
+        try transact { state in
+            guard var session = state.activeCashSession else {
+                throw PokerSessionError.invalidLifecycle
+            }
+            let humanStack = try session.leave()
+            if humanStack.rawValue == 0 {
+                state.commandReceipts[businessID] = .zeroStackLeave(
+                    sessionID: session.id,
+                    table: session.table
+                )
+            } else {
+                _ = try state.ledger.cashOut(
+                    amount: humanStack,
+                    table: session.table,
+                    id: businessID,
+                    at: clock.now
+                )
+            }
+            state.activeCashSession = nil
+        }
+    }
+
+    public func rebuyHuman(
+        amount: Chips,
+        businessID: BusinessID
+    ) throws -> CashSessionView {
+        if let receipt = committed.commandReceipts[businessID] {
+            guard case let .rebuy(
+                sessionID,
+                table,
+                humanSeat,
+                storedAmount,
+                _,
+                result
+            ) = receipt,
+                storedAmount == amount,
+                committed.activeCashSession == nil
+                    || (
+                        committed.activeCashSession?.id == sessionID
+                            && committed.activeCashSession?.table == table
+                            && committed.activeCashSession?.humanSeat == humanSeat
+                    )
+            else {
+                throw PokerSessionError.businessIDConflict
+            }
+            return result
+        }
+        try requireAvailableForLedgerCommand(businessID)
+        if let existing = ledgerEntry(for: businessID) {
+            guard let session = committed.activeCashSession else {
+                throw PokerSessionError.businessIDConflict
+            }
+            try validateBuyInEntry(existing, amount: amount, table: session.table)
+            return session.view
+        }
+
+        return try transact { state in
+            guard var session = state.activeCashSession else {
+                throw PokerSessionError.invalidLifecycle
+            }
+            let before = session.view
+            _ = try state.ledger.buyIn(
+                amount: amount,
+                table: session.table,
+                id: businessID,
+                at: clock.now
+            )
+            try session.addChips(amount, to: session.humanSeat)
+            state.activeCashSession = session
+            state.commandReceipts[businessID] = .rebuy(
+                sessionID: session.id,
+                table: session.table,
+                humanSeat: session.humanSeat,
+                amount: amount,
+                before: before,
+                result: session.view
+            )
+            return session.view
+        }
+    }
+
+    public func claimDailyGift(businessID: BusinessID) throws -> LedgerEntry {
+        try requireAvailableForLedgerCommand(businessID)
+        if let existing = ledgerEntry(for: businessID) {
+            guard existing.reason == .dailyGift(day: clock.currentDay),
+                  existing.delta == SessionEconomy.dailyGift.rawValue
+            else {
+                throw PokerSessionError.businessIDConflict
+            }
+            return existing
+        }
+        return try transact { state in
+            try state.ledger.claimDailyGift(
+                id: businessID,
+                day: clock.currentDay,
+                at: clock.now
+            )
+        }
+    }
+
+    public func claimRelief(businessID: BusinessID) throws -> LedgerEntry {
+        try requireAvailableForLedgerCommand(businessID)
+        if let existing = ledgerEntry(for: businessID) {
+            guard existing.reason == .bankruptcyRelief(day: clock.currentDay) else {
+                throw PokerSessionError.businessIDConflict
+            }
+            return existing
+        }
+        return try transact { state in
+            try state.ledger.claimRelief(
+                id: businessID,
+                day: clock.currentDay,
+                at: clock.now,
+                hasUnsettledBuyIn: false
+            )
+        }
+    }
+
+    private func transact<Result>(
+        _ operation: (inout PersistedAppState) throws -> Result
+    ) throws -> Result {
+        var candidate = committed
+        let result = try operation(&candidate)
+        do {
+            try repository.save(candidate)
+        } catch {
+            throw PokerSessionError.persistenceFailed
+        }
+        committed = candidate
+        return result
+    }
+
+    private func ledgerEntry(for id: BusinessID) -> LedgerEntry? {
+        committed.ledger.entries.first { $0.businessID == id }
+    }
+
+    private func requireAvailableForLedgerCommand(_ id: BusinessID) throws {
+        guard committed.commandReceipts[id] == nil,
+              !committed.records.values.contains(where: { $0.transactionID == id })
+        else {
+            throw PokerSessionError.businessIDConflict
+        }
+    }
+
+    private func humanStack(in request: CashTableRequest) throws -> Chips {
+        guard let stack = request.stacks[request.humanSeat] else {
+            throw PokerSessionError.invalidTable
+        }
+        return stack
+    }
+
+    private func validateBuyInEntry(
+        _ entry: LedgerEntry,
+        amount: Chips,
+        table: TableID
+    ) throws {
+        guard entry.reason == .cashBuyIn(table: table),
+              entry.delta == -amount.rawValue
+        else {
+            throw PokerSessionError.businessIDConflict
+        }
+    }
+
+    private func updateStatistics(
+        _ statistics: inout PlayerStatistics,
+        record: CompletedHandRecord,
+        humanSeat: SeatID
+    ) throws {
+        guard let commitment = record.settledCommitments[humanSeat]?.rawValue,
+              let delta = record.chipDeltas[humanSeat]
+        else {
+            throw PokerSessionError.corruptSnapshot
+        }
+        statistics.completedHands = try checkedAdd(statistics.completedHands, 1)
+        if record.awards[humanSeat] != nil {
+            statistics.wonHands = try checkedAdd(statistics.wonHands, 1)
+        }
+        statistics.totalCommitted = try checkedAdd(statistics.totalCommitted, commitment)
+        statistics.netChange = try checkedAdd(statistics.netChange, delta)
+        if delta > statistics.largestWin {
+            statistics.largestWin = delta
+        }
+    }
+
+    private func checkedAdd(_ lhs: Int, _ rhs: Int) throws -> Int {
+        let (result, overflow) = lhs.addingReportingOverflow(rhs)
+        guard !overflow else { throw PokerSessionError.chipArithmeticOverflow }
+        return result
+    }
+}

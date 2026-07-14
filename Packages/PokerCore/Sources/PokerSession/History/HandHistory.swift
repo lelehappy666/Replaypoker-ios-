@@ -3,6 +3,7 @@ import PokerCore
 
 public struct StoredHandRecord: Codable, Equatable, Sendable {
     public let id: HandID
+    public let transactionID: BusinessID?
     public let sessionID: SessionID
     public let table: TableID
     public let startedAt: Date
@@ -13,6 +14,7 @@ public struct StoredHandRecord: Codable, Equatable, Sendable {
 
     public init(
         id: HandID,
+        transactionID: BusinessID? = nil,
         sessionID: SessionID,
         table: TableID,
         startedAt: Date,
@@ -22,6 +24,7 @@ public struct StoredHandRecord: Codable, Equatable, Sendable {
         record: CompletedHandRecord
     ) {
         self.id = id
+        self.transactionID = transactionID
         self.sessionID = sessionID
         self.table = table
         self.startedAt = startedAt
@@ -30,6 +33,45 @@ public struct StoredHandRecord: Codable, Equatable, Sendable {
         self.handNumber = handNumber
         self.record = record
     }
+}
+
+public struct PlayerStatisticsView: Codable, Equatable, Sendable {
+    public let completedHands: Int
+    public let wonHands: Int
+    public let totalCommitted: Int
+    public let netChange: Int
+    public let largestWin: Int
+
+    package init(_ statistics: PlayerStatistics) {
+        completedHands = statistics.completedHands
+        wonHands = statistics.wonHands
+        totalCommitted = statistics.totalCommitted
+        netChange = statistics.netChange
+        largestWin = statistics.largestWin
+    }
+}
+
+public struct HandRecordFilter: Equatable, Sendable {
+    public let table: TableID?
+    public let localDay: LocalDay?
+
+    public init(table: TableID? = nil, localDay: LocalDay? = nil) {
+        self.table = table
+        self.localDay = localDay
+    }
+}
+
+package enum CommandReceipt: Codable, Equatable, Sendable {
+    case sitDown(request: CashTableRequest, result: CashSessionView)
+    case rebuy(
+        sessionID: SessionID,
+        table: TableID,
+        humanSeat: SeatID,
+        amount: Chips,
+        before: CashSessionView,
+        result: CashSessionView
+    )
+    case zeroStackLeave(sessionID: SessionID, table: TableID)
 }
 
 package struct PlayerStatistics: Codable, Equatable, Sendable {
