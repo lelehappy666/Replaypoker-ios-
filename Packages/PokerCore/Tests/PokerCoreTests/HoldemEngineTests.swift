@@ -215,6 +215,49 @@ import Testing
     #expect(completeResult == EngineResult(state: complete, events: []))
 }
 
+@Test func foldingSmallBlindNormalizesShortBigBlindShowdown() throws {
+    let started = try HoldemEngine.start(
+        config: standardConfig(),
+        stacks: [
+            SeatID(rawValue: 0)!: Chips(rawValue: 1_000)!,
+            SeatID(rawValue: 1)!: Chips(rawValue: 30)!,
+        ],
+        seed: 20
+    )
+
+    let folded = try HoldemEngine.applying(.fold, by: SeatID(0), to: started.state)
+
+    #expect(folded.state.street == .showdown)
+    #expect(folded.state.forcedBringIn == Chips(rawValue: 0)!)
+    #expect(folded.state.currentBet == Chips(rawValue: 50)!)
+    try BettingRules.validateStructuralState(folded.state)
+    let noOp = try HoldemEngine.advanceIfRoundComplete(folded.state)
+    #expect(noOp == EngineResult(state: folded.state, events: []))
+}
+
+@Test func publicAdvanceNormalizesShortBigBlindTerminalTransition() throws {
+    let started = try HoldemEngine.start(
+        config: standardConfig(),
+        stacks: [
+            SeatID(rawValue: 0)!: Chips(rawValue: 1_000)!,
+            SeatID(rawValue: 1)!: Chips(rawValue: 30)!,
+        ],
+        seed: 21
+    )
+    var folded = try BettingRules.applying(.fold, by: SeatID(0), to: started.state)
+    folded.currentActor = nil
+    try BettingRules.validateStructuralState(folded)
+
+    let result = try HoldemEngine.advanceIfRoundComplete(folded)
+
+    #expect(result.state.street == .showdown)
+    #expect(result.state.forcedBringIn == Chips(rawValue: 0)!)
+    #expect(result.state.currentBet == Chips(rawValue: 50)!)
+    try BettingRules.validateStructuralState(result.state)
+    let noOp = try HoldemEngine.advanceIfRoundComplete(result.state)
+    #expect(noOp == EngineResult(state: result.state, events: []))
+}
+
 @Test func allInBettingStateWithoutActorCanAdvance() throws {
     let started = try HoldemEngine.start(
         config: standardConfig(),

@@ -99,9 +99,7 @@ public enum HoldemEngine {
         var events: [GameEvent] = [.actionApplied(seat: seat, action: action)]
 
         if remainingPlayers(in: result).count <= 1 {
-            result.currentActor = nil
-            result.street = .showdown
-            result.forcedBringIn = Chips(rawValue: 0)!
+            normalizeForTerminalStreet(&result)
             events.append(.streetChanged(.showdown))
             return EngineResult(state: result, events: events)
         }
@@ -126,9 +124,7 @@ public enum HoldemEngine {
         }
         if remainingPlayers(in: state).count <= 1 {
             var result = state
-            result.currentActor = nil
-            result.street = .showdown
-            result.forcedBringIn = Chips(rawValue: 0)!
+            normalizeForTerminalStreet(&result)
             return EngineResult(state: result, events: [.streetChanged(.showdown)])
         }
         guard roundIsComplete(state) || noFurtherBettingIsPossible(state) else {
@@ -149,9 +145,7 @@ public enum HoldemEngine {
         case .turn:
             try beginStreet(.river, drawing: 1, state: &result, events: &events)
         case .river:
-            result.currentActor = nil
-            result.street = .showdown
-            result.forcedBringIn = Chips(rawValue: 0)!
+            normalizeForTerminalStreet(&result)
             events.append(.streetChanged(.showdown))
             return EngineResult(state: result, events: events)
         case .showdown, .complete:
@@ -209,6 +203,16 @@ public enum HoldemEngine {
             return actionable[0].committedThisStreet >= state.currentBet
         }
         return false
+    }
+
+    private static func normalizeForTerminalStreet(_ state: inout HoldemState) {
+        state.currentActor = nil
+        state.street = .showdown
+        state.forcedBringIn = Chips(rawValue: 0)!
+        state.currentBet = state.seats.map(\.committedThisStreet).max()
+            ?? Chips(rawValue: 0)!
+        state.actedSinceLastFullRaise = []
+        state.lastActedAtBet = [:]
     }
 
     private static func roundIsComplete(_ state: HoldemState) -> Bool {
