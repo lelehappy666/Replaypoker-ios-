@@ -126,6 +126,56 @@ public struct HoldemState: Codable, Equatable, Sendable {
         }
         return total
     }
+
+    func completingHand(
+        pots: [Pot],
+        awards: [SeatID: Chips],
+        uncalledReturns: [SeatID: Chips]
+    ) throws -> HoldemState {
+        var result = self
+
+        for (seat, amount) in try merging(awards, with: uncalledReturns) {
+            guard let index = result.seats.firstIndex(where: { $0.id == seat }) else {
+                throw PokerRuleError.invalidState("awarded seat missing")
+            }
+            let (stack, overflow) = result.seats[index].stack.rawValue
+                .addingReportingOverflow(amount.rawValue)
+            guard !overflow else {
+                throw PokerRuleError.invalidState("chip arithmetic overflow")
+            }
+            result.seats[index].stack = Chips(rawValue: stack)!
+        }
+
+        for index in result.seats.indices {
+            result.seats[index].committedThisStreet = Chips(rawValue: 0)!
+            result.seats[index].committedThisHand = Chips(rawValue: 0)!
+            result.seats[index].isAllIn = result.seats[index].stack.rawValue == 0
+        }
+        result.currentActor = nil
+        result.street = .complete
+        result.currentBet = Chips(rawValue: 0)!
+        result.forcedBringIn = Chips(rawValue: 0)!
+        result.actedSinceLastFullRaise = []
+        result.lastActedAtBet = [:]
+        result.settledPots = pots
+        result.awards = awards
+        result.unallocatedPot = Chips(rawValue: 0)!
+        return result
+    }
+
+    private func merging(
+        _ lhs: [SeatID: Chips],
+        with rhs: [SeatID: Chips]
+    ) throws -> [SeatID: Chips] {
+        try rhs.reduce(into: lhs) { result, entry in
+            let (amount, overflow) = (result[entry.key]?.rawValue ?? 0)
+                .addingReportingOverflow(entry.value.rawValue)
+            guard !overflow else {
+                throw PokerRuleError.invalidState("chip arithmetic overflow")
+            }
+            result[entry.key] = Chips(rawValue: amount)!
+        }
+    }
 }
 
 public struct LegalActionSet: Equatable, Sendable {

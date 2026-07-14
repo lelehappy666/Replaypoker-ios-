@@ -39,6 +39,8 @@ enum Cards {
 }
 
 enum Fixtures {
+    static let initialTotalChips = 600
+
     static func tiedRanks(_ seats: [Int]) throws -> [SeatID: HandRank] {
         let rank = HandRank(category: .onePair, tieBreak: [14, 13, 12, 11])
         return try Dictionary(uniqueKeysWithValues: seats.map {
@@ -74,6 +76,110 @@ enum Fixtures {
             .check,
             by: SeatID(1),
             to: called.state
+        )
+    }
+
+    static func playUntilEveryoneButSeatZeroFolds() throws -> EngineResult {
+        let started = try HoldemEngine.start(
+            config: standardConfig(dealer: 1),
+            stacks: twoStacks(1_000),
+            seed: 101
+        )
+        let showdown = try HoldemEngine.applying(
+            .fold,
+            by: SeatID(rawValue: 1)!,
+            to: started.state
+        )
+        return try HoldemEngine.advanceIfRoundComplete(showdown.state)
+    }
+
+    static func resolveTwoWayAllInWithSidePot() throws -> EngineResult {
+        let started = try HoldemEngine.start(
+            config: standardConfig(dealer: 0),
+            stacks: try [0: 200, 1: 300].seatMap.chips,
+            seed: 3
+        )
+        let firstAllIn = try HoldemEngine.applying(
+            .allIn,
+            by: SeatID(rawValue: 0)!,
+            to: started.state
+        )
+        let showdown = try HoldemEngine.applying(
+            .allIn,
+            by: SeatID(rawValue: 1)!,
+            to: firstAllIn.state
+        )
+        return try HoldemEngine.advanceIfRoundComplete(showdown.state)
+    }
+
+    static func resolveThreeWayAllInWithTwoSidePots() throws -> EngineResult {
+        let started = try HoldemEngine.start(
+            config: standardConfig(dealer: 0),
+            stacks: try [0: 100, 1: 200, 2: 300].seatMap.chips,
+            seed: 4
+        )
+        let firstAllIn = try HoldemEngine.applying(
+            .allIn,
+            by: SeatID(rawValue: 0)!,
+            to: started.state
+        )
+        let secondAllIn = try HoldemEngine.applying(
+            .allIn,
+            by: SeatID(rawValue: 1)!,
+            to: firstAllIn.state
+        )
+        let showdown = try HoldemEngine.applying(
+            .allIn,
+            by: SeatID(rawValue: 2)!,
+            to: secondAllIn.state
+        )
+        return try HoldemEngine.advanceIfRoundComplete(showdown.state)
+    }
+
+    static func boardPlayingTieShowdown() throws -> HoldemState {
+        let started = try HoldemEngine.start(
+            config: standardConfig(dealer: 0, smallBlind: 1, bigBlind: 2),
+            stacks: try [0: 100, 1: 100, 2: 100].seatMap.chips,
+            seed: 149
+        )
+        let called = try HoldemEngine.applying(
+            .call,
+            by: SeatID(rawValue: 0)!,
+            to: started.state
+        )
+        let folded = try HoldemEngine.applying(
+            .fold,
+            by: SeatID(rawValue: 1)!,
+            to: called.state
+        )
+        let flop = try HoldemEngine.applying(
+            .check,
+            by: SeatID(rawValue: 2)!,
+            to: folded.state
+        )
+        var state = flop.state
+        while state.street != .showdown {
+            let actor = try state.currentActor.unwrap(
+                or: PokerRuleError.invalidState("checkdown actor missing")
+            )
+            state = try HoldemEngine.applying(.check, by: actor, to: state).state
+        }
+        return state
+    }
+
+    static func resolveBoardPlayingTie() throws -> EngineResult {
+        try HoldemEngine.advanceIfRoundComplete(boardPlayingTieShowdown())
+    }
+
+    static func standardConfig(
+        dealer: Int,
+        smallBlind: Int = 50,
+        bigBlind: Int = 100
+    ) throws -> HandConfig {
+        try HandConfig(
+            smallBlind: Chips(smallBlind),
+            bigBlind: Chips(bigBlind),
+            dealer: SeatID(dealer)
         )
     }
 
@@ -155,6 +261,13 @@ enum Fixtures {
         var returned = result
         returned.currentActor = SeatID(rawValue: 0)!
         return returned
+    }
+}
+
+private extension Optional {
+    func unwrap(or error: @autoclosure () -> Error) throws -> Wrapped {
+        guard let value = self else { throw error() }
+        return value
     }
 }
 

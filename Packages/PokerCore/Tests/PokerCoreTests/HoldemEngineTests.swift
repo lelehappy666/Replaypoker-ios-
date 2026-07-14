@@ -198,7 +198,7 @@ import Testing
     #expect(legal.canFold)
 }
 
-@Test func terminalStatesAreNoOpForPublicAdvance() throws {
+@Test func showdownSettlesAndCompletedStateIsNoOpForPublicAdvance() throws {
     let started = try HoldemEngine.start(
         config: standardConfig(),
         stacks: Fixtures.twoStacks(1_000),
@@ -207,12 +207,11 @@ import Testing
     let showdown = try HoldemEngine.applying(.fold, by: SeatID(0), to: started.state).state
 
     let showdownResult = try HoldemEngine.advanceIfRoundComplete(showdown)
-    #expect(showdownResult == EngineResult(state: showdown, events: []))
+    #expect(showdownResult.state.street == .complete)
+    #expect(showdownResult.events.last == .handCompleted)
 
-    var complete = showdown
-    complete.street = .complete
-    let completeResult = try HoldemEngine.advanceIfRoundComplete(complete)
-    #expect(completeResult == EngineResult(state: complete, events: []))
+    let completeResult = try HoldemEngine.advanceIfRoundComplete(showdownResult.state)
+    #expect(completeResult == EngineResult(state: showdownResult.state, events: []))
 }
 
 @Test func foldingSmallBlindNormalizesShortBigBlindShowdown() throws {
@@ -231,8 +230,10 @@ import Testing
     #expect(folded.state.forcedBringIn == Chips(rawValue: 0)!)
     #expect(folded.state.currentBet == Chips(rawValue: 50)!)
     try BettingRules.validateStructuralState(folded.state)
-    let noOp = try HoldemEngine.advanceIfRoundComplete(folded.state)
-    #expect(noOp == EngineResult(state: folded.state, events: []))
+    let settled = try HoldemEngine.advanceIfRoundComplete(folded.state)
+    #expect(settled.state.street == .complete)
+    #expect(settled.state.awards == [SeatID(rawValue: 1)!: Chips(rawValue: 60)!])
+    #expect(settled.state.totalSeatChips == settled.state.initialTotalChips)
 }
 
 @Test func publicAdvanceNormalizesShortBigBlindTerminalTransition() throws {
@@ -254,8 +255,10 @@ import Testing
     #expect(result.state.forcedBringIn == Chips(rawValue: 0)!)
     #expect(result.state.currentBet == Chips(rawValue: 50)!)
     try BettingRules.validateStructuralState(result.state)
-    let noOp = try HoldemEngine.advanceIfRoundComplete(result.state)
-    #expect(noOp == EngineResult(state: result.state, events: []))
+    let settled = try HoldemEngine.advanceIfRoundComplete(result.state)
+    #expect(settled.state.street == .complete)
+    #expect(settled.state.awards == [SeatID(rawValue: 1)!: Chips(rawValue: 60)!])
+    #expect(settled.state.totalSeatChips == settled.state.initialTotalChips)
 }
 
 @Test func allInBettingStateWithoutActorCanAdvance() throws {
@@ -565,4 +568,166 @@ private func completeHeadsUpCheckRound(_ state: HoldemState) throws -> HoldemSta
     let afterFirst = try HoldemEngine.applying(.check, by: first, to: state)
     let second = try #require(afterFirst.state.currentActor)
     return try HoldemEngine.applying(.check, by: second, to: afterFirst.state).state
+}
+
+@Test func lastRemainingPlayerWinsWithoutShowingOtherCards() throws {
+    let result = try Fixtures.playUntilEveryoneButSeatZeroFolds()
+
+    #expect(result.state.street == .complete)
+    #expect(result.state.communityCards.isEmpty)
+    #expect(result.state.awards == [SeatID(rawValue: 0)!: Chips(rawValue: 150)!])
+    #expect(result.state.totalSeatChips == result.state.initialTotalChips)
+    #expect(result.events.last == .handCompleted)
+}
+
+@Test func twoWayAllInAwardsMainPotByRankAndExcessOnlyToEligibleSeat() throws {
+    let result = try Fixtures.resolveTwoWayAllInWithSidePot()
+    let seatZero = SeatID(rawValue: 0)!
+    let seatOne = SeatID(rawValue: 1)!
+    let zeroState = try #require(result.state.seats.first { $0.id == seatZero })
+    let oneState = try #require(result.state.seats.first { $0.id == seatOne })
+    let zeroRank = try HandEvaluator.best(of: zeroState.holeCards + result.state.communityCards)
+    let oneRank = try HandEvaluator.best(of: oneState.holeCards + result.state.communityCards)
+
+    #expect(zeroRank > oneRank)
+    #expect(result.state.settledPots == [
+        Pot(amount: Chips(rawValue: 400)!, eligible: [seatZero, seatOne]),
+        Pot(amount: Chips(rawValue: 100)!, eligible: [seatOne]),
+    ])
+    #expect(result.state.awards == [
+        seatZero: Chips(rawValue: 400)!,
+        seatOne: Chips(rawValue: 100)!,
+    ])
+}
+
+@Test func showdownAwardsEverySidePotToBestEligibleHand() throws {
+    let result = try Fixtures.resolveThreeWayAllInWithTwoSidePots()
+    let seatZero = SeatID(rawValue: 0)!
+    let seatOne = SeatID(rawValue: 1)!
+    let seatTwo = SeatID(rawValue: 2)!
+    let ranks = try Dictionary(uniqueKeysWithValues: result.state.seats.map {
+        ($0.id, try HandEvaluator.best(of: $0.holeCards + result.state.communityCards))
+    })
+
+    #expect(ranks[seatZero]! > ranks[seatOne]!)
+    #expect(ranks[seatOne]! > ranks[seatTwo]!)
+    #expect(result.state.settledPots == [
+        Pot(amount: Chips(rawValue: 300)!, eligible: [seatZero, seatOne, seatTwo]),
+        Pot(amount: Chips(rawValue: 200)!, eligible: [seatOne, seatTwo]),
+        Pot(amount: Chips(rawValue: 100)!, eligible: [seatTwo]),
+    ])
+    #expect(result.state.awards == [
+        seatZero: Chips(rawValue: 300)!,
+        seatOne: Chips(rawValue: 200)!,
+        seatTwo: Chips(rawValue: 100)!,
+    ])
+    #expect(result.state.unallocatedPot.rawValue == 0)
+    #expect(result.state.totalSeatChips == Fixtures.initialTotalChips)
+}
+
+@Test func exactTieSplitsOddChipLeftOfDealerAndPreservesTotalChips() throws {
+    let result = try Fixtures.resolveBoardPlayingTie()
+    let seatZero = SeatID(rawValue: 0)!
+    let seatTwo = SeatID(rawValue: 2)!
+    let boardRank = try HandEvaluator.best(of: result.state.communityCards)
+    let activeRanks = try result.state.activeSeats.map {
+        try HandEvaluator.best(of: $0.holeCards + result.state.communityCards)
+    }
+    let firstPotAward = try #require(result.events.first { event in
+        guard case .potAwarded(potIndex: 0, winners: _, amounts: _) = event else {
+            return false
+        }
+        return true
+    })
+
+    #expect(activeRanks.allSatisfy { $0 == boardRank })
+    #expect(result.state.awards == [
+        seatZero: Chips(rawValue: 2)!,
+        seatTwo: Chips(rawValue: 3)!,
+    ])
+    #expect(result.state.totalSeatChips == result.state.initialTotalChips)
+    #expect(result.state.street == .complete)
+    #expect(result.state.awards[SeatID(rawValue: 1)!] == nil)
+    #expect(firstPotAward == .potAwarded(
+        potIndex: 0,
+        winners: [seatTwo, seatZero],
+        amounts: [seatTwo: Chips(rawValue: 2)!, seatZero: Chips(rawValue: 1)!]
+    ))
+}
+
+@Test func potAwardEventsMatchSettledPotsInOrderAndAmount() throws {
+    let result = try Fixtures.resolveThreeWayAllInWithTwoSidePots()
+    let potAwards = result.events.compactMap {
+        event -> (index: Int, winners: [SeatID], amounts: [SeatID: Chips])? in
+        guard case let .potAwarded(index, winners, amounts) = event else { return nil }
+        return (index, winners, amounts)
+    }
+    let createdPots = result.events.compactMap { event -> Pot? in
+        guard case let .potCreated(pot) = event else { return nil }
+        return pot
+    }
+
+    #expect(createdPots == result.state.settledPots)
+    #expect(potAwards.count == result.state.settledPots.count)
+    for (position, potAward) in potAwards.enumerated() {
+        #expect(potAward.index == position)
+        #expect(potAward.amounts.values.reduce(0) { $0 + $1.rawValue }
+            == result.state.settledPots[position].amount.rawValue)
+        #expect(Set(potAward.winners) == Set(potAward.amounts.keys))
+    }
+    #expect(potAwards[0].winners == [SeatID(rawValue: 0)!])
+    #expect(potAwards[0].amounts == [SeatID(rawValue: 0)!: Chips(rawValue: 300)!])
+    #expect(potAwards[1].winners == [SeatID(rawValue: 1)!])
+    #expect(potAwards[1].amounts == [SeatID(rawValue: 1)!: Chips(rawValue: 200)!])
+    #expect(potAwards[2].winners == [SeatID(rawValue: 2)!])
+    #expect(potAwards[2].amounts == [SeatID(rawValue: 2)!: Chips(rawValue: 100)!])
+    #expect(result.events.last == .handCompleted)
+}
+
+@Test func completionClearsLiveAccountingAndPreservesSettlementHistory() throws {
+    let result = try Fixtures.resolveThreeWayAllInWithTwoSidePots()
+
+    #expect(result.state.street == .complete)
+    #expect(result.state.currentActor == nil)
+    #expect(result.state.unallocatedPot == Chips(rawValue: 0)!)
+    #expect(result.state.currentBet == Chips(rawValue: 0)!)
+    #expect(result.state.seats.allSatisfy {
+        $0.committedThisStreet == Chips(rawValue: 0)!
+            && $0.committedThisHand == Chips(rawValue: 0)!
+    })
+    #expect(!result.state.settledPots.isEmpty)
+    #expect(!result.state.awards.isEmpty)
+    try BettingRules.validateStructuralState(result.state)
+}
+
+@Test func settlingCompletedHandIsIdempotentNoOp() throws {
+    let completed = try Fixtures.resolveBoardPlayingTie().state
+
+    let repeated = try HoldemEngine.advanceIfRoundComplete(completed)
+
+    #expect(repeated == EngineResult(state: completed, events: []))
+}
+
+@Test func multiplayerShowdownRequiresFiveCommunityCardsWithoutMutation() throws {
+    var showdown = try Fixtures.boardPlayingTieShowdown()
+    showdown.communityCards.removeLast()
+    let snapshot = showdown
+
+    #expect(throws: PokerRuleError.invalidCards) {
+        try HoldemEngine.advanceIfRoundComplete(showdown)
+    }
+    #expect(showdown == snapshot)
+}
+
+@Test func evaluationFailureDoesNotPartiallyUpdateSettlement() throws {
+    var showdown = try Fixtures.boardPlayingTieShowdown()
+    showdown.communityCards[4] = showdown.communityCards[3]
+    let snapshot = showdown
+
+    #expect(throws: PokerRuleError.invalidCards) {
+        try HoldemEngine.advanceIfRoundComplete(showdown)
+    }
+    #expect(showdown == snapshot)
+    #expect(showdown.settledPots.isEmpty)
+    #expect(showdown.awards.isEmpty)
 }

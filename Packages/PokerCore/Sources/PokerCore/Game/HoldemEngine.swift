@@ -119,7 +119,10 @@ public enum HoldemEngine {
 
     public static func advanceIfRoundComplete(_ state: HoldemState) throws -> EngineResult {
         try BettingRules.validateStructuralState(state)
-        guard [.preflop, .flop, .turn, .river].contains(state.street) else {
+        if state.street == .showdown {
+            return try settle(state)
+        }
+        guard state.street != .complete else {
             return EngineResult(state: state, events: [])
         }
         if remainingPlayers(in: state).count <= 1 {
@@ -131,6 +134,67 @@ public enum HoldemEngine {
             return EngineResult(state: state, events: [])
         }
         return try advanceOneStreet(state)
+    }
+
+    private static func settle(_ state: HoldemState) throws -> EngineResult {
+        let activeSeats = state.activeSeats
+        guard !activeSeats.isEmpty else {
+            throw PokerRuleError.invalidState("showdown has no active seats")
+        }
+        if activeSeats.count > 1, state.communityCards.count != 5 {
+            throw PokerRuleError.invalidCards
+        }
+
+        let highestActiveCommitment = activeSeats
+            .map(\.committedThisHand.rawValue)
+            .max()!
+        let normalizedCommitments = state.handCommitments.mapValues {
+            Chips(rawValue: min($0.rawValue, highestActiveCommitment))!
+        }
+        let uncalledReturns = Dictionary(uniqueKeysWithValues: state.handCommitments.compactMap {
+            seat, commitment -> (SeatID, Chips)? in
+            let amount = commitment.rawValue - normalizedCommitments[seat]!.rawValue
+            return amount > 0 ? (seat, Chips(rawValue: amount)!) : nil
+        })
+        let pots = try PotBuilder.build(
+            commitments: normalizedCommitments,
+            folded: state.foldedSeats
+        )
+        let ranks: [SeatID: HandRank]
+        if activeSeats.count == 1 {
+            ranks = [
+                activeSeats[0].id: HandRank(category: .highCard, tieBreak: []),
+            ]
+        } else {
+            ranks = try Dictionary(uniqueKeysWithValues: activeSeats.map { seat in
+                (
+                    seat.id,
+                    try HandEvaluator.best(of: seat.holeCards + state.communityCards)
+                )
+            })
+        }
+
+        let awards = try PotBuilder.awards(for: pots, ranks: ranks, dealer: state.dealer)
+        let perPotAwards = try pots.map {
+            try PotBuilder.awards(for: [$0], ranks: ranks, dealer: state.dealer)
+        }
+        let completed = try state.completingHand(
+            pots: pots,
+            awards: awards,
+            uncalledReturns: uncalledReturns
+        )
+        try BettingRules.validateStructuralState(completed)
+
+        var events = pots.map(GameEvent.potCreated)
+        events.append(contentsOf: perPotAwards.enumerated().map { index, amounts in
+            .potAwarded(
+                potIndex: index,
+                winners: circularOrder(after: state.dealer, among: Array(amounts.keys)),
+                amounts: amounts
+            )
+        })
+        events.append(.handCompleted)
+        return EngineResult(state: completed, events: events)
     }
 
     private static func advanceOneStreet(_ state: HoldemState) throws -> EngineResult {
