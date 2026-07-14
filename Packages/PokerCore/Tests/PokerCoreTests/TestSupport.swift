@@ -39,6 +39,13 @@ enum Cards {
 }
 
 enum Fixtures {
+    static func tiedRanks(_ seats: [Int]) throws -> [SeatID: HandRank] {
+        let rank = HandRank(category: .onePair, tieBreak: [14, 13, 12, 11])
+        return try Dictionary(uniqueKeysWithValues: seats.map {
+            (try SeatID($0), rank)
+        })
+    }
+
     static func nineStacks(_ amount: Int) -> [SeatID: Chips] {
         stacks(count: 9, amount: amount)
     }
@@ -148,5 +155,33 @@ enum Fixtures {
         var returned = result
         returned.currentActor = SeatID(rawValue: 0)!
         return returned
+    }
+}
+
+extension Dictionary where Key == Int, Value == Int {
+    var seatMap: [SeatID: Int] {
+        get throws {
+            var result: [SeatID: Int] = [:]
+            for (key, value) in self {
+                result[try SeatID(key)] = value
+            }
+            return result
+        }
+    }
+}
+
+extension Dictionary where Key == SeatID, Value == Int {
+    var chips: [SeatID: Chips] {
+        get throws {
+            try mapValues(Chips.init)
+        }
+    }
+}
+
+extension Array where Element == Int {
+    var seatSet: Set<SeatID> {
+        get throws {
+            try Set(map(SeatID.init))
+        }
     }
 }
