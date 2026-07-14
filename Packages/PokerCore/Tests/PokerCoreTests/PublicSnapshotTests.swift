@@ -84,13 +84,16 @@ import Testing
     let state = try Fixtures.resolveThreeWayAllInWithTwoSidePots().state
     let record = try CompletedHandRecord(state: state)
 
+    #expect(record.config == state.config)
     #expect(record.communityCards == state.communityCards)
     #expect(record.actions == state.actionHistory)
     #expect(record.pots == state.settledPots)
     #expect(record.awards == state.awards)
     #expect(record.uncalledReturns == state.uncalledReturns)
+    #expect(record.startingStacks == state.startingStacks)
     #expect(record.settledCommitments == state.settledCommitments)
     #expect(record.settledContributions == state.settledContributions)
+    #expect(record.initialTotalChips == state.initialTotalChips)
 }
 
 @Test func publicSnapshotsAndCompletedRecordRoundTripThroughCodable() throws {
