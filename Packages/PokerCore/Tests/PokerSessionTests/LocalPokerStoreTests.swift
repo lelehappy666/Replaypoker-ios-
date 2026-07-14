@@ -272,6 +272,71 @@ import Testing
     }
 }
 
+@Test func migratedVersionOneCashCommandsKeepExactLedgerFallbackIdempotency() throws {
+    let sitRepository = InMemorySessionRepository()
+    let sitStore = try seatedStore(repository: sitRepository)
+    let sitRequest = try cashTableRequest(human: 4_000)
+    let migratedSit = try migratedEarlyVersionOneState(from: sitRepository)
+    let sitRetryRepository = InMemorySessionRepository(state: migratedSit)
+    let sitRetryStore = try LocalPokerStore(
+        repository: sitRetryRepository,
+        clock: storeClock
+    )
+    #expect(
+        try sitRetryStore.sitDown(
+            request: sitRequest,
+            businessID: BusinessID("buy-4000")
+        ) == sitStore.cashSession
+    )
+    #expect(sitRetryRepository.saveCount == 0)
+
+    let rebuyID = try BusinessID("legacy-rebuy")
+    _ = try sitStore.rebuyHuman(amount: Chips(100), businessID: rebuyID)
+    let migratedRebuy = try migratedEarlyVersionOneState(from: sitRepository)
+    let rebuyRetryRepository = InMemorySessionRepository(state: migratedRebuy)
+    let rebuyRetryStore = try LocalPokerStore(
+        repository: rebuyRetryRepository,
+        clock: storeClock
+    )
+    #expect(
+        try rebuyRetryStore.rebuyHuman(amount: Chips(100), businessID: rebuyID)
+            == sitStore.cashSession
+    )
+    #expect(rebuyRetryRepository.saveCount == 0)
+
+    let leaveID = try BusinessID("legacy-cashout")
+    try sitStore.leave(businessID: leaveID)
+    let migratedLeave = try migratedEarlyVersionOneState(from: sitRepository)
+    let leaveRetryRepository = InMemorySessionRepository(state: migratedLeave)
+    let leaveRetryStore = try LocalPokerStore(
+        repository: leaveRetryRepository,
+        clock: storeClock
+    )
+    try leaveRetryStore.leave(businessID: leaveID)
+    #expect(leaveRetryStore.cashSession == nil)
+    #expect(leaveRetryRepository.saveCount == 0)
+}
+
+@Test func migratedVersionOneCashFallbackStillRejectsConflictingParametersAndKinds() throws {
+    let repository = InMemorySessionRepository()
+    _ = try seatedStore(repository: repository)
+    let migrated = try migratedEarlyVersionOneState(from: repository)
+    let retryStore = try LocalPokerStore(
+        repository: InMemorySessionRepository(state: migrated),
+        clock: storeClock
+    )
+
+    #expect(throws: PokerSessionError.businessIDConflict) {
+        try retryStore.sitDown(
+            request: cashTableRequest(human: 4_001),
+            businessID: BusinessID("buy-4000")
+        )
+    }
+    #expect(throws: PokerSessionError.businessIDConflict) {
+        try retryStore.claimDailyGift(businessID: BusinessID("buy-4000"))
+    }
+}
+
 @Test func failedSettlementSaveLeavesPendingRecordAndStatisticsUnpublished() throws {
     let repository = InMemorySessionRepository()
     let store = try completedPendingStore(repository: repository, handID: "hand-failed-settle")
@@ -520,6 +585,24 @@ private final class InMemorySessionRepository: SessionRepository {
         }
         self.state = state
     }
+}
+
+private func migratedEarlyVersionOneState(
+    from repository: InMemorySessionRepository
+) throws -> PersistedAppState {
+    var object = try #require(
+        JSONSerialization.jsonObject(with: JSONEncoder().encode(try repository.load()))
+            as? [String: Any]
+    )
+    object["version"] = 1
+    object.removeValue(forKey: "commandReceipts")
+    object.removeValue(forKey: "usedHandIDs")
+    object.removeValue(forKey: "usedSessionIDs")
+    object.removeValue(forKey: "settlementReceipts")
+    return try JSONDecoder().decode(
+        PersistedAppState.self,
+        from: JSONSerialization.data(withJSONObject: object)
+    )
 }
 
 private final class StoreTemporaryDirectory {

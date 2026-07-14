@@ -100,12 +100,24 @@ public final class LocalPokerStore {
         businessID: BusinessID
     ) throws -> CashSessionView {
         if let receipt = committed.commandReceipts[businessID] {
-            guard case let .sitDown(storedRequest, result) = receipt,
-                  storedRequest == request
-            else {
+            switch receipt {
+            case let .sitDown(storedRequest, result):
+                guard storedRequest == request else {
+                    throw PokerSessionError.businessIDConflict
+                }
+                return result
+            case let .legacyLedgerOnly(reason):
+                guard case .cashBuyIn = reason else {
+                    throw PokerSessionError.businessIDConflict
+                }
+                return try legacySitDownRetry(
+                    request: request,
+                    businessID: businessID,
+                    reason: reason
+                )
+            case .rebuy, .zeroStackLeave, .cashOut:
                 throw PokerSessionError.businessIDConflict
             }
-            return result
         }
         try requireAvailableForLedgerCommand(businessID)
         if let existing = ledgerEntry(for: businessID) {
@@ -277,8 +289,16 @@ public final class LocalPokerStore {
                 return
             case .sitDown, .rebuy:
                 throw PokerSessionError.businessIDConflict
-            case .legacyLedgerOnly:
-                throw PokerSessionError.businessIDConflict
+            case let .legacyLedgerOnly(reason):
+                guard let existing = ledgerEntry(for: businessID),
+                      case .cashOut = reason,
+                      existing.reason == reason,
+                      case .cashOut = existing.reason,
+                      committed.activeCashSession == nil
+                else {
+                    throw PokerSessionError.businessIDConflict
+                }
+                return
             }
         }
         try requireAvailableForLedgerCommand(businessID)
@@ -324,6 +344,17 @@ public final class LocalPokerStore {
         businessID: BusinessID
     ) throws -> CashSessionView {
         if let receipt = committed.commandReceipts[businessID] {
+            if case let .legacyLedgerOnly(reason) = receipt {
+                guard let existing = ledgerEntry(for: businessID),
+                      let session = committed.activeCashSession,
+                      case .cashBuyIn = reason,
+                      existing.reason == reason
+                else {
+                    throw PokerSessionError.businessIDConflict
+                }
+                try validateBuyInEntry(existing, amount: amount, table: session.table)
+                return session.view
+            }
             guard case let .rebuy(
                 sessionID,
                 table,
@@ -458,6 +489,36 @@ public final class LocalPokerStore {
         else {
             throw PokerSessionError.businessIDConflict
         }
+    }
+
+    private func legacySitDownRetry(
+        request: CashTableRequest,
+        businessID: BusinessID,
+        reason: LedgerReason
+    ) throws -> CashSessionView {
+        guard let existing = ledgerEntry(for: businessID),
+              existing.reason == reason
+        else {
+            throw PokerSessionError.businessIDConflict
+        }
+        try validateBuyInEntry(
+            existing,
+            amount: try humanStack(in: request),
+            table: request.table
+        )
+        guard let session = committed.activeCashSession,
+              session.id == request.sessionID,
+              session.table == request.table,
+              session.humanSeat == request.humanSeat,
+              session.config == request.config
+        else {
+            throw PokerSessionError.businessIDConflict
+        }
+        if session.phase == .readyForHand, session.completedHands == 0,
+           session.stacks != request.stacks {
+            throw PokerSessionError.businessIDConflict
+        }
+        return session.view
     }
 
     private func updateStatistics(
