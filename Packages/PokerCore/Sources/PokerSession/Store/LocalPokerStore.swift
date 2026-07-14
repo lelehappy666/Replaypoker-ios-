@@ -74,6 +74,22 @@ public final class LocalPokerStore {
         }
     }
 
+    public func deleteHand(id: HandID) throws {
+        try transact { state in
+            guard state.records.removeValue(forKey: id) != nil else {
+                throw PokerSessionError.recordNotFound
+            }
+            state.recordOrder.removeAll { $0 == id }
+        }
+    }
+
+    public func deleteAllHands(confirmation: DeleteAllConfirmation) throws {
+        try transact { state in
+            state.records.removeAll()
+            state.recordOrder.removeAll()
+        }
+    }
+
     public func sitDown(
         request: CashTableRequest,
         businessID: BusinessID

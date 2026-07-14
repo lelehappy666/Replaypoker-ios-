@@ -61,6 +61,10 @@ public struct HandRecordFilter: Equatable, Sendable {
     }
 }
 
+public enum DeleteAllConfirmation: Sendable {
+    case confirmed
+}
+
 package enum CommandReceipt: Codable, Equatable, Sendable {
     case sitDown(request: CashTableRequest, result: CashSessionView)
     case rebuy(
