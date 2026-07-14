@@ -87,7 +87,7 @@ enum HoldemEngine {
             }
         }
 
-        state.currentActor = nextActor(after: bigBlindSeat, in: state)
+        state.currentActor = BettingActorResolver.expectedActor(in: state)
         let advanced = try advanceIfNoActionIsPossible(state)
         events.append(contentsOf: advanced.events)
         return try validatedResult(EngineResult(state: advanced.state, events: events))
@@ -118,7 +118,7 @@ enum HoldemEngine {
             return try validatedResult(EngineResult(state: advanced.state, events: events))
         }
 
-        result.currentActor = nextActorNeedingAction(after: seat, in: result)
+        result.currentActor = BettingActorResolver.expectedActor(in: result)
         guard result.currentActor != nil else {
             throw PokerRuleError.invalidState("betting round has no next actor")
         }
@@ -263,7 +263,7 @@ enum HoldemEngine {
         for index in state.seats.indices {
             state.seats[index].committedThisStreet = Chips(rawValue: 0)!
         }
-        state.currentActor = nextActor(after: state.dealer, in: state)
+        state.currentActor = BettingActorResolver.expectedActor(in: state)
         events.append(.streetChanged(street))
 
         var dealt: [Card] = []
@@ -320,26 +320,6 @@ enum HoldemEngine {
 
     private static func remainingPlayers(in state: HoldemState) -> [SeatState] {
         state.seats.filter { !$0.hasFolded && !$0.isSittingOut }
-    }
-
-    private static func nextActor(after anchor: SeatID, in state: HoldemState) -> SeatID? {
-        let ids = state.seats.map(\.id)
-        return circularOrder(after: anchor, among: ids).first(where: state.canAct)
-    }
-
-    private static func nextActorNeedingAction(
-        after anchor: SeatID,
-        in state: HoldemState
-    ) -> SeatID? {
-        let ids = state.seats.map(\.id)
-        return circularOrder(after: anchor, among: ids).first { id in
-            guard state.canAct(id),
-                  let seat = state.seats.first(where: { $0.id == id }) else {
-                return false
-            }
-            return seat.committedThisStreet < state.currentBet
-                || !state.actedSinceLastFullRaise.contains(id)
-        }
     }
 
     private static func postBlind(

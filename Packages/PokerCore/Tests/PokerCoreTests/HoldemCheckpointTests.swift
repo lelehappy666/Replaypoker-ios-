@@ -78,6 +78,16 @@ import Testing
     }
 }
 
+@Test func checkpointDecodeRejectsWrongButActionableCurrentActor() throws {
+    let data = try Fixtures.corruptCheckpointJSON { state in
+        state["currentActor"] = 4
+    }
+
+    #expect(throws: DecodingError.self) {
+        try JSONDecoder().decode(HoldemCheckpoint.self, from: data)
+    }
+}
+
 private extension Fixtures {
     static func startedNineSeatGame(seed: UInt64) throws -> HoldemGame {
         try HoldemGame.start(

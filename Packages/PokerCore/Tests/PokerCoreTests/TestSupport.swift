@@ -72,11 +72,13 @@ enum Fixtures {
             by: SeatID(0),
             to: started.state
         )
-        return try BettingRules.applying(
+        var completed = try BettingRules.applying(
             .check,
             by: SeatID(1),
             to: called.state
         )
+        completed.currentActor = BettingActorResolver.expectedActor(in: completed)
+        return completed
     }
 
     static func playUntilEveryoneButSeatZeroFolds() throws -> EngineResult {

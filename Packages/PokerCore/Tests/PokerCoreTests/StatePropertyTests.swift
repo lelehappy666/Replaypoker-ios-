@@ -48,6 +48,7 @@ struct StatePropertyTests {
         var state = try startedState(playerCount: 2, seed: 4)
         state.street = .flop
         state.forcedBringIn = Chips(rawValue: 0)!
+        state.currentActor = BettingActorResolver.expectedActor(in: state)
 
         #expect(throws: PokerRuleError.invalidState("invalid community card count")) {
             try StateValidator.validate(state)

@@ -1,6 +1,9 @@
 enum StateValidator {
     public static func validate(_ state: HoldemState) throws {
         try BettingRules.validateStructuralState(state)
+        guard state.currentActor == BettingActorResolver.expectedActor(in: state) else {
+            throw PokerRuleError.invalidState("invalid actor")
+        }
 
         let allCards = state.seats.flatMap(\.holeCards)
             + state.communityCards

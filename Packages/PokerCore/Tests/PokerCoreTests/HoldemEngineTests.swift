@@ -348,7 +348,7 @@ import Testing
     #expect(wrongCommitment == wrongCommitmentSnapshot)
 
     var wrongActor = valid
-    wrongActor.currentActor = nil
+    wrongActor.currentActor = SeatID(rawValue: 0)!
     let wrongActorSnapshot = wrongActor
     #expect(throws: PokerRuleError.invalidState("invalid actor")) {
         try HoldemEngine.advanceIfRoundComplete(wrongActor)

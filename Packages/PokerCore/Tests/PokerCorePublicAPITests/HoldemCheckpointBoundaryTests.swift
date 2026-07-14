@@ -50,8 +50,7 @@ private func expectTypecheckFailure(
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
-    let modules = packageRoot
-        .appendingPathComponent(".build/arm64-apple-macosx/debug/Modules", isDirectory: true)
+    let modules = try pokerCoreModulesDirectory(in: packageRoot)
     let source = """
     import PokerCore
 
@@ -92,4 +91,29 @@ private func expectTypecheckFailure(
     #expect(process.terminationStatus == 1, Comment(rawValue: diagnostics))
     #expect(diagnostics.contains(expectedDiagnostic), Comment(rawValue: diagnostics))
     #expect(diagnostics.contains("no such module") == false, Comment(rawValue: diagnostics))
+}
+
+private func pokerCoreModulesDirectory(in packageRoot: URL) throws -> URL {
+    let buildDirectory = packageRoot.appendingPathComponent(".build", isDirectory: true)
+    let keys: [URLResourceKey] = [.isDirectoryKey]
+    let enumerator = FileManager.default.enumerator(
+        at: buildDirectory,
+        includingPropertiesForKeys: keys,
+        options: [.skipsHiddenFiles]
+    )
+
+    while let candidate = enumerator?.nextObject() as? URL {
+        let modules = candidate.deletingLastPathComponent()
+        let debug = modules.deletingLastPathComponent()
+        if candidate.lastPathComponent == "PokerCore.swiftmodule",
+           modules.lastPathComponent == "Modules",
+           debug.lastPathComponent == "debug" {
+            return modules
+        }
+    }
+    throw BoundaryProbeError.pokerCoreModuleNotFound
+}
+
+private enum BoundaryProbeError: Error {
+    case pokerCoreModuleNotFound
 }

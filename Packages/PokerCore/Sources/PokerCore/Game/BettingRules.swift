@@ -246,15 +246,12 @@ enum BettingRules {
         }
         let isBettingStreet = [.preflop, .flop, .turn, .river].contains(state.street)
         if isBettingStreet {
-            let actionableSeats = state.seats.filter { state.canAct($0.id) }
-            if actionableSeats.isEmpty {
-                guard state.currentActor == nil else {
+            if let actor = state.currentActor {
+                guard state.canAct(actor) else {
                     throw PokerRuleError.invalidState("invalid actor")
                 }
-            } else {
-                guard let actor = state.currentActor, state.canAct(actor) else {
-                    throw PokerRuleError.invalidState("invalid actor")
-                }
+            } else if BettingActorResolver.expectedActor(in: state) != nil {
+                throw PokerRuleError.invalidState("invalid actor")
             }
         } else {
             guard state.currentActor == nil else {
