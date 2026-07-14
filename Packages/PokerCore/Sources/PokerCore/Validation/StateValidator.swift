@@ -51,10 +51,13 @@ public enum StateValidator {
             throw PokerRuleError.invalidState("invalid starting stacks")
         }
         let orderedSeats = knownSeats.sorted()
-        let expectedSmallBlind = state.seats.count == 2
-            ? state.dealer
-            : nextSeat(after: state.dealer, among: orderedSeats)
-        let expectedBigBlind = nextSeat(after: expectedSmallBlind, among: orderedSeats)
+        let expectedSmallBlind: SeatID
+        if state.seats.count == 2 {
+            expectedSmallBlind = state.dealer
+        } else {
+            expectedSmallBlind = try nextSeat(after: state.dealer, among: orderedSeats)
+        }
+        let expectedBigBlind = try nextSeat(after: expectedSmallBlind, among: orderedSeats)
         guard state.smallBlindSeat == expectedSmallBlind,
               state.bigBlindSeat == expectedBigBlind,
               state.smallBlindSeat != state.bigBlindSeat else {
@@ -69,7 +72,8 @@ public enum StateValidator {
                     seat.stack.rawValue,
                     seat.committedThisHand.rawValue,
                 ])
-                guard liveTotal == state.startingStacks[seat.id]!.rawValue else {
+                guard let startingStack = state.startingStacks[seat.id],
+                      liveTotal == startingStack.rawValue else {
                     throw PokerRuleError.invalidState("live stack mismatch")
                 }
             }
@@ -123,16 +127,47 @@ public enum StateValidator {
             throw PokerRuleError.invalidState("ineligible award")
         }
 
+        var highestActiveCommitment: Int?
+        for seat in state.activeSeats {
+            guard let commitment = state.settledCommitments[seat.id] else {
+                throw PokerRuleError.invalidState("settlement source mismatch")
+            }
+            highestActiveCommitment = max(
+                highestActiveCommitment ?? 0,
+                commitment.rawValue
+            )
+        }
+        guard let highestActiveCommitment,
+              highestActiveCommitment > 0 else {
+            throw PokerRuleError.invalidState("settlement contribution mismatch")
+        }
+        var expectedContributions: [SeatID: Chips] = [:]
+        for seat in knownSeats {
+            guard let original = state.settledCommitments[seat] else {
+                throw PokerRuleError.invalidState("settlement source mismatch")
+            }
+            expectedContributions[seat] = try Chips(
+                min(original.rawValue, highestActiveCommitment)
+            )
+        }
+        guard expectedContributions == state.settledContributions else {
+            throw PokerRuleError.invalidState("settlement contribution mismatch")
+        }
+
         var expectedReturns: [SeatID: Chips] = [:]
         for seat in knownSeats {
-            let original = state.settledCommitments[seat]!.rawValue
-            let normalized = state.settledContributions[seat]!.rawValue
+            guard let originalChips = state.settledCommitments[seat],
+                  let normalizedChips = state.settledContributions[seat] else {
+                throw PokerRuleError.invalidState("settlement source mismatch")
+            }
+            let original = originalChips.rawValue
+            let normalized = normalizedChips.rawValue
             guard normalized <= original else {
                 throw PokerRuleError.invalidState("settlement contribution mismatch")
             }
             let amount = original - normalized
             if amount > 0 {
-                expectedReturns[seat] = Chips(rawValue: amount)!
+                expectedReturns[seat] = try Chips(amount)
             }
         }
         guard expectedReturns == state.uncalledReturns else {
@@ -192,8 +227,12 @@ public enum StateValidator {
         }
 
         for seat in state.seats {
-            let starting = state.startingStacks[seat.id]!.rawValue
-            let original = state.settledCommitments[seat.id]!.rawValue
+            guard let startingChips = state.startingStacks[seat.id],
+                  let originalChips = state.settledCommitments[seat.id] else {
+                throw PokerRuleError.invalidState("settlement source mismatch")
+            }
+            let starting = startingChips.rawValue
+            let original = originalChips.rawValue
             guard original <= starting else {
                 throw PokerRuleError.invalidState("settlement stack mismatch")
             }
@@ -217,11 +256,14 @@ public enum StateValidator {
         }
     }
 
-    private static func nextSeat(after anchor: SeatID, among ids: [SeatID]) -> SeatID {
-        ids.min {
+    private static func nextSeat(after anchor: SeatID, among ids: [SeatID]) throws -> SeatID {
+        guard let result = ids.min(by: {
             clockwiseDistance(from: anchor, to: $0)
                 < clockwiseDistance(from: anchor, to: $1)
-        }!
+        }) else {
+            throw PokerRuleError.invalidState("invalid dealt seats")
+        }
+        return result
     }
 
     private static func clockwiseDistance(from anchor: SeatID, to id: SeatID) -> Int {

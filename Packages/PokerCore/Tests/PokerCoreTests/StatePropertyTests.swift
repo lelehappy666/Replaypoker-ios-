@@ -214,6 +214,25 @@ struct StatePropertyTests {
         #expect(throws: PokerRuleError.invalidState("settlement source mismatch")) {
             try StateValidator.validate(unknownSource)
         }
+
+        var coordinatedCorruption = completed
+        coordinatedCorruption.settledContributions = [
+            seatZero: Chips(rawValue: 20)!,
+            seatOne: Chips(rawValue: 20)!,
+        ]
+        coordinatedCorruption.uncalledReturns = [
+            seatZero: Chips(rawValue: 30)!,
+            seatOne: Chips(rawValue: 10)!,
+        ]
+        coordinatedCorruption.settledPots = [
+            Pot(amount: Chips(rawValue: 40)!, eligible: [seatOne]),
+        ]
+        coordinatedCorruption.awards = [seatOne: Chips(rawValue: 40)!]
+        coordinatedCorruption.seats[0].stack = Chips(rawValue: 980)!
+        coordinatedCorruption.seats[1].stack = Chips(rawValue: 50)!
+        #expect(throws: PokerRuleError.invalidState("settlement contribution mismatch")) {
+            try StateValidator.validate(coordinatedCorruption)
+        }
     }
 
     @Test func validatorRejectsSettlementFieldsBeforeCompletion() throws {
@@ -236,8 +255,10 @@ struct StatePropertyTests {
         let second = try runBatch()
         #expect(first.summaries.count == 500)
         #expect(second.summaries.count == 500)
-        #expect(first.coverage == second.coverage)
-        try first.coverage.requireMinimums()
+        #expect(first.seededCoverage == second.seededCoverage)
+        #expect(first.fixedScenarioCoverage == second.fixedScenarioCoverage)
+        try first.seededCoverage.requireMinimums(label: "500 seeded hands")
+        try first.fixedScenarioCoverage.requireMinimums(label: "fixed legal scenarios")
 
         for (firstSummary, secondSummary) in zip(first.summaries, second.summaries) {
             guard firstSummary.seed == secondSummary.seed,
@@ -255,12 +276,13 @@ struct StatePropertyTests {
                 throw PokerRuleError.invalidState("simulation determinism mismatch")
             }
         }
-        print("StatePropertyTests coverage (500 seeds + fixed legal scenarios): \(first.coverage)")
+        print("StatePropertyTests seeded coverage (500 seeds): \(first.seededCoverage)")
+        print("StatePropertyTests fixed scenario coverage: \(first.fixedScenarioCoverage)")
     }
 
     private func runBatch() throws -> SimulationBatch {
         var summaries: [SimulationSummary] = []
-        var coverage = SimulationCoverage()
+        var seededCoverage = SimulationCoverage()
         for seed in 1...500 {
             let playerCount = 2 + seed % 8
             var reproducedActions: [RecordedAction] = []
@@ -281,7 +303,7 @@ struct StatePropertyTests {
                     "seed=\(seed), actions=\(result.actions)"
                 )
                 try result.validateAudit()
-                try coverage.observe(result.state)
+                try seededCoverage.observe(result.state)
                 summaries.append(result.summary)
             } catch {
                 let details = "seed=\(seed), playerCount=\(playerCount), "
@@ -291,10 +313,15 @@ struct StatePropertyTests {
             }
         }
 
-        try coverage.observe(Fixtures.resolveThreeWayAllInWithTwoSidePots().state)
-        try coverage.observe(Fixtures.resolveBoardPlayingTie().state)
-        try coverage.observe(shortBigBlindCompletion(seed: 201))
-        return SimulationBatch(summaries: summaries, coverage: coverage)
+        var fixedScenarioCoverage = SimulationCoverage()
+        try fixedScenarioCoverage.observe(Fixtures.resolveThreeWayAllInWithTwoSidePots().state)
+        try fixedScenarioCoverage.observe(Fixtures.resolveBoardPlayingTie().state)
+        try fixedScenarioCoverage.observe(shortBigBlindCompletion(seed: 201))
+        return SimulationBatch(
+            summaries: summaries,
+            seededCoverage: seededCoverage,
+            fixedScenarioCoverage: fixedScenarioCoverage
+        )
     }
 
     private func startedState(playerCount: Int, seed: UInt64) throws -> HoldemState {
@@ -412,7 +439,8 @@ private struct SimulationSummary: Equatable {
 
 private struct SimulationBatch {
     let summaries: [SimulationSummary]
-    let coverage: SimulationCoverage
+    let seededCoverage: SimulationCoverage
+    let fixedScenarioCoverage: SimulationCoverage
 }
 
 private struct SimulationCoverage: Equatable, CustomStringConvertible {
@@ -445,13 +473,13 @@ private struct SimulationCoverage: Equatable, CustomStringConvertible {
         }
     }
 
-    func requireMinimums() throws {
+    func requireMinimums(label: String) throws {
         guard multiPotHands > 0,
               differingEligibilityHands > 0,
               uncalledReturnHands > 0,
               tiedPots > 0,
               oddChipPots > 0 else {
-            Issue.record("insufficient simulation coverage: \(self)")
+            Issue.record("insufficient \(label) coverage: \(self)")
             throw PokerRuleError.invalidState("insufficient simulation coverage")
         }
     }
