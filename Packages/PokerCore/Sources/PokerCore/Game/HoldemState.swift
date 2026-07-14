@@ -186,7 +186,7 @@ public struct HoldemState: Codable, Equatable, Sendable {
     }
 }
 
-public struct LegalActionSet: Equatable, Sendable {
+public struct LegalActionSet: Codable, Equatable, Sendable {
     public let canFold: Bool
     public let canCheck: Bool
     public let callAmount: Chips?

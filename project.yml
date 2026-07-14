@@ -5,11 +5,16 @@ settings:
   base:
     IPHONEOS_DEPLOYMENT_TARGET: 18.0
     SWIFT_VERSION: 6.0
+packages:
+  PokerCore:
+    path: Packages/PokerCore
 targets:
   RiverClub:
     type: application
     platform: iOS
     sources: [RiverClub]
+    dependencies:
+      - package: PokerCore
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.dafengshuyi.riverclub
@@ -24,7 +29,9 @@ targets:
     type: bundle.unit-test
     platform: iOS
     sources: [RiverClubTests]
-    dependencies: [{target: RiverClub}]
+    dependencies:
+      - target: RiverClub
+      - package: PokerCore
   RiverClubUITests:
     type: bundle.ui-testing
     platform: iOS
