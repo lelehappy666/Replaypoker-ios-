@@ -195,14 +195,41 @@ public enum BettingRules {
         guard state.currentBet.rawValue == maximumCommitment else {
             throw PokerRuleError.invalidState("current bet mismatch")
         }
+        let knownSeats = Set(state.seats.map(\.id))
+        guard state.actedSinceLastFullRaise.isSubset(of: knownSeats) else {
+            throw PokerRuleError.invalidState("unknown acted seat")
+        }
+        guard state.actedSinceLastFullRaise.allSatisfy({ state.lastActedAtBet[$0] != nil }) else {
+            throw PokerRuleError.invalidState("acted seat missing baseline")
+        }
         guard state.lastActedAtBet.allSatisfy({ seat, amount in
-            state.seats.contains(where: { $0.id == seat })
+            knownSeats.contains(seat)
                 && amount.rawValue <= state.currentBet.rawValue
         }) else {
             throw PokerRuleError.invalidState("invalid action baseline")
         }
+        guard state.lastActedAtBet.allSatisfy({ seat, amount in
+            guard let seatState = state.seats.first(where: { $0.id == seat }) else {
+                return false
+            }
+            return !state.canAct(seat)
+                || amount.rawValue == seatState.committedThisStreet.rawValue
+        }) else {
+            throw PokerRuleError.invalidState("action baseline commitment mismatch")
+        }
 
-        let totalSeatChips = try state.checkedTotalSeatChips()
+        var totalCommitments = 0
+        for seat in state.seats {
+            totalCommitments = try checkedAdd(
+                totalCommitments,
+                seat.committedThisHand.rawValue
+            )
+        }
+        guard totalCommitments == state.unallocatedPot.rawValue else {
+            throw PokerRuleError.invalidState("unallocated pot mismatch")
+        }
+
+        let totalSeatChips = try state.validatedTotalSeatChips()
         let accountedChips = try checkedAdd(totalSeatChips, state.unallocatedPot.rawValue)
         guard accountedChips == state.initialTotalChips else {
             throw PokerRuleError.invalidState("chip conservation")

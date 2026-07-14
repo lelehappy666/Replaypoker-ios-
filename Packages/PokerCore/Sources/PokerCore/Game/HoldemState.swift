@@ -99,8 +99,13 @@ public struct HoldemState: Codable, Equatable, Sendable {
         seats.filter { !$0.holeCards.isEmpty }
     }
 
+    /// 仅适用于已经通过状态验证的牌局；未验证数据请调用 `validatedTotalSeatChips()`。
     public var totalSeatChips: Int {
-        (try? checkedTotalSeatChips()) ?? Int.max
+        do {
+            return try validatedTotalSeatChips()
+        } catch {
+            preconditionFailure("totalSeatChips requires a validated state: \(error)")
+        }
     }
 
     public func canAct(_ id: SeatID) -> Bool {
@@ -109,7 +114,7 @@ public struct HoldemState: Codable, Equatable, Sendable {
         }
     }
 
-    func checkedTotalSeatChips() throws -> Int {
+    public func validatedTotalSeatChips() throws -> Int {
         var total = 0
         for seat in seats {
             let (next, overflow) = total.addingReportingOverflow(seat.stack.rawValue)

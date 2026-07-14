@@ -99,7 +99,7 @@ import Testing
 @Test func shortAllInIsAcceptedWithoutReopeningRaising() throws {
     var state = Fixtures.bettingState(
         currentBet: 300,
-        seatCommitment: 100,
+        seatCommitment: 300,
         stack: 1_000,
         lastFullRaise: 200
     )
@@ -120,9 +120,9 @@ import Testing
     #expect(result.actedSinceLastFullRaise == [SeatID(rawValue: 0)!, SeatID(rawValue: 2)!])
     #expect(seatTwo.stack == Chips(rawValue: 0)!)
     #expect(seatTwo.committedThisStreet == Chips(rawValue: 350)!)
-    #expect(legal.callAmount == Chips(rawValue: 250)!)
+    #expect(legal.callAmount == Chips(rawValue: 50)!)
     #expect(legal.canRaise == false)
-    #expect(result.unallocatedPot == Chips(rawValue: 450)!)
+    #expect(result.unallocatedPot == Chips(rawValue: 650)!)
     #expect(result.totalSeatChips + result.unallocatedPot.rawValue == result.initialTotalChips)
 }
 
@@ -142,7 +142,7 @@ import Testing
     state.currentActor = SeatID(rawValue: 1)!
     state.actedSinceLastFullRaise = [SeatID(rawValue: 0)!, SeatID(rawValue: 2)!]
     state.lastActedAtBet = [
-        SeatID(rawValue: 0)!: Chips(rawValue: 300)!,
+        SeatID(rawValue: 0)!: Chips(rawValue: 100)!,
         SeatID(rawValue: 2)!: Chips(rawValue: 300)!,
     ]
     state.seats[1].committedThisStreet = Chips(rawValue: 100)!
@@ -239,7 +239,7 @@ import Testing
 @Test func fullAllInRaiseReopensRaisingAndPreservesChips() throws {
     var state = Fixtures.bettingState(
         currentBet: 300,
-        seatCommitment: 100,
+        seatCommitment: 300,
         stack: 1_000,
         lastFullRaise: 200
     )
@@ -250,7 +250,7 @@ import Testing
     state.seats[1].committedThisStreet = Chips(rawValue: 100)!
     state.seats[1].committedThisHand = Chips(rawValue: 100)!
     state.seats[3].stack = Chips(rawValue: 1_500)!
-    state.unallocatedPot = Chips(rawValue: 500)!
+    state.unallocatedPot = Chips(rawValue: 700)!
 
     let result = try BettingRules.applying(.allIn, by: SeatID(1), to: state)
     var returned = result
@@ -260,7 +260,7 @@ import Testing
     #expect(result.currentBet == Chips(rawValue: 500)!)
     #expect(result.lastFullRaiseSize == Chips(rawValue: 200)!)
     #expect(legal.minimumRaiseTo == Chips(rawValue: 700)!)
-    #expect(result.unallocatedPot == Chips(rawValue: 900)!)
+    #expect(result.unallocatedPot == Chips(rawValue: 1_100)!)
     #expect(result.totalSeatChips + result.unallocatedPot.rawValue == result.initialTotalChips)
 }
 
@@ -330,6 +330,81 @@ import Testing
     }
 }
 
+@Test func corruptedActionBaselinesAreRejectedBeforeRuleEvaluation() throws {
+    var wrongBaseline = Fixtures.bettingState(
+        currentBet: 300,
+        seatCommitment: 300,
+        stack: 1_000,
+        lastFullRaise: 200
+    )
+    wrongBaseline.actedSinceLastFullRaise = [SeatID(rawValue: 0)!]
+    wrongBaseline.lastActedAtBet = [SeatID(rawValue: 0)!: Chips(rawValue: 100)!]
+
+    #expect(throws: PokerRuleError.invalidState("action baseline commitment mismatch")) {
+        try BettingRules.legalActions(for: SeatID(0), in: wrongBaseline)
+    }
+    #expect(throws: PokerRuleError.invalidState("action baseline commitment mismatch")) {
+        try BettingRules.applying(.check, by: SeatID(0), to: wrongBaseline)
+    }
+
+    var missingBaseline = Fixtures.bettingState(
+        currentBet: 300,
+        seatCommitment: 300,
+        stack: 1_000,
+        lastFullRaise: 200
+    )
+    missingBaseline.actedSinceLastFullRaise = [SeatID(rawValue: 0)!]
+
+    #expect(throws: PokerRuleError.invalidState("acted seat missing baseline")) {
+        try BettingRules.legalActions(for: SeatID(0), in: missingBaseline)
+    }
+    #expect(throws: PokerRuleError.invalidState("acted seat missing baseline")) {
+        try BettingRules.applying(.check, by: SeatID(0), to: missingBaseline)
+    }
+}
+
+@Test func handCommitmentsMustExactlyMatchUnallocatedPot() throws {
+    let valid = Fixtures.bettingState(
+        currentBet: 300,
+        seatCommitment: 300,
+        stack: 1_000,
+        lastFullRaise: 200
+    )
+
+    var ghostCommitment = valid
+    ghostCommitment.seats[1].committedThisHand = Chips(rawValue: 1)!
+    #expect(throws: PokerRuleError.invalidState("unallocated pot mismatch")) {
+        try BettingRules.legalActions(for: SeatID(0), in: ghostCommitment)
+    }
+    #expect(throws: PokerRuleError.invalidState("unallocated pot mismatch")) {
+        try BettingRules.applying(.check, by: SeatID(0), to: ghostCommitment)
+    }
+
+    var ghostPot = valid
+    ghostPot.unallocatedPot = Chips(rawValue: valid.unallocatedPot.rawValue + 1)!
+    #expect(throws: PokerRuleError.invalidState("unallocated pot mismatch")) {
+        try BettingRules.legalActions(for: SeatID(0), in: ghostPot)
+    }
+    #expect(throws: PokerRuleError.invalidState("unallocated pot mismatch")) {
+        try BettingRules.applying(.check, by: SeatID(0), to: ghostPot)
+    }
+}
+
+@Test func validatedTotalSeatChipsReportsOverflow() throws {
+    var state = Fixtures.bettingState(
+        currentBet: 0,
+        seatCommitment: 0,
+        stack: 1_000,
+        lastFullRaise: 100
+    )
+    state.seats[0].stack = Chips(rawValue: Int.max)!
+    state.seats[1].stack = Chips(rawValue: Int.max)!
+
+    #expect(throws: PokerRuleError.invalidState("chip arithmetic overflow")) {
+        try state.validatedTotalSeatChips()
+    }
+}
+
 @Test func handConfigDecodingRevalidatesBlinds() throws {
     let invalid = Data(#"{"smallBlind":50,"bigBlind":50,"dealer":8}"#.utf8)
 
@@ -374,6 +449,7 @@ import Testing
     maximumOverflow.seats[0].committedThisHand = Chips(rawValue: Int.max)!
     maximumOverflow.seats[0].stack = Chips(rawValue: 1)!
     maximumOverflow.seats[3].stack = Chips(rawValue: 1_999)!
+    maximumOverflow.unallocatedPot = Chips(rawValue: Int.max)!
 
     #expect(throws: PokerRuleError.invalidState("chip arithmetic overflow")) {
         try BettingRules.legalActions(for: SeatID(0), in: maximumOverflow)
