@@ -11,6 +11,11 @@ public final class HoldemGame: CustomReflectable {
         self.lastTransition = lastTransition
     }
 
+    init(restoredState: HoldemState, lastTransition: GameTransition) {
+        state = restoredState
+        self.lastTransition = lastTransition
+    }
+
     public static func start(
         config: HandConfig,
         stacks: [SeatID: Chips],
@@ -51,6 +56,14 @@ public final class HoldemGame: CustomReflectable {
 
     public func completedRecord() throws -> CompletedHandRecord {
         try CompletedHandRecord(state: state)
+    }
+
+    package func makeCheckpoint() -> HoldemCheckpoint {
+        HoldemCheckpoint(state: state, lastTransition: lastTransition)
+    }
+
+    package static func restore(from checkpoint: HoldemCheckpoint) throws -> HoldemGame {
+        try checkpoint.restoredGame()
     }
 
     public var customMirror: Mirror {
