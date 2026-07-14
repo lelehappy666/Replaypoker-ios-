@@ -146,6 +146,60 @@ private func aggregateDecodingRejectsStructuralAndStatisticalCorruption(
     #expect(decoded.statistics.completedHands == 12)
 }
 
+@Test func aggregateRejectsFewerCompletedHandsThanStoredRecords() throws {
+    let state = try persistedStateWithRecord()
+    var object = try persistedStateJSONObject(state)
+    var statistics = try #require(object["statistics"] as? [String: Any])
+    statistics["completedHands"] = 0
+    statistics["wonHands"] = 0
+    object["statistics"] = statistics
+
+    #expect(throws: DecodingError.self) {
+        try JSONDecoder().decode(
+            PersistedAppState.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+    }
+}
+
+@Test func aggregateRejectsDuplicateHandNumberWithinOneSession() throws {
+    let state = try persistedStateWithTwoRecords(handNumbers: (1, 3))
+    var object = try persistedStateJSONObject(state)
+    var records = try #require(object["records"] as? [String: Any])
+    var second = try #require(records["hand-2"] as? [String: Any])
+    second["handNumber"] = 1
+    records["hand-2"] = second
+    object["records"] = records
+
+    #expect(throws: DecodingError.self) {
+        try JSONDecoder().decode(
+            PersistedAppState.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+    }
+}
+
+@Test func aggregateAllowsHandNumberGapsAndReuseAcrossSessions() throws {
+    let withGap = try persistedStateWithTwoRecords(handNumbers: (1, 3))
+    #expect(
+        try JSONDecoder().decode(
+            PersistedAppState.self,
+            from: JSONEncoder().encode(withGap)
+        ) == withGap
+    )
+
+    let acrossSessions = try persistedStateWithTwoRecords(
+        handNumbers: (1, 1),
+        sessionIDs: ("session-history", "another-session")
+    )
+    #expect(
+        try JSONDecoder().decode(
+            PersistedAppState.self,
+            from: JSONEncoder().encode(acrossSessions)
+        ) == acrossSessions
+    )
+}
+
 private enum AggregateCorruption: String, CaseIterable, Sendable, CustomTestStringConvertible {
     case recordKeyDoesNotMatchID
     case duplicateRecordOrder
@@ -157,6 +211,10 @@ private enum AggregateCorruption: String, CaseIterable, Sendable, CustomTestStri
     case negativeTotalCommitted
     case lossesExceedTotalCommitted
     case negativeLargestWin
+    case recordInitialTotalMismatch
+    case recordChipDeltaMismatch
+    case recordFinalStackKeysMismatch
+    case recordContainsDuplicateCard
 
     var testDescription: String { rawValue }
 
@@ -185,7 +243,46 @@ private enum AggregateCorruption: String, CaseIterable, Sendable, CustomTestStri
             try setStatistic(-101, key: "netChange", object: &object)
         case .negativeLargestWin:
             try setStatistic(-1, key: "largestWin", object: &object)
+        case .recordInitialTotalMismatch:
+            try mutateCompletedRecord(in: &object) { record in
+                record["initialTotalChips"] = 1
+            }
+        case .recordChipDeltaMismatch:
+            try mutateCompletedRecord(in: &object) { record in
+                var deltas = try #require(record["chipDeltas"] as? [Any])
+                let value = try #require(deltas[1] as? Int)
+                deltas[1] = value + 1
+                record["chipDeltas"] = deltas
+            }
+        case .recordFinalStackKeysMismatch:
+            try mutateCompletedRecord(in: &object) { record in
+                var stacks = try #require(record["finalStacks"] as? [Any])
+                stacks.removeLast(2)
+                record["finalStacks"] = stacks
+            }
+        case .recordContainsDuplicateCard:
+            try mutateCompletedRecord(in: &object) { record in
+                var cardsBySeat = try #require(record["holeCardsBySeat"] as? [Any])
+                let firstCards = try #require(cardsBySeat[1] as? [Any])
+                var secondCards = try #require(cardsBySeat[3] as? [Any])
+                secondCards[0] = firstCards[0]
+                cardsBySeat[3] = secondCards
+                record["holeCardsBySeat"] = cardsBySeat
+            }
         }
+    }
+
+    private func mutateCompletedRecord(
+        in object: inout [String: Any],
+        mutation: (inout [String: Any]) throws -> Void
+    ) throws {
+        var records = try #require(object["records"] as? [String: Any])
+        var stored = try #require(records["hand-1"] as? [String: Any])
+        var record = try #require(stored["record"] as? [String: Any])
+        try mutation(&record)
+        stored["record"] = record
+        records["hand-1"] = stored
+        object["records"] = records
     }
 
     private func setRecordValue(
@@ -277,17 +374,8 @@ private func persistedStateWithLedgerAndSession() throws -> PersistedAppState {
 }
 
 private func persistedStateWithRecord() throws -> PersistedAppState {
-    let id = try HandID("hand-1")
-    let stored = StoredHandRecord(
-        id: id,
-        sessionID: try SessionID("session-history"),
-        table: try TableID("jade"),
-        startedAt: Date(timeIntervalSince1970: 10),
-        endedAt: Date(timeIntervalSince1970: 20),
-        localDay: try LocalDay("2026-07-14"),
-        handNumber: 1,
-        record: try completedRecord()
-    )
+    let stored = try storedRecord(id: "hand-1", sessionID: "session-history", handNumber: 1)
+    let id = stored.id
     return PersistedAppState(
         records: [id: stored],
         recordOrder: [id],
@@ -298,6 +386,58 @@ private func persistedStateWithRecord() throws -> PersistedAppState {
             netChange: 100,
             largestWin: 100
         )
+    )
+}
+
+private func persistedStateWithTwoRecords(
+    handNumbers: (Int, Int),
+    sessionIDs: (String, String) = ("session-history", "session-history")
+) throws -> PersistedAppState {
+    let first = try storedRecord(
+        id: "hand-1",
+        sessionID: sessionIDs.0,
+        handNumber: handNumbers.0
+    )
+    let second = try storedRecord(
+        id: "hand-2",
+        sessionID: sessionIDs.1,
+        handNumber: handNumbers.1
+    )
+    return PersistedAppState(
+        records: [first.id: first, second.id: second],
+        recordOrder: [first.id, second.id],
+        statistics: PlayerStatistics(
+            completedHands: 2,
+            wonHands: 1,
+            totalCommitted: 200,
+            netChange: 0,
+            largestWin: 100
+        )
+    )
+}
+
+private func storedRecord(
+    id: String,
+    sessionID: String,
+    handNumber: Int
+) throws -> StoredHandRecord {
+    StoredHandRecord(
+        id: try HandID(id),
+        sessionID: try SessionID(sessionID),
+        table: try TableID("jade"),
+        startedAt: Date(timeIntervalSince1970: 10),
+        endedAt: Date(timeIntervalSince1970: 20),
+        localDay: try LocalDay("2026-07-14"),
+        handNumber: handNumber,
+        record: try completedRecord()
+    )
+}
+
+private func persistedStateJSONObject(
+    _ state: PersistedAppState
+) throws -> [String: Any] {
+    try #require(
+        JSONSerialization.jsonObject(with: JSONEncoder().encode(state)) as? [String: Any]
     )
 }
 

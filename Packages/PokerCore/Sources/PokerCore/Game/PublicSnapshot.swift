@@ -143,5 +143,7 @@ public struct CompletedHandRecord: Codable, Equatable, Sendable {
         self.handRanksBySeat = handRanksBySeat
         self.finalStacks = finalStacks
         self.chipDeltas = chipDeltas
+
+        try validateForPersistence()
     }
 }

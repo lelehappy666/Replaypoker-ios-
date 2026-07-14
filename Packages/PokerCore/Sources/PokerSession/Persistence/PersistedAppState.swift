@@ -100,13 +100,17 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
             throw PokerSessionError.unsupportedVersion(version)
         }
 
+        var handNumbersBySession: [SessionID: Set<Int>] = [:]
         for (key, storedRecord) in records {
             guard key == storedRecord.id,
                   storedRecord.handNumber > 0,
-                  storedRecord.startedAt <= storedRecord.endedAt
+                  storedRecord.startedAt <= storedRecord.endedAt,
+                  handNumbersBySession[storedRecord.sessionID, default: []]
+                    .insert(storedRecord.handNumber).inserted
             else {
                 throw PokerSessionError.corruptSnapshot
             }
+            try storedRecord.record.validateForPersistence()
         }
 
         let orderedKeys = Set(recordOrder)
@@ -117,6 +121,7 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
         }
 
         guard statistics.completedHands >= 0,
+              statistics.completedHands >= records.count,
               statistics.wonHands >= 0,
               statistics.wonHands <= statistics.completedHands,
               statistics.totalCommitted >= 0,
