@@ -61,6 +61,28 @@ struct CategoryCase: Sendable {
     #expect(rank.tieBreak == [14, 13])
 }
 
+@Test func choosesBestFiveCardsFromSix() throws {
+    let rank = try HandEvaluator.best(of: Cards.parse("Ah Ad Ac Ks Kd 2c"))
+
+    #expect(rank == HandRank(category: .fullHouse, tieBreak: [14, 13]))
+}
+
+@Test func comparesTwoPairByLowPairThenKicker() throws {
+    let higherLowPair = try HandEvaluator.best(of: Cards.parse("Ah Ad Qs Qc 2s 3d 4c"))
+    let lowerLowPair = try HandEvaluator.best(of: Cards.parse("Ah Ad Js Jc Ks 3d 4c"))
+    let higherKicker = try HandEvaluator.best(of: Cards.parse("Ah Ad Qs Qc Ks 3d 4c"))
+
+    #expect(higherLowPair > lowerLowPair)
+    #expect(higherKicker > higherLowPair)
+}
+
+@Test func comparesFlushByDeepKicker() throws {
+    let fiveHighFourthKicker = try HandEvaluator.best(of: Cards.parse("As Qs 9s 5s 2s Kd Jh"))
+    let fourHighFourthKicker = try HandEvaluator.best(of: Cards.parse("As Qs 9s 4s 3s Kd Jh"))
+
+    #expect(fiveHighFourthKicker > fourHighFourthKicker)
+}
+
 @Test func categoryOutranksTieBreakValues() {
     let pair = HandRank(category: .onePair, tieBreak: [2, 3, 4, 5])
     let aceHigh = HandRank(category: .highCard, tieBreak: [14, 13, 12, 11, 9])

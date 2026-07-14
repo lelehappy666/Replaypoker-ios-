@@ -15,6 +15,8 @@ public enum PotBuilder {
         for level in levels {
             let participating = commitments.filter { $0.value.rawValue >= level }
             let layerWidth = level - previousLevel
+            // 投入均为非负数时，只要总投入可表示，任何单层乘积就不会
+            // 超过总投入；此处仍保留受检乘法，防御未来领域约束变更。
             let amount = try checkedMultiply(layerWidth, participating.count)
             let eligible = Set(participating.keys).subtracting(folded)
 

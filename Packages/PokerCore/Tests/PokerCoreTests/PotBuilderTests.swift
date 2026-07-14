@@ -65,6 +65,18 @@ import Testing
     #expect(pots[0].eligible == (try [1, 2].seatSet))
 }
 
+@Test func emptyAndAllZeroCommitmentsBuildNoPots() throws {
+    #expect(try PotBuilder.build(commitments: [:], folded: []).isEmpty)
+    #expect(try PotBuilder.build(
+        commitments: [try SeatID(0): try Chips(0), try SeatID(1): try Chips(0)],
+        folded: []
+    ).isEmpty)
+}
+
+@Test func emptyPotsProduceNoAwards() throws {
+    #expect(try PotBuilder.awards(for: [], ranks: [:], dealer: SeatID(0)).isEmpty)
+}
+
 @Test func awardsPotWithSingleEligibleSeat() throws {
     let pot = Pot(amount: try Chips(500), eligible: try [4].seatSet)
     let ranks = try Fixtures.tiedRanks([4])
@@ -163,7 +175,7 @@ import Testing
     }
 }
 
-@Test func rejectsLayerMultiplicationOverflow() throws {
+@Test func rejectsCommitmentSumOverflowAcrossEqualLevels() throws {
     let commitments = try [0: Int.max, 1: Int.max].seatMap.chips
 
     #expect(throws: PokerRuleError.invalidState("chip arithmetic overflow")) {
