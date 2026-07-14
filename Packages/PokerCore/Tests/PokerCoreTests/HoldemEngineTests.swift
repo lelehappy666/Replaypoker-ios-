@@ -748,7 +748,7 @@ private func completeHeadsUpCheckRound(_ state: HoldemState) throws -> HoldemSta
     showdown.communityCards.removeLast()
     let snapshot = showdown
 
-    #expect(throws: PokerRuleError.invalidCards) {
+    #expect(throws: PokerRuleError.invalidState("card count")) {
         try HoldemEngine.advanceIfRoundComplete(showdown)
     }
     #expect(showdown == snapshot)
@@ -759,7 +759,7 @@ private func completeHeadsUpCheckRound(_ state: HoldemState) throws -> HoldemSta
     showdown.communityCards[4] = showdown.communityCards[3]
     let snapshot = showdown
 
-    #expect(throws: PokerRuleError.invalidCards) {
+    #expect(throws: PokerRuleError.invalidState("duplicate cards")) {
         try HoldemEngine.advanceIfRoundComplete(showdown)
     }
     #expect(showdown == snapshot)

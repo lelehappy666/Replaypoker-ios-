@@ -84,7 +84,7 @@ public enum HoldemEngine {
         state.currentActor = nextActor(after: bigBlindSeat, in: state)
         let advanced = try advanceIfNoActionIsPossible(state)
         events.append(contentsOf: advanced.events)
-        return EngineResult(state: advanced.state, events: events)
+        return try validatedResult(EngineResult(state: advanced.state, events: events))
     }
 
     public static func applying(
@@ -92,6 +92,7 @@ public enum HoldemEngine {
         by seat: SeatID,
         to state: HoldemState
     ) throws -> EngineResult {
+        try validatePublicInput(state)
         guard [.preflop, .flop, .turn, .river].contains(state.street) else {
             throw PokerRuleError.illegalAction("hand is not accepting actions")
         }
@@ -102,39 +103,41 @@ public enum HoldemEngine {
         if remainingPlayers(in: result).count <= 1 {
             normalizeForTerminalStreet(&result)
             events.append(.streetChanged(.showdown))
-            return EngineResult(state: result, events: events)
+            return try validatedResult(EngineResult(state: result, events: events))
         }
 
         if roundIsComplete(result) || noFurtherBettingIsPossible(result) {
             let advanced = try advanceOneStreet(result)
             events.append(contentsOf: advanced.events)
-            return EngineResult(state: advanced.state, events: events)
+            return try validatedResult(EngineResult(state: advanced.state, events: events))
         }
 
         result.currentActor = nextActorNeedingAction(after: seat, in: result)
         guard result.currentActor != nil else {
             throw PokerRuleError.invalidState("betting round has no next actor")
         }
-        return EngineResult(state: result, events: events)
+        return try validatedResult(EngineResult(state: result, events: events))
     }
 
     public static func advanceIfRoundComplete(_ state: HoldemState) throws -> EngineResult {
-        try BettingRules.validateStructuralState(state)
+        try validatePublicInput(state)
         if state.street == .showdown {
-            return try settle(state)
+            return try validatedResult(settle(state))
         }
         guard state.street != .complete else {
-            return EngineResult(state: state, events: [])
+            return try validatedResult(EngineResult(state: state, events: []))
         }
         if remainingPlayers(in: state).count <= 1 {
             var result = state
             normalizeForTerminalStreet(&result)
-            return EngineResult(state: result, events: [.streetChanged(.showdown)])
+            return try validatedResult(
+                EngineResult(state: result, events: [.streetChanged(.showdown)])
+            )
         }
         guard roundIsComplete(state) || noFurtherBettingIsPossible(state) else {
-            return EngineResult(state: state, events: [])
+            return try validatedResult(EngineResult(state: state, events: []))
         }
-        return try advanceOneStreet(state)
+        return try validatedResult(advanceOneStreet(state))
     }
 
     private static func settle(_ state: HoldemState) throws -> EngineResult {
@@ -381,6 +384,21 @@ public enum HoldemEngine {
         guard !overflow else {
             throw PokerRuleError.invalidState("chip arithmetic overflow")
         }
+        return result
+    }
+
+    private static func validatePublicInput(_ state: HoldemState) throws {
+        #if DEBUG
+        try StateValidator.validate(state)
+        #else
+        try BettingRules.validateStructuralState(state)
+        #endif
+    }
+
+    private static func validatedResult(_ result: EngineResult) throws -> EngineResult {
+        #if DEBUG
+        try StateValidator.validate(result.state)
+        #endif
         return result
     }
 }
