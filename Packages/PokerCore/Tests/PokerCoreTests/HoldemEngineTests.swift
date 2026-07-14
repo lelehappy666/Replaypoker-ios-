@@ -408,9 +408,9 @@ import Testing
 
 @Test func nextActorSkipsFoldedAndAllInSeats() throws {
     var started = try HoldemEngine.start(
-        config: standardConfig(),
+        config: Fixtures.standardConfig(dealer: 2),
         stacks: [
-            SeatID(rawValue: 0)!: Chips(rawValue: 0)!,
+            SeatID(rawValue: 0)!: Chips(rawValue: 1)!,
             SeatID(rawValue: 1)!: Chips(rawValue: 1_000)!,
             SeatID(rawValue: 2)!: Chips(rawValue: 1_000)!,
             SeatID(rawValue: 3)!: Chips(rawValue: 1_000)!,
@@ -419,10 +419,10 @@ import Testing
     ).state
     started.seats[2].hasFolded = true
 
-    let folded = try HoldemEngine.applying(.fold, by: SeatID(3), to: started)
+    let folded = try HoldemEngine.applying(.fold, by: SeatID(1), to: started)
 
     #expect(folded.state.seats.first { $0.id == SeatID(rawValue: 0)! }?.isAllIn == true)
-    #expect(folded.state.currentActor == SeatID(rawValue: 1)!)
+    #expect(folded.state.currentActor == SeatID(rawValue: 3)!)
 }
 
 @Test func nextActorSkipsSittingOutSeat() throws {

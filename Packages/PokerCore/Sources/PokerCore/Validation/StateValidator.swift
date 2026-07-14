@@ -43,6 +43,13 @@ public enum StateValidator {
               state.config.dealer == state.dealer else {
             throw PokerRuleError.invalidState("invalid dealt seats")
         }
+        guard Set(state.startingStacks.keys) == knownSeats else {
+            throw PokerRuleError.invalidState("invalid starting stacks")
+        }
+        let startingTotal = try checkedSum(state.startingStacks.values.map(\.rawValue))
+        guard startingTotal == state.initialTotalChips else {
+            throw PokerRuleError.invalidState("invalid starting stacks")
+        }
         let orderedSeats = knownSeats.sorted()
         let expectedSmallBlind = state.seats.count == 2
             ? state.dealer
@@ -57,9 +64,20 @@ public enum StateValidator {
         if state.street == .complete {
             try validateCompletedState(state, knownSeats: knownSeats)
         } else {
+            for seat in state.seats {
+                let liveTotal = try checkedSum([
+                    seat.stack.rawValue,
+                    seat.committedThisHand.rawValue,
+                ])
+                guard liveTotal == state.startingStacks[seat.id]!.rawValue else {
+                    throw PokerRuleError.invalidState("live stack mismatch")
+                }
+            }
             guard state.settledPots.isEmpty,
                   state.awards.isEmpty,
-                  state.uncalledReturns.isEmpty else {
+                  state.uncalledReturns.isEmpty,
+                  state.settledCommitments.isEmpty,
+                  state.settledContributions.isEmpty else {
                 throw PokerRuleError.invalidState("premature settlement")
             }
         }
@@ -83,9 +101,11 @@ public enum StateValidator {
         }
 
         let activeSeats = Set(state.activeSeats.map(\.id))
-        guard !state.settledPots.isEmpty,
-              !state.awards.isEmpty,
-              state.settledPots.allSatisfy({ pot in
+        guard Set(state.settledCommitments.keys) == knownSeats,
+              Set(state.settledContributions.keys) == knownSeats else {
+            throw PokerRuleError.invalidState("settlement source mismatch")
+        }
+        guard state.settledPots.allSatisfy({ pot in
                   pot.amount.rawValue > 0
                       && !pot.eligible.isEmpty
                       && pot.eligible.isSubset(of: activeSeats)
@@ -96,7 +116,6 @@ public enum StateValidator {
               }) else {
             throw PokerRuleError.invalidState("settlement accounting")
         }
-
         let eligibleSeats = state.settledPots.reduce(into: Set<SeatID>()) {
             $0.formUnion($1.eligible)
         }
@@ -104,7 +123,41 @@ public enum StateValidator {
             throw PokerRuleError.invalidState("ineligible award")
         }
 
+        var expectedReturns: [SeatID: Chips] = [:]
+        for seat in knownSeats {
+            let original = state.settledCommitments[seat]!.rawValue
+            let normalized = state.settledContributions[seat]!.rawValue
+            guard normalized <= original else {
+                throw PokerRuleError.invalidState("settlement contribution mismatch")
+            }
+            let amount = original - normalized
+            if amount > 0 {
+                expectedReturns[seat] = Chips(rawValue: amount)!
+            }
+        }
+        guard expectedReturns == state.uncalledReturns else {
+            throw PokerRuleError.invalidState("settlement return mismatch")
+        }
+
+        let normalizedTotal = try checkedSum(
+            state.settledContributions.values.map(\.rawValue)
+        )
+        let originalTotal = try checkedSum(state.settledCommitments.values.map(\.rawValue))
+        let returnTotal = try checkedSum(state.uncalledReturns.values.map(\.rawValue))
         let potTotal = try checkedSum(state.settledPots.map { $0.amount.rawValue })
+        let accountedOriginalTotal = try checkedSum([potTotal, returnTotal])
+        guard normalizedTotal == potTotal,
+              originalTotal == accountedOriginalTotal else {
+            throw PokerRuleError.invalidState("settlement contribution mismatch")
+        }
+        let rebuiltPots = try PotBuilder.build(
+            commitments: state.settledContributions,
+            folded: state.foldedSeats
+        )
+        guard rebuiltPots == state.settledPots else {
+            throw PokerRuleError.invalidState("settlement contribution mismatch")
+        }
+
         let awardTotal = try checkedSum(state.awards.values.map(\.rawValue))
         guard potTotal == awardTotal else {
             throw PokerRuleError.invalidState("settlement accounting")
@@ -136,6 +189,21 @@ public enum StateValidator {
         }
         guard expectedAwards == state.awards.mapValues(\.rawValue) else {
             throw PokerRuleError.invalidState("settlement awards mismatch")
+        }
+
+        for seat in state.seats {
+            let starting = state.startingStacks[seat.id]!.rawValue
+            let original = state.settledCommitments[seat.id]!.rawValue
+            guard original <= starting else {
+                throw PokerRuleError.invalidState("settlement stack mismatch")
+            }
+            let afterCommitment = starting - original
+            let returned = state.uncalledReturns[seat.id]?.rawValue ?? 0
+            let awarded = state.awards[seat.id]?.rawValue ?? 0
+            let expectedStack = try checkedSum([afterCommitment, returned, awarded])
+            guard expectedStack == seat.stack.rawValue else {
+                throw PokerRuleError.invalidState("settlement stack mismatch")
+            }
         }
     }
 

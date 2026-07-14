@@ -7,6 +7,9 @@ public enum HoldemEngine {
         guard stacks.count >= 2 else {
             throw PokerRuleError.insufficientPlayers
         }
+        guard stacks.values.allSatisfy({ $0.rawValue > 0 }) else {
+            throw PokerRuleError.invalidState("non-positive stack")
+        }
         guard stacks[config.dealer] != nil else {
             throw PokerRuleError.invalidState("dealer is not seated")
         }
@@ -55,6 +58,9 @@ public enum HoldemEngine {
             settledPots: [],
             awards: [:],
             uncalledReturns: [:],
+            startingStacks: stacks,
+            settledCommitments: [:],
+            settledContributions: [:],
             unallocatedPot: Chips(rawValue: 0)!,
             initialTotalChips: initialTotalChips
         )
@@ -186,7 +192,8 @@ public enum HoldemEngine {
         let completed = try state.completingHand(
             pots: pots,
             awards: awards,
-            uncalledReturns: uncalledReturns
+            uncalledReturns: uncalledReturns,
+            contributions: normalizedCommitments
         )
         try BettingRules.validateStructuralState(completed)
 

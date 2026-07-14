@@ -82,6 +82,9 @@ public struct HoldemState: Codable, Equatable, Sendable {
     public var settledPots: [Pot]
     public var awards: [SeatID: Chips]
     public var uncalledReturns: [SeatID: Chips]
+    public let startingStacks: [SeatID: Chips]
+    public var settledCommitments: [SeatID: Chips]
+    public var settledContributions: [SeatID: Chips]
     public var unallocatedPot: Chips
     public let initialTotalChips: Int
 
@@ -131,7 +134,8 @@ public struct HoldemState: Codable, Equatable, Sendable {
     func completingHand(
         pots: [Pot],
         awards: [SeatID: Chips],
-        uncalledReturns: [SeatID: Chips]
+        uncalledReturns: [SeatID: Chips],
+        contributions: [SeatID: Chips]
     ) throws -> HoldemState {
         var result = self
 
@@ -161,6 +165,8 @@ public struct HoldemState: Codable, Equatable, Sendable {
         result.settledPots = pots
         result.awards = awards
         result.uncalledReturns = uncalledReturns
+        result.settledCommitments = handCommitments
+        result.settledContributions = contributions
         result.unallocatedPot = Chips(rawValue: 0)!
         return result
     }

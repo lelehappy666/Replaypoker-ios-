@@ -237,6 +237,14 @@ enum Fixtures {
             settledPots: [],
             awards: [:],
             uncalledReturns: [:],
+            startingStacks: Dictionary(uniqueKeysWithValues: seats.map {
+                (
+                    $0.id,
+                    Chips(rawValue: $0.stack.rawValue + $0.committedThisHand.rawValue)!
+                )
+            }),
+            settledCommitments: [:],
+            settledContributions: [:],
             unallocatedPot: Chips(rawValue: seats.reduce(0) {
                 $0 + $1.committedThisHand.rawValue
             })!,
