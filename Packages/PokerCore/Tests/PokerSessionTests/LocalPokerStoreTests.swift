@@ -427,6 +427,128 @@ import Testing
     }
 }
 
+@Test func savedLegacyGenericVersionTwoCashReceiptsMigrateAndRetryWithoutSaving() throws {
+    let sitRepository = InMemorySessionRepository()
+    let sitStore = try seatedStore(repository: sitRepository)
+    let sitV2 = try savedLegacyGenericVersionTwoState(from: sitRepository)
+    let sitRetryRepository = InMemorySessionRepository(state: sitV2)
+    let sitRetryStore = try LocalPokerStore(
+        repository: sitRetryRepository,
+        clock: storeClock
+    )
+    #expect(
+        try sitRetryStore.sitDown(
+            request: cashTableRequest(human: 4_000),
+            businessID: BusinessID("buy-4000")
+        ) == sitStore.cashSession
+    )
+    #expect(sitRetryRepository.saveCount == 0)
+
+    let rebuyID = try BusinessID("saved-v2-rebuy")
+    _ = try sitStore.rebuyHuman(amount: Chips(100), businessID: rebuyID)
+    let rebuyV2 = try savedLegacyGenericVersionTwoState(from: sitRepository)
+    let rebuyRetryRepository = InMemorySessionRepository(state: rebuyV2)
+    let rebuyRetryStore = try LocalPokerStore(
+        repository: rebuyRetryRepository,
+        clock: storeClock
+    )
+    #expect(
+        try rebuyRetryStore.rebuyHuman(amount: Chips(100), businessID: rebuyID)
+            == sitStore.cashSession
+    )
+    #expect(rebuyRetryRepository.saveCount == 0)
+
+    let leaveID = try BusinessID("saved-v2-cashout")
+    try sitStore.leave(businessID: leaveID)
+    let leaveV2 = try savedLegacyGenericVersionTwoState(from: sitRepository)
+    let leaveRetryRepository = InMemorySessionRepository(state: leaveV2)
+    let leaveRetryStore = try LocalPokerStore(
+        repository: leaveRetryRepository,
+        clock: storeClock
+    )
+    try leaveRetryStore.leave(businessID: leaveID)
+    #expect(leaveRetryStore.cashSession == nil)
+    #expect(leaveRetryRepository.saveCount == 0)
+}
+
+@Test func savedLegacyGenericVersionTwoKeepsKindsSegmentsAndNoncashEvidence() throws {
+    let openRepository = InMemorySessionRepository()
+    let openStore = try seatedStore(repository: openRepository)
+    let rebuyID = try BusinessID("saved-v2-typed-rebuy")
+    _ = try openStore.rebuyHuman(amount: Chips(100), businessID: rebuyID)
+    let openV2 = try savedLegacyGenericVersionTwoState(from: openRepository)
+    let openRetry = try LocalPokerStore(
+        repository: InMemorySessionRepository(state: openV2),
+        clock: storeClock
+    )
+    #expect(throws: PokerSessionError.businessIDConflict) {
+        try openRetry.rebuyHuman(
+            amount: Chips(4_000),
+            businessID: BusinessID("buy-4000")
+        )
+    }
+    #expect(throws: PokerSessionError.businessIDConflict) {
+        try openRetry.sitDown(
+            request: cashTableRequest(human: 100),
+            businessID: rebuyID
+        )
+    }
+
+    try openStore.leave(businessID: BusinessID("saved-v2-old-cashout"))
+    _ = try openStore.sitDown(
+        request: cashTableRequest(human: 4_000, sessionID: "saved-v2-new-session"),
+        businessID: BusinessID("saved-v2-new-buy")
+    )
+    let closedV2 = try savedLegacyGenericVersionTwoState(from: openRepository)
+    let closedRetry = try LocalPokerStore(
+        repository: InMemorySessionRepository(state: closedV2),
+        clock: storeClock
+    )
+    #expect(throws: PokerSessionError.businessIDConflict) {
+        try closedRetry.rebuyHuman(
+            amount: Chips(4_000),
+            businessID: BusinessID("buy-4000")
+        )
+    }
+
+    var ledger = EntertainmentChipLedger()
+    let giftID = try BusinessID("saved-v2-generic-gift")
+    let day = try LocalDay("2026-07-16")
+    _ = try ledger.claimDailyGift(id: giftID, day: day, at: storeClock.now)
+    var noncash = PersistedAppState(ledger: ledger)
+    noncash.commandReceipts[giftID] = .legacyLedgerOnly(reason: .dailyGift(day: day))
+    var object = try #require(
+        JSONSerialization.jsonObject(with: JSONEncoder().encode(noncash))
+            as? [String: Any]
+    )
+    object["version"] = 2
+    let migratedNoncash = try JSONDecoder().decode(
+        PersistedAppState.self,
+        from: JSONSerialization.data(withJSONObject: object)
+    )
+    #expect(
+        migratedNoncash.commandReceipts[giftID]
+            == .legacyLedgerOnly(reason: .dailyGift(day: day))
+    )
+
+    var modernObject = try #require(
+        JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(try openRepository.load())
+        ) as? [String: Any]
+    )
+    modernObject["version"] = 2
+    let modernMigrated = try JSONDecoder().decode(
+        PersistedAppState.self,
+        from: JSONSerialization.data(withJSONObject: modernObject)
+    )
+    guard case .sitDown = modernMigrated.commandReceipts[
+        try BusinessID("saved-v2-new-buy")
+    ] else {
+        Issue.record("现代入座收据不应被 v2 迁移改写")
+        return
+    }
+}
+
 @Test func failedSettlementSaveLeavesPendingRecordAndStatisticsUnpublished() throws {
     let repository = InMemorySessionRepository()
     let store = try completedPendingStore(repository: repository, handID: "hand-failed-settle")
@@ -693,6 +815,29 @@ private func migratedEarlyVersionOneState(
         PersistedAppState.self,
         from: JSONSerialization.data(withJSONObject: object)
     )
+}
+
+private func savedLegacyGenericVersionTwoState(
+    from repository: InMemorySessionRepository
+) throws -> PersistedAppState {
+    var oldState = try repository.load()
+    for entry in oldState.ledger.entries {
+        switch entry.reason {
+        case .cashBuyIn, .cashOut:
+            oldState.commandReceipts[entry.businessID] = .legacyLedgerOnly(
+                reason: entry.reason
+            )
+        case .dailyGift, .bankruptcyRelief:
+            break
+        }
+    }
+    var object = try #require(
+        JSONSerialization.jsonObject(with: JSONEncoder().encode(oldState))
+            as? [String: Any]
+    )
+    object["version"] = 2
+    let fixture = try JSONSerialization.data(withJSONObject: object)
+    return try JSONDecoder().decode(PersistedAppState.self, from: fixture)
 }
 
 private final class StoreTemporaryDirectory {

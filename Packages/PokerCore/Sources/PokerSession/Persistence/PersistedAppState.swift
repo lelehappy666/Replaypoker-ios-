@@ -2,7 +2,7 @@ import Foundation
 import PokerCore
 
 package struct PersistedAppState: Codable, Equatable, Sendable {
-    package static let currentVersion = 2
+    package static let currentVersion = 3
 
     package var version: Int
     package var ledger: EntertainmentChipLedger
@@ -85,7 +85,7 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
     package init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let decodedVersion = try container.decode(Int.self, forKey: .version)
-        guard decodedVersion == 1 || decodedVersion == Self.currentVersion else {
+        guard (1...Self.currentVersion).contains(decodedVersion) else {
             throw PokerSessionError.unsupportedVersion(decodedVersion)
         }
 
@@ -109,7 +109,7 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
         recordOrder = try container.decode([HandID].self, forKey: .recordOrder)
         statistics = try container.decode(PlayerStatistics.self, forKey: .statistics)
         let encodedReceipts: [String: CommandReceipt]
-        if decodedVersion == Self.currentVersion {
+        if decodedVersion >= 2 {
             encodedReceipts = try container.decode(
                 [String: CommandReceipt].self,
                 forKey: .commandReceipts
@@ -130,7 +130,7 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
             throw Self.corrupt(decoder, "业务收据索引无效", underlyingError: error)
         }
 
-        if decodedVersion == Self.currentVersion {
+        if decodedVersion >= 2 {
             usedHandIDs = try container.decode(Set<HandID>.self, forKey: .usedHandIDs)
             usedSessionIDs = try container.decode(Set<SessionID>.self, forKey: .usedSessionIDs)
         } else {
@@ -144,7 +144,7 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
             ) ?? []
         }
         let encodedSettlements: [String: SettlementReceipt]
-        if decodedVersion == Self.currentVersion {
+        if decodedVersion >= 2 {
             encodedSettlements = try container.decode(
                 [String: SettlementReceipt].self,
                 forKey: .settlementReceipts
@@ -189,14 +189,35 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
                 case .legacyLedgerOnly: break
                 }
             }
+            for record in records.values {
+                if let transactionID = record.transactionID {
+                    settlementReceipts[transactionID] = SettlementReceipt(
+                        handID: record.id,
+                        sessionID: record.sessionID
+                    )
+                }
+            }
+        }
+
+        if decodedVersion <= 2 {
             var segmentHasBuyIn = false
             var openMigratedBuyInIDs: [BusinessID] = []
             for entry in ledger.entries {
+                let existingReceipt = commandReceipts[entry.businessID]
+                let canMigrate: Bool
+                if existingReceipt == nil {
+                    canMigrate = decodedVersion == 1
+                } else if case let .legacyLedgerOnly(reason) = existingReceipt {
+                    canMigrate = reason == entry.reason
+                } else {
+                    canMigrate = false
+                }
+
                 switch entry.reason {
                 case let .cashBuyIn(table):
                     let kind: LegacyCashBuyInKind = segmentHasBuyIn ? .rebuy : .sitDown
                     segmentHasBuyIn = true
-                    if commandReceipts[entry.businessID] == nil {
+                    if canMigrate {
                         commandReceipts[entry.businessID] = .legacyCashBuyIn(
                             kind: kind,
                             table: table,
@@ -206,7 +227,7 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
                         openMigratedBuyInIDs.append(entry.businessID)
                     }
                 case .cashOut:
-                    if commandReceipts[entry.businessID] == nil {
+                    if canMigrate {
                         commandReceipts[entry.businessID] = .legacyCashOut(
                             reason: entry.reason
                         )
@@ -226,14 +247,6 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
                     amount: amount,
                     belongsToOpenSession: true
                 )
-            }
-            for record in records.values {
-                if let transactionID = record.transactionID {
-                    settlementReceipts[transactionID] = SettlementReceipt(
-                        handID: record.id,
-                        sessionID: record.sessionID
-                    )
-                }
             }
         }
 
