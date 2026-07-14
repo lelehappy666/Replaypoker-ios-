@@ -135,6 +135,181 @@ import Testing
     #expect(try repository.load().commandReceipts == receipts)
 }
 
+@Test func deletedHistoryKeepsHandAndSettlementIdentitiesPermanentlyReserved() throws {
+    let repository = RecoveryMemoryRepository()
+    let store = try LocalPokerStore(repository: repository, clock: recoveryClock)
+    _ = try store.sitDown(
+        request: recoveryRequest(session: "identity-session", table: "jade"),
+        businessID: BusinessID("identity-buy")
+    )
+    let record = try completeAndCommitRecoveryHand(in: store, id: "identity-hand", seed: 67)
+    try store.deleteHand(id: record.id)
+
+    #expect(throws: PokerSessionError.recordNotFound) {
+        try store.commitPendingHand(transactionID: record.transactionID!)
+    }
+    #expect(throws: PokerSessionError.businessIDConflict) {
+        try store.claimDailyGift(businessID: record.transactionID!)
+    }
+    #expect(throws: PokerSessionError.businessIDConflict) {
+        try store.startHand(id: record.id, seed: 69)
+    }
+
+    let reopened = try LocalPokerStore(repository: repository, clock: recoveryClock)
+    #expect(throws: PokerSessionError.recordNotFound) {
+        try reopened.commitPendingHand(transactionID: record.transactionID!)
+    }
+}
+
+@Test func sessionIdentityCannotBeReusedAfterLeavingOrDeletingHistory() throws {
+    let repository = RecoveryMemoryRepository()
+    let store = try LocalPokerStore(repository: repository, clock: recoveryClock)
+    let request = try recoveryRequest(session: "reserved-session", table: "jade")
+    let firstBusinessID = try BusinessID("reserved-buy-one")
+    let first = try store.sitDown(request: request, businessID: firstBusinessID)
+    try store.leave(businessID: BusinessID("reserved-leave"))
+
+    #expect(try store.sitDown(request: request, businessID: firstBusinessID) == first)
+    #expect(throws: PokerSessionError.businessIDConflict) {
+        try store.sitDown(request: request, businessID: BusinessID("reserved-buy-two"))
+    }
+}
+
+@Test func legacyVersionOneSnapshotRebuildsPermanentIdentityEvidence() throws {
+    let repository = RecoveryMemoryRepository()
+    let store = try LocalPokerStore(repository: repository, clock: recoveryClock)
+    _ = try store.sitDown(
+        request: recoveryRequest(session: "legacy-session", table: "jade"),
+        businessID: BusinessID("legacy-buy")
+    )
+    let record = try completeAndCommitRecoveryHand(in: store, id: "legacy-hand", seed: 71)
+    var object = try #require(
+        JSONSerialization.jsonObject(with: JSONEncoder().encode(try repository.load()))
+            as? [String: Any]
+    )
+    object.removeValue(forKey: "usedHandIDs")
+    object.removeValue(forKey: "usedSessionIDs")
+    object.removeValue(forKey: "settlementReceipts")
+    object["version"] = 1
+    let migrated = try JSONDecoder().decode(
+        PersistedAppState.self,
+        from: JSONSerialization.data(withJSONObject: object)
+    )
+
+    #expect(migrated.usedHandIDs.contains(record.id))
+    #expect(migrated.usedSessionIDs.contains(record.sessionID))
+    #expect(migrated.settlementReceipts[record.transactionID!] != nil)
+}
+
+@Test func versionOneSnapshotRebuildsEachIndividuallyMissingIdentityField() throws {
+    let repository = RecoveryMemoryRepository()
+    let store = try LocalPokerStore(repository: repository, clock: recoveryClock)
+    _ = try store.sitDown(
+        request: recoveryRequest(session: "partial-legacy-session", table: "jade"),
+        businessID: BusinessID("partial-legacy-buy")
+    )
+    let record = try completeAndCommitRecoveryHand(
+        in: store,
+        id: "partial-legacy-hand",
+        seed: 73
+    )
+    var object = try #require(
+        JSONSerialization.jsonObject(with: JSONEncoder().encode(try repository.load()))
+            as? [String: Any]
+    )
+    object.removeValue(forKey: "settlementReceipts")
+    object["version"] = 1
+    let migrated = try JSONDecoder().decode(
+        PersistedAppState.self,
+        from: JSONSerialization.data(withJSONObject: object)
+    )
+
+    #expect(migrated.usedHandIDs.contains(record.id))
+    #expect(migrated.usedSessionIDs.contains(record.sessionID))
+    #expect(migrated.settlementReceipts[record.transactionID!] != nil)
+}
+
+@Test func versionTwoSnapshotRejectsAnyMissingPermanentIdentityField() throws {
+    let state = PersistedAppState()
+    for key in [
+        "commandReceipts", "usedHandIDs", "usedSessionIDs", "settlementReceipts",
+    ] {
+        var object = try #require(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(state))
+                as? [String: Any]
+        )
+        object.removeValue(forKey: key)
+
+        #expect(throws: DecodingError.self, Comment(rawValue: key)) {
+            try JSONDecoder().decode(
+                PersistedAppState.self,
+                from: JSONSerialization.data(withJSONObject: object)
+            )
+        }
+    }
+}
+
+@Test func earlyVersionOneSnapshotWithoutCommandReceiptsKeepsLedgerIdentityReserved() throws {
+    let repository = RecoveryMemoryRepository()
+    let store = try LocalPokerStore(repository: repository, clock: recoveryClock)
+    _ = try store.sitDown(
+        request: recoveryRequest(session: "early-v1-session", table: "jade"),
+        businessID: BusinessID("early-v1-buy")
+    )
+    var object = try #require(
+        JSONSerialization.jsonObject(with: JSONEncoder().encode(try repository.load()))
+            as? [String: Any]
+    )
+    object["version"] = 1
+    object.removeValue(forKey: "commandReceipts")
+    object.removeValue(forKey: "usedHandIDs")
+    object.removeValue(forKey: "usedSessionIDs")
+    object.removeValue(forKey: "settlementReceipts")
+    let migrated = try JSONDecoder().decode(
+        PersistedAppState.self,
+        from: JSONSerialization.data(withJSONObject: object)
+    )
+
+    #expect(migrated.version == PersistedAppState.currentVersion)
+    #expect(migrated.commandReceipts[try BusinessID("early-v1-buy")] != nil)
+    #expect(migrated.usedSessionIDs.contains(try SessionID("early-v1-session")))
+}
+
+@Test func decodedActiveLeftSessionMapsToCorruptSnapshot() throws {
+    let directory = try RecoveryTemporaryDirectory()
+    let store = try makeRecoveryStore(in: directory.url)
+    _ = store
+    let file = directory.url.appendingPathComponent("river-club-state-v1.json")
+    var object = try #require(
+        JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any]
+    )
+    var session = try #require(object["activeCashSession"] as? [String: Any])
+    session["phase"] = CashSessionPhase.left.rawValue
+    object["activeCashSession"] = session
+    try JSONSerialization.data(withJSONObject: object).write(to: file)
+
+    #expect(throws: PokerSessionError.corruptSnapshot) {
+        try LocalPokerStore.open(directory: directory.url, clock: recoveryClock)
+    }
+}
+
+@Test func activeLeftSessionIsRejectedAsCorruptSnapshot() throws {
+    let request = try recoveryRequest(session: "left-active", table: "jade")
+    var session = try CashGameSession.make(
+        id: request.sessionID,
+        table: request.table,
+        config: request.config,
+        humanSeat: request.humanSeat,
+        stacks: request.stacks
+    )
+    _ = try session.leave()
+    let state = PersistedAppState(activeCashSession: session)
+
+    #expect(throws: EncodingError.self) {
+        try JSONEncoder().encode(state)
+    }
+}
+
 @Test func failedHistoryDeletionDoesNotPublishPartialMutation() throws {
     let repository = RecoveryMemoryRepository()
     let store = try LocalPokerStore(repository: repository, clock: recoveryClock)

@@ -2,7 +2,7 @@ import Foundation
 import PokerCore
 
 package struct PersistedAppState: Codable, Equatable, Sendable {
-    package static let currentVersion = 1
+    package static let currentVersion = 2
 
     package var version: Int
     package var ledger: EntertainmentChipLedger
@@ -11,6 +11,9 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
     package var recordOrder: [HandID]
     package var statistics: PlayerStatistics
     package var commandReceipts: [BusinessID: CommandReceipt]
+    package var usedHandIDs: Set<HandID>
+    package var usedSessionIDs: Set<SessionID>
+    package var settlementReceipts: [BusinessID: SettlementReceipt]
 
     package init(
         version: Int = currentVersion,
@@ -19,7 +22,10 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
         records: [HandID: StoredHandRecord] = [:],
         recordOrder: [HandID] = [],
         statistics: PlayerStatistics = PlayerStatistics(),
-        commandReceipts: [BusinessID: CommandReceipt] = [:]
+        commandReceipts: [BusinessID: CommandReceipt] = [:],
+        usedHandIDs: Set<HandID> = [],
+        usedSessionIDs: Set<SessionID> = [],
+        settlementReceipts: [BusinessID: SettlementReceipt] = [:]
     ) {
         self.version = version
         self.ledger = ledger
@@ -28,6 +34,38 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
         self.recordOrder = recordOrder
         self.statistics = statistics
         self.commandReceipts = commandReceipts
+        var inferredHandIDs = usedHandIDs.union(records.keys)
+        var inferredSessionIDs = usedSessionIDs.union(records.values.map(\.sessionID))
+        if let activeCashSession {
+            inferredSessionIDs.insert(activeCashSession.id)
+            if let activeHandID = activeCashSession.activeHandID {
+                inferredHandIDs.insert(activeHandID)
+            }
+            if let pendingID = activeCashSession.pendingHand?.id {
+                inferredHandIDs.insert(pendingID)
+            }
+        }
+        for receipt in commandReceipts.values {
+            switch receipt {
+            case let .sitDown(request, _): inferredSessionIDs.insert(request.sessionID)
+            case let .rebuy(sessionID, _, _, _, _, _): inferredSessionIDs.insert(sessionID)
+            case let .zeroStackLeave(sessionID, _): inferredSessionIDs.insert(sessionID)
+            case let .cashOut(sessionID, _, _): inferredSessionIDs.insert(sessionID)
+            case .legacyLedgerOnly: break
+            }
+        }
+        var inferredSettlements = settlementReceipts
+        for record in records.values {
+            if let transactionID = record.transactionID {
+                inferredSettlements[transactionID] = SettlementReceipt(
+                    handID: record.id,
+                    sessionID: record.sessionID
+                )
+            }
+        }
+        self.usedHandIDs = inferredHandIDs
+        self.usedSessionIDs = inferredSessionIDs
+        self.settlementReceipts = inferredSettlements
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -38,16 +76,19 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
         case recordOrder
         case statistics
         case commandReceipts
+        case usedHandIDs
+        case usedSessionIDs
+        case settlementReceipts
     }
 
     package init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let decodedVersion = try container.decode(Int.self, forKey: .version)
-        guard decodedVersion == Self.currentVersion else {
+        guard decodedVersion == 1 || decodedVersion == Self.currentVersion else {
             throw PokerSessionError.unsupportedVersion(decodedVersion)
         }
 
-        version = decodedVersion
+        version = Self.currentVersion
         ledger = try container.decode(EntertainmentChipLedger.self, forKey: .ledger)
         activeCashSession = try container.decodeIfPresent(
             CashGameSession.self,
@@ -66,10 +107,18 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
         }
         recordOrder = try container.decode([HandID].self, forKey: .recordOrder)
         statistics = try container.decode(PlayerStatistics.self, forKey: .statistics)
-        let encodedReceipts = try container.decodeIfPresent(
-            [String: CommandReceipt].self,
-            forKey: .commandReceipts
-        ) ?? [:]
+        let encodedReceipts: [String: CommandReceipt]
+        if decodedVersion == Self.currentVersion {
+            encodedReceipts = try container.decode(
+                [String: CommandReceipt].self,
+                forKey: .commandReceipts
+            )
+        } else {
+            encodedReceipts = try container.decodeIfPresent(
+                [String: CommandReceipt].self,
+                forKey: .commandReceipts
+            ) ?? [:]
+        }
         do {
             commandReceipts = try Dictionary(
                 uniqueKeysWithValues: encodedReceipts.map { key, receipt in
@@ -78,6 +127,84 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
             )
         } catch {
             throw Self.corrupt(decoder, "业务收据索引无效", underlyingError: error)
+        }
+
+        if decodedVersion == Self.currentVersion {
+            usedHandIDs = try container.decode(Set<HandID>.self, forKey: .usedHandIDs)
+            usedSessionIDs = try container.decode(Set<SessionID>.self, forKey: .usedSessionIDs)
+        } else {
+            usedHandIDs = try container.decodeIfPresent(
+                Set<HandID>.self,
+                forKey: .usedHandIDs
+            ) ?? []
+            usedSessionIDs = try container.decodeIfPresent(
+                Set<SessionID>.self,
+                forKey: .usedSessionIDs
+            ) ?? []
+        }
+        let encodedSettlements: [String: SettlementReceipt]
+        if decodedVersion == Self.currentVersion {
+            encodedSettlements = try container.decode(
+                [String: SettlementReceipt].self,
+                forKey: .settlementReceipts
+            )
+        } else {
+            encodedSettlements = try container.decodeIfPresent(
+                [String: SettlementReceipt].self,
+                forKey: .settlementReceipts
+            ) ?? [:]
+        }
+        do {
+            settlementReceipts = try Dictionary(uniqueKeysWithValues:
+                encodedSettlements.map { key, receipt in
+                    (try BusinessID(key), receipt)
+                }
+            )
+        } catch {
+            throw Self.corrupt(decoder, "结算收据索引无效", underlyingError: error)
+        }
+
+        if decodedVersion == 1 {
+            usedHandIDs.formUnion(records.keys)
+            if let activeCashSession {
+                if let activeHandID = activeCashSession.activeHandID {
+                    usedHandIDs.insert(activeHandID)
+                }
+                if let pendingID = activeCashSession.pendingHand?.id {
+                    usedHandIDs.insert(pendingID)
+                }
+            }
+            usedSessionIDs.formUnion(records.values.map(\.sessionID))
+            if let activeCashSession {
+                usedSessionIDs.insert(activeCashSession.id)
+            }
+            for receipt in commandReceipts.values {
+                switch receipt {
+                case let .sitDown(request, _): usedSessionIDs.insert(request.sessionID)
+                case let .rebuy(sessionID, _, _, _, _, _): usedSessionIDs.insert(sessionID)
+                case let .zeroStackLeave(sessionID, _): usedSessionIDs.insert(sessionID)
+                case let .cashOut(sessionID, _, _): usedSessionIDs.insert(sessionID)
+                case .legacyLedgerOnly: break
+                }
+            }
+            for entry in ledger.entries where commandReceipts[entry.businessID] == nil {
+                switch entry.reason {
+                case .cashBuyIn, .cashOut:
+                    commandReceipts[entry.businessID] = .legacyLedgerOnly(
+                        reason: entry.reason
+                    )
+                case .dailyGift, .bankruptcyRelief:
+                    break
+                }
+            }
+            for record in records.values {
+                if let transactionID = record.transactionID {
+                    settlementReceipts[transactionID] = SettlementReceipt(
+                        handID: record.id,
+                        sessionID: record.sessionID
+                    )
+                }
+            }
         }
 
         do {
@@ -116,6 +243,14 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
                 ($0.key.rawValue, $0.value)
             }),
             forKey: .commandReceipts
+        )
+        try container.encode(usedHandIDs, forKey: .usedHandIDs)
+        try container.encode(usedSessionIDs, forKey: .usedSessionIDs)
+        try container.encode(
+            Dictionary(uniqueKeysWithValues: settlementReceipts.map {
+                ($0.key.rawValue, $0.value)
+            }),
+            forKey: .settlementReceipts
         )
     }
 
@@ -162,12 +297,49 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
         let ledgerBusinessIDs = Set(ledgerEntriesByID.keys)
         let settlementBusinessIDs = Set(records.values.compactMap(\.transactionID))
         let receiptBusinessIDs = Set(commandReceipts.keys)
+        let permanentSettlementBusinessIDs = Set(settlementReceipts.keys)
         guard ledgerBusinessIDs.isDisjoint(with: settlementBusinessIDs),
               settlementBusinessIDs.isDisjoint(with: receiptBusinessIDs),
+              ledgerBusinessIDs.isDisjoint(with: permanentSettlementBusinessIDs),
+              receiptBusinessIDs.isDisjoint(with: permanentSettlementBusinessIDs),
               settlementBusinessIDs.count
                 == records.values.compactMap(\.transactionID).count
         else {
             throw PokerSessionError.corruptSnapshot
+        }
+
+        guard Set(records.keys).isSubset(of: usedHandIDs),
+              Set(records.values.map(\.sessionID)).isSubset(of: usedSessionIDs),
+              activeCashSession?.phase != .left,
+              activeCashSession.map({ usedSessionIDs.contains($0.id) }) ?? true,
+              activeCashSession?.activeHandID.map({ usedHandIDs.contains($0) }) ?? true
+        else {
+            throw PokerSessionError.corruptSnapshot
+        }
+        var settledHands: Set<HandID> = []
+        for (id, receipt) in settlementReceipts {
+            guard usedHandIDs.contains(receipt.handID),
+                  usedSessionIDs.contains(receipt.sessionID),
+                  settledHands.insert(receipt.handID).inserted
+            else {
+                throw PokerSessionError.corruptSnapshot
+            }
+            if let record = records[receipt.handID] {
+                guard record.transactionID == id,
+                      record.sessionID == receipt.sessionID
+                else {
+                    throw PokerSessionError.corruptSnapshot
+                }
+            }
+        }
+        for record in records.values {
+            guard let transactionID = record.transactionID else { continue }
+            guard settlementReceipts[transactionID] == SettlementReceipt(
+                handID: record.id,
+                sessionID: record.sessionID
+            ) else {
+                throw PokerSessionError.corruptSnapshot
+            }
         }
 
         for (id, receipt) in commandReceipts {
@@ -183,6 +355,7 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
                       result.humanSeat == request.humanSeat,
                       result.dealer == request.config.dealer,
                       result.completedHands == 0,
+                      usedSessionIDs.contains(request.sessionID),
                       resultStacks == request.stacks
                 else {
                     throw PokerSessionError.corruptSnapshot
@@ -202,6 +375,7 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
                       result.humanSeat == humanSeat,
                       result.dealer == before.dealer,
                       result.completedHands == before.completedHands,
+                      usedSessionIDs.contains(sessionID),
                       Set(resultStacks.keys) == Set(beforeStacks.keys),
                       rebuyStacksAreValid(
                         before: beforeStacks,
@@ -212,10 +386,34 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
                 else {
                     throw PokerSessionError.corruptSnapshot
                 }
-            case .zeroStackLeave:
-                guard ledgerEntriesByID[id] == nil else {
+            case let .zeroStackLeave(sessionID, _):
+                guard ledgerEntriesByID[id] == nil,
+                      usedSessionIDs.contains(sessionID)
+                else {
                     throw PokerSessionError.corruptSnapshot
                 }
+            case let .cashOut(sessionID, table, amount):
+                guard let entry = ledgerEntriesByID[id],
+                      entry.reason == .cashOut(table: table),
+                      entry.delta == amount.rawValue,
+                      usedSessionIDs.contains(sessionID)
+                else {
+                    throw PokerSessionError.corruptSnapshot
+                }
+            case let .legacyLedgerOnly(reason):
+                guard let entry = ledgerEntriesByID[id], entry.reason == reason else {
+                    throw PokerSessionError.corruptSnapshot
+                }
+            }
+        }
+        for entry in ledger.entries {
+            switch entry.reason {
+            case .cashBuyIn, .cashOut:
+                guard commandReceipts[entry.businessID] != nil else {
+                    throw PokerSessionError.corruptSnapshot
+                }
+            case .dailyGift, .bankruptcyRelief:
+                break
             }
         }
     }

@@ -27,11 +27,13 @@ import Testing
         ),
         businessID: try BusinessID("public-buy")
     )
-    _ = try store.startHand(id: HandID("public-hand"), seed: 71)
+    _ = try store.startHand(id: HandID("public-hand"))
 
     #expect(store.cashSession?.phase == .handInProgress)
     #expect(store.spectatorObservation?.publicSeats.count == 9)
-    #expect(try store.playerObservation(for: human)?.ownHoleCards.count == 2)
+    let humanObservation = try #require(try store.humanObservation())
+    #expect(humanObservation.viewer == human)
+    #expect(humanObservation.ownHoleCards.count == 2)
     #expect(store.handRecords().isEmpty)
     #expect(Mirror(reflecting: try #require(store.cashSession)).children.contains {
         ["checkpoint", "deck", "seed", "holeCardsBySeat"].contains($0.label ?? "")
@@ -52,6 +54,8 @@ private enum PublicBoundaryProbe: String, CaseIterable {
     case checkpoint = "let _: HoldemCheckpoint.Type = HoldemCheckpoint.self"
     case checkpointExport = "_ = game.makeCheckpoint()"
     case checkpointRestore = "_ = HoldemGame.restore"
+    case arbitrarySeatObservation = "_ = try store.playerObservation(for: seat1)"
+    case explicitSeedStart = "_ = try store.startHand(id: HandID(\"probe-hand\"), seed: 73)"
 }
 
 private func expectPokerSessionTypecheckFailure(_ probe: PublicBoundaryProbe) throws {
@@ -74,6 +78,8 @@ private func expectPokerSessionTypecheckFailure(_ probe: PublicBoundaryProbe) th
         stacks: [seat0: try Chips(1_000), seat1: try Chips(1_000)],
         seed: 73
     )
+    func unavailableStore() -> LocalPokerStore { fatalError() }
+    let store = unavailableStore()
     \(probe.rawValue)
     """
     let file = FileManager.default.temporaryDirectory
@@ -96,7 +102,9 @@ private func expectPokerSessionTypecheckFailure(_ probe: PublicBoundaryProbe) th
     #expect(process.terminationStatus == 1, Comment(rawValue: diagnostics))
     #expect(diagnostics.contains("no such module") == false, Comment(rawValue: diagnostics))
     #expect(
-        diagnostics.contains("cannot find") || diagnostics.contains("inaccessible"),
+        diagnostics.contains("cannot find")
+            || diagnostics.contains("inaccessible")
+            || diagnostics.contains("extra argument"),
         Comment(rawValue: diagnostics)
     )
 }

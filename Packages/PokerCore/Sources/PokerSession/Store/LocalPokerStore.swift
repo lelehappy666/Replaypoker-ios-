@@ -54,8 +54,13 @@ public final class LocalPokerStore {
         committed.activeCashSession?.spectatorObservation()
     }
 
-    public func playerObservation(for seat: SeatID) throws -> PlayerObservation? {
+    package func playerObservation(for seat: SeatID) throws -> PlayerObservation? {
         try committed.activeCashSession?.playerObservation(for: seat)
+    }
+
+    public func humanObservation() throws -> PlayerObservation? {
+        guard let session = committed.activeCashSession else { return nil }
+        return try session.playerObservation(for: session.humanSeat)
     }
 
     public var statistics: PlayerStatisticsView {
@@ -128,6 +133,9 @@ public final class LocalPokerStore {
             guard state.activeCashSession == nil else {
                 throw PokerSessionError.invalidLifecycle
             }
+            guard !state.usedSessionIDs.contains(request.sessionID) else {
+                throw PokerSessionError.businessIDConflict
+            }
             let session = try CashGameSession.make(
                 id: request.sessionID,
                 table: request.table,
@@ -142,6 +150,7 @@ public final class LocalPokerStore {
                 at: clock.now
             )
             state.activeCashSession = session
+            state.usedSessionIDs.insert(request.sessionID)
             state.commandReceipts[businessID] = .sitDown(
                 request: request,
                 result: session.view
@@ -150,9 +159,13 @@ public final class LocalPokerStore {
         }
     }
 
-    public func startHand(id: HandID, seed: UInt64) throws -> GameTransition {
+    public func startHand(id: HandID) throws -> GameTransition {
+        try startHand(id: id, seed: UInt64.random(in: UInt64.min...UInt64.max))
+    }
+
+    package func startHand(id: HandID, seed: UInt64) throws -> GameTransition {
         try transact { state in
-            guard state.records[id] == nil else {
+            guard !state.usedHandIDs.contains(id) else {
                 throw PokerSessionError.businessIDConflict
             }
             guard var session = state.activeCashSession else {
@@ -160,6 +173,7 @@ public final class LocalPokerStore {
             }
             let transition = try session.startHand(id: id, seed: seed, startedAt: clock.now)
             state.activeCashSession = session
+            state.usedHandIDs.insert(id)
             return transition
         }
     }
@@ -189,18 +203,22 @@ public final class LocalPokerStore {
     public func commitPendingHand(
         transactionID: BusinessID
     ) throws -> StoredHandRecord {
+        if let receipt = committed.settlementReceipts[transactionID] {
+            guard let record = committed.records[receipt.handID] else {
+                throw PokerSessionError.recordNotFound
+            }
+            guard record.sessionID == receipt.sessionID,
+                  record.transactionID == transactionID,
+                  committed.activeCashSession?.pendingHand == nil
+            else {
+                throw PokerSessionError.businessIDConflict
+            }
+            return record
+        }
         guard ledgerEntry(for: transactionID) == nil,
               committed.commandReceipts[transactionID] == nil
         else {
             throw PokerSessionError.businessIDConflict
-        }
-        if let existing = committed.records.values.first(where: {
-            $0.transactionID == transactionID
-        }) {
-            if committed.activeCashSession?.pendingHand != nil {
-                throw PokerSessionError.businessIDConflict
-            }
-            return existing
         }
 
         return try transact { state in
@@ -240,6 +258,10 @@ public final class LocalPokerStore {
             try session.markHandCommitted(pending.id)
             state.records[pending.id] = stored
             state.recordOrder.append(pending.id)
+            state.settlementReceipts[transactionID] = SettlementReceipt(
+                handID: pending.id,
+                sessionID: session.id
+            )
             state.activeCashSession = session
             return stored
         }
@@ -247,12 +269,17 @@ public final class LocalPokerStore {
 
     public func leave(businessID: BusinessID) throws {
         if let receipt = committed.commandReceipts[businessID] {
-            guard case .zeroStackLeave = receipt,
-                  committed.activeCashSession == nil
-            else {
+            switch receipt {
+            case .zeroStackLeave, .cashOut:
+                guard committed.activeCashSession == nil else {
+                    throw PokerSessionError.businessIDConflict
+                }
+                return
+            case .sitDown, .rebuy:
+                throw PokerSessionError.businessIDConflict
+            case .legacyLedgerOnly:
                 throw PokerSessionError.businessIDConflict
             }
-            return
         }
         try requireAvailableForLedgerCommand(businessID)
         if let existing = ledgerEntry(for: businessID) {
@@ -281,6 +308,11 @@ public final class LocalPokerStore {
                     table: session.table,
                     id: businessID,
                     at: clock.now
+                )
+                state.commandReceipts[businessID] = .cashOut(
+                    sessionID: session.id,
+                    table: session.table,
+                    amount: humanStack
                 )
             }
             state.activeCashSession = nil
@@ -403,7 +435,7 @@ public final class LocalPokerStore {
 
     private func requireAvailableForLedgerCommand(_ id: BusinessID) throws {
         guard committed.commandReceipts[id] == nil,
-              !committed.records.values.contains(where: { $0.transactionID == id })
+              committed.settlementReceipts[id] == nil
         else {
             throw PokerSessionError.businessIDConflict
         }

@@ -186,6 +186,92 @@ import Testing
     }
 }
 
+@Test func commandLedgerIdentityIsAuditableAndSettlementDomainIsDisjoint() throws {
+    let repository = InMemorySessionRepository()
+    let store = try completedPendingStore(repository: repository, handID: "domain-hand")
+    _ = try store.commitPendingHand(transactionID: BusinessID("domain-settlement"))
+    let state = try repository.load()
+    let ledgerIDs = Set(state.ledger.entries.map(\.businessID))
+    let commandIDs = Set(state.commandReceipts.keys)
+    let settlementIDs = Set(state.settlementReceipts.keys)
+
+    #expect(ledgerIDs.contains(try BusinessID("buy-4000")))
+    #expect(commandIDs.contains(try BusinessID("buy-4000")))
+    #expect(ledgerIDs.isDisjoint(with: settlementIDs))
+    #expect(commandIDs.isDisjoint(with: settlementIDs))
+}
+
+@Test func ledgerPreservesEvenPrefixLikeCallerBusinessIdentifierExactly() throws {
+    let repository = InMemorySessionRepository()
+    let store = try LocalPokerStore(repository: repository, clock: storeClock)
+    let id = try BusinessID("__riverclub_internal_ledger__:caller-value")
+    _ = try store.sitDown(request: cashTableRequest(human: 4_000), businessID: id)
+
+    #expect(try repository.load().ledger.entries.last?.businessID == id)
+}
+
+@Test func aggregateRejectsCommandReceiptWhoseSessionTombstoneWasRemoved() throws {
+    let repository = InMemorySessionRepository()
+    let store = try seatedStore(repository: repository)
+    var states = [try repository.load()]
+    _ = try store.rebuyHuman(amount: Chips(100), businessID: BusinessID("receipt-rebuy"))
+    states.append(try repository.load())
+    try store.leave(businessID: BusinessID("receipt-cashout"))
+    states.append(try repository.load())
+    let zeroSession = try SessionID("receipt-zero-session")
+    states.append(PersistedAppState(
+        commandReceipts: [
+            try BusinessID("receipt-zero"): .zeroStackLeave(
+                sessionID: zeroSession,
+                table: try TableID("jade")
+            ),
+        ],
+        usedSessionIDs: [zeroSession]
+    ))
+
+    for state in states {
+        var object = try #require(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(state))
+                as? [String: Any]
+        )
+        object.removeValue(forKey: "activeCashSession")
+        object["usedSessionIDs"] = []
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(
+                PersistedAppState.self,
+                from: JSONSerialization.data(withJSONObject: object)
+            )
+        }
+    }
+}
+
+@Test func versionTwoRejectsIndividuallyRemovedCashCommandReceipt() throws {
+    let repository = InMemorySessionRepository()
+    let store = try seatedStore(repository: repository)
+    let buyState = try repository.load()
+    try store.leave(businessID: BusinessID("removed-receipt-cashout"))
+    let cashOutState = try repository.load()
+
+    for (state, removedID) in [
+        (buyState, "buy-4000"),
+        (cashOutState, "removed-receipt-cashout"),
+    ] {
+        var object = try #require(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(state))
+                as? [String: Any]
+        )
+        var receipts = try #require(object["commandReceipts"] as? [String: Any])
+        receipts.removeValue(forKey: removedID)
+        object["commandReceipts"] = receipts
+        #expect(throws: DecodingError.self, Comment(rawValue: removedID)) {
+            try JSONDecoder().decode(
+                PersistedAppState.self,
+                from: JSONSerialization.data(withJSONObject: object)
+            )
+        }
+    }
+}
+
 @Test func failedSettlementSaveLeavesPendingRecordAndStatisticsUnpublished() throws {
     let repository = InMemorySessionRepository()
     let store = try completedPendingStore(repository: repository, handID: "hand-failed-settle")

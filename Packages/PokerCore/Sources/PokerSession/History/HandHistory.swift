@@ -76,6 +76,17 @@ package enum CommandReceipt: Codable, Equatable, Sendable {
         result: CashSessionView
     )
     case zeroStackLeave(sessionID: SessionID, table: TableID)
+    case cashOut(
+        sessionID: SessionID,
+        table: TableID,
+        amount: Chips
+    )
+    case legacyLedgerOnly(reason: LedgerReason)
+}
+
+package struct SettlementReceipt: Codable, Equatable, Sendable {
+    package let handID: HandID
+    package let sessionID: SessionID
 }
 
 package struct PlayerStatistics: Codable, Equatable, Sendable {

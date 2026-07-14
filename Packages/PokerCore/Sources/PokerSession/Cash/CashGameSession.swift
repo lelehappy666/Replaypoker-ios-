@@ -135,6 +135,33 @@ package struct CashGameSession: Codable, Equatable, Sendable {
         }
     }
 
+    package func encode(to encoder: Encoder) throws {
+        do {
+            try validateRestoredState()
+        } catch {
+            throw EncodingError.invalidValue(
+                self,
+                .init(
+                    codingPath: encoder.codingPath,
+                    debugDescription: "普通桌会话快照无效",
+                    underlyingError: error
+                )
+            )
+        }
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(table, forKey: .table)
+        try container.encode(humanSeat, forKey: .humanSeat)
+        try container.encode(config, forKey: .config)
+        try container.encode(phase, forKey: .phase)
+        try container.encode(completedHands, forKey: .completedHands)
+        try container.encode(stacks, forKey: .stacks)
+        try container.encodeIfPresent(checkpoint, forKey: .checkpoint)
+        try container.encodeIfPresent(pendingHand, forKey: .pendingHand)
+        try container.encodeIfPresent(activeHandID, forKey: .activeHandID)
+        try container.encodeIfPresent(activeHandStartedAt, forKey: .activeHandStartedAt)
+    }
+
     package static func make(
         id: SessionID,
         table: TableID,
@@ -394,7 +421,7 @@ package struct CashGameSession: Codable, Equatable, Sendable {
         }
 
         switch phase {
-        case .readyForHand, .left:
+        case .readyForHand:
             guard checkpoint == nil,
                   pendingHand == nil,
                   activeHandID == nil,
@@ -402,6 +429,8 @@ package struct CashGameSession: Codable, Equatable, Sendable {
             else {
                 throw PokerSessionError.corruptSnapshot
             }
+        case .left:
+            throw PokerSessionError.corruptSnapshot
         case .handInProgress:
             guard pendingHand == nil,
                   activeHandID != nil,

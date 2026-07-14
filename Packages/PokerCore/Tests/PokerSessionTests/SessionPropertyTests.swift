@@ -222,7 +222,7 @@ private func canonicalPropertyJSON(_ data: Data) throws -> Data {
         "settledCommitments", "settledContributions", "stacks", "startingStacks",
         "uncalledReturns",
     ]
-    let setArrayKeys: Set<String> = ["eligible"]
+    let setArrayKeys: Set<String> = ["eligible", "usedHandIDs", "usedSessionIDs"]
 
     func stableData(_ value: Any) throws -> Data {
         try JSONSerialization.data(withJSONObject: ["value": value], options: [.sortedKeys])

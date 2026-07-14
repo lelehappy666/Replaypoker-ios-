@@ -424,28 +424,39 @@ private func persistedState(balance: Int) throws -> PersistedAppState {
 }
 
 private func persistedStateWithLedgerAndSession() throws -> PersistedAppState {
+    let businessID = try BusinessID("buy-save")
+    let table = try TableID("jade")
     var ledger = EntertainmentChipLedger()
     _ = try ledger.buyIn(
         amount: try Chips(5_000),
-        table: try TableID("jade"),
-        id: try BusinessID("buy-save"),
+        table: table,
+        id: businessID,
         at: Date(timeIntervalSince1970: 10)
+    )
+    let session = try CashGameSession.make(
+        id: try SessionID("session-save"),
+        table: table,
+        config: try HandConfig(
+            smallBlind: try Chips(50),
+            bigBlind: try Chips(100),
+            dealer: try SeatID(0)
+        ),
+        humanSeat: try SeatID(0),
+        stacks: try Dictionary(uniqueKeysWithValues: (0..<9).map {
+            (try SeatID($0), try Chips(5_000))
+        })
+    )
+    let request = CashTableRequest(
+        sessionID: session.id,
+        table: session.table,
+        config: session.config,
+        humanSeat: session.humanSeat,
+        stacks: session.stacks
     )
     return PersistedAppState(
         ledger: ledger,
-        activeCashSession: try CashGameSession.make(
-            id: try SessionID("session-save"),
-            table: try TableID("jade"),
-            config: try HandConfig(
-                smallBlind: try Chips(50),
-                bigBlind: try Chips(100),
-                dealer: try SeatID(0)
-            ),
-            humanSeat: try SeatID(0),
-            stacks: try Dictionary(uniqueKeysWithValues: (0..<9).map {
-                (try SeatID($0), try Chips(5_000))
-            })
-        )
+        activeCashSession: session,
+        commandReceipts: [businessID: .sitDown(request: request, result: session.view)]
     )
 }
 
