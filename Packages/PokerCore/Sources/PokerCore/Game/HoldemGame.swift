@@ -4,9 +4,11 @@
 /// 旁观观察和已完成牌局记录。
 public final class HoldemGame: CustomReflectable {
     private var state: HoldemState
+    public private(set) var lastTransition: GameTransition
 
-    private init(state: HoldemState) {
+    private init(state: HoldemState, lastTransition: GameTransition) {
         self.state = state
+        self.lastTransition = lastTransition
     }
 
     public static func start(
@@ -15,15 +17,28 @@ public final class HoldemGame: CustomReflectable {
         seed: UInt64
     ) throws -> HoldemGame {
         let result = try HoldemEngine.start(config: config, stacks: stacks, seed: seed)
-        return HoldemGame(state: result.state)
+        return HoldemGame(
+            state: result.state,
+            lastTransition: GameTransition(result.events)
+        )
     }
 
-    public func apply(_ action: PlayerAction, by seat: SeatID) throws {
-        state = try HoldemEngine.applying(action, by: seat, to: state).state
+    @discardableResult
+    public func apply(_ action: PlayerAction, by seat: SeatID) throws -> GameTransition {
+        let result = try HoldemEngine.applying(action, by: seat, to: state)
+        state = result.state
+        let transition = GameTransition(result.events)
+        lastTransition = transition
+        return transition
     }
 
-    public func advanceIfRoundComplete() throws {
-        state = try HoldemEngine.advanceIfRoundComplete(state).state
+    @discardableResult
+    public func advanceIfRoundComplete() throws -> GameTransition {
+        let result = try HoldemEngine.advanceIfRoundComplete(state)
+        state = result.state
+        let transition = GameTransition(result.events)
+        lastTransition = transition
+        return transition
     }
 
     public func playerObservation(for seat: SeatID) throws -> PlayerObservation {
