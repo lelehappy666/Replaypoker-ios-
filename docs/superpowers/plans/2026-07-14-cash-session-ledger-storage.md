@@ -656,12 +656,13 @@ git commit -m "feat: 实现普通桌会话状态机"
 
 - 创建：`Packages/PokerCore/Sources/PokerSession/Persistence/PersistedAppState.swift`
 - 创建：`Packages/PokerCore/Sources/PokerSession/Persistence/FileSessionRepository.swift`
+- 创建：`Packages/PokerCore/Sources/PokerSession/History/HandHistory.swift`
 - 创建：`Packages/PokerCore/Tests/PokerSessionTests/FileSessionRepositoryTests.swift`
 
 **接口：**
 
 - 输入：账本、普通桌会话、牌局记录和统计。
-- 产出：package `PersistedAppState`、`SessionRepository`、`FileSessionRepository`、可注入 `AtomicFileWriting`。
+- 产出：`StoredHandRecord`、package `PlayerStatistics`、`PersistedAppState`、`SessionRepository`、`FileSessionRepository`、可注入 `AtomicFileWriting`。
 
 - [ ] **步骤 1：写原子性、版本和损坏文件失败测试**
 
@@ -712,6 +713,17 @@ swift test --disable-sandbox --package-path Packages/PokerCore --filter FileSess
 - [ ] **步骤 3：实现聚合根与文件替换**
 
 ```swift
+public struct StoredHandRecord: Codable, Equatable, Sendable {
+    public let id: HandID
+    public let sessionID: SessionID
+    public let table: TableID
+    public let startedAt: Date
+    public let endedAt: Date
+    public let localDay: LocalDay
+    public let handNumber: Int
+    public let record: CompletedHandRecord
+}
+
 package struct PlayerStatistics: Codable, Equatable, Sendable {
     package var completedHands = 0
     package var wonHands = 0
@@ -757,7 +769,7 @@ git commit -m "feat: 实现版本化原子文件存档"
 
 **文件：**
 
-- 创建：`Packages/PokerCore/Sources/PokerSession/History/HandHistory.swift`
+- 修改：`Packages/PokerCore/Sources/PokerSession/History/HandHistory.swift`
 - 创建：`Packages/PokerCore/Sources/PokerSession/Store/LocalPokerStore.swift`
 - 创建：`Packages/PokerCore/Tests/PokerSessionTests/LocalPokerStoreTests.swift`
 
@@ -839,17 +851,6 @@ swift test --disable-sandbox --package-path Packages/PokerCore --filter LocalPok
 - [ ] **步骤 3：实现历史类型和事务复制提交**
 
 ```swift
-public struct StoredHandRecord: Codable, Equatable, Sendable {
-    public let id: HandID
-    public let sessionID: SessionID
-    public let table: TableID
-    public let startedAt: Date
-    public let endedAt: Date
-    public let localDay: LocalDay
-    public let handNumber: Int
-    public let record: CompletedHandRecord
-}
-
 public struct PlayerStatisticsView: Codable, Equatable, Sendable {
     public let completedHands: Int
     public let wonHands: Int
