@@ -74,6 +74,7 @@ public struct HoldemState: Codable, Equatable, Sendable {
     public var street: Street
     public var communityCards: [Card]
     public var currentBet: Chips
+    public var forcedBringIn: Chips
     public var lastFullRaiseSize: Chips
     public var actedSinceLastFullRaise: Set<SeatID>
     public var lastActedAtBet: [SeatID: Chips]

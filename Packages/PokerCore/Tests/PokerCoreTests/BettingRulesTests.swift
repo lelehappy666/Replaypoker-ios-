@@ -330,6 +330,34 @@ import Testing
     }
 }
 
+@Test func forcedBringInIsOnlyValidAtTheConfiguredPreflopAmount() throws {
+    var outsidePreflop = Fixtures.bettingState(
+        currentBet: 0,
+        seatCommitment: 0,
+        stack: 1_000,
+        lastFullRaise: 100
+    )
+    outsidePreflop.forcedBringIn = Chips(rawValue: 100)!
+    #expect(throws: PokerRuleError.invalidState("forced bring-in outside preflop")) {
+        try BettingRules.legalActions(for: SeatID(0), in: outsidePreflop)
+    }
+
+    var wrongPreflopAmount = outsidePreflop
+    wrongPreflopAmount.street = .preflop
+    wrongPreflopAmount.forcedBringIn = Chips(rawValue: 50)!
+    wrongPreflopAmount.currentBet = Chips(rawValue: 50)!
+    #expect(throws: PokerRuleError.invalidState("invalid forced bring-in")) {
+        try BettingRules.legalActions(for: SeatID(0), in: wrongPreflopAmount)
+    }
+
+    var missingPreflopBringIn = outsidePreflop
+    missingPreflopBringIn.street = .preflop
+    missingPreflopBringIn.forcedBringIn = Chips(rawValue: 0)!
+    #expect(throws: PokerRuleError.invalidState("invalid forced bring-in")) {
+        try BettingRules.legalActions(for: SeatID(0), in: missingPreflopBringIn)
+    }
+}
+
 @Test func corruptedActionBaselinesAreRejectedBeforeRuleEvaluation() throws {
     var wrongBaseline = Fixtures.bettingState(
         currentBet: 300,

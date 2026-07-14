@@ -63,11 +63,11 @@ enum Fixtures {
             by: SeatID(0),
             to: started.state
         )
-        return try HoldemEngine.applying(
+        return try BettingRules.applying(
             .check,
             by: SeatID(1),
             to: called.state
-        ).state
+        )
     }
 
     private static func stacks(count: Int, amount: Int) -> [SeatID: Chips] {
@@ -116,6 +116,7 @@ enum Fixtures {
             street: .flop,
             communityCards: [],
             currentBet: Chips(rawValue: currentBet)!,
+            forcedBringIn: Chips(rawValue: 0)!,
             lastFullRaiseSize: Chips(rawValue: lastFullRaise)!,
             actedSinceLastFullRaise: [],
             lastActedAtBet: [:],

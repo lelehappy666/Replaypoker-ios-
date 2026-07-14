@@ -47,6 +47,7 @@ public enum HoldemEngine {
             street: .preflop,
             communityCards: [],
             currentBet: Chips(rawValue: 0)!,
+            forcedBringIn: config.bigBlind,
             lastFullRaiseSize: config.bigBlind,
             actedSinceLastFullRaise: [],
             lastActedAtBet: [:],
@@ -62,7 +63,10 @@ public enum HoldemEngine {
         events.append(.blindPosted(seat: smallBlindSeat, amount: postedSmallBlind))
         let postedBigBlind = try postBlind(config.bigBlind, by: bigBlindSeat, to: &state)
         events.append(.blindPosted(seat: bigBlindSeat, amount: postedBigBlind))
-        state.currentBet = state.seats.map(\.committedThisStreet).max() ?? Chips(rawValue: 0)!
+        state.currentBet = max(
+            state.seats.map(\.committedThisStreet).max() ?? Chips(rawValue: 0)!,
+            state.forcedBringIn
+        )
 
         let dealingOrder = circularOrder(after: config.dealer, among: orderedIDs)
         for _ in 0..<2 {
@@ -97,6 +101,7 @@ public enum HoldemEngine {
         if remainingPlayers(in: result).count <= 1 {
             result.currentActor = nil
             result.street = .showdown
+            result.forcedBringIn = Chips(rawValue: 0)!
             events.append(.streetChanged(.showdown))
             return EngineResult(state: result, events: events)
         }
@@ -115,6 +120,7 @@ public enum HoldemEngine {
     }
 
     public static func advanceIfRoundComplete(_ state: HoldemState) throws -> EngineResult {
+        try BettingRules.validate(state)
         guard [.preflop, .flop, .turn, .river].contains(state.street) else {
             return EngineResult(state: state, events: [])
         }
@@ -122,6 +128,7 @@ public enum HoldemEngine {
             var result = state
             result.currentActor = nil
             result.street = .showdown
+            result.forcedBringIn = Chips(rawValue: 0)!
             return EngineResult(state: result, events: [.streetChanged(.showdown)])
         }
         guard roundIsComplete(state) || actionablePlayers(in: state).isEmpty else {
@@ -144,6 +151,7 @@ public enum HoldemEngine {
         case .river:
             result.currentActor = nil
             result.street = .showdown
+            result.forcedBringIn = Chips(rawValue: 0)!
             events.append(.streetChanged(.showdown))
             return EngineResult(state: result, events: events)
         case .showdown, .complete:
@@ -163,6 +171,7 @@ public enum HoldemEngine {
     ) throws {
         state.street = street
         state.currentBet = Chips(rawValue: 0)!
+        state.forcedBringIn = Chips(rawValue: 0)!
         state.lastFullRaiseSize = state.config.bigBlind
         state.actedSinceLastFullRaise = []
         state.lastActedAtBet = [:]
@@ -182,8 +191,16 @@ public enum HoldemEngine {
     }
 
     private static func advanceIfNoActionIsPossible(_ state: HoldemState) throws -> EngineResult {
-        guard remainingPlayers(in: state).count > 1,
-              actionablePlayers(in: state).isEmpty else {
+        let actionable = actionablePlayers(in: state)
+        let noFurtherBetting: Bool
+        if actionable.isEmpty {
+            noFurtherBetting = true
+        } else if actionable.count == 1 {
+            noFurtherBetting = actionable[0].committedThisStreet == state.currentBet
+        } else {
+            noFurtherBetting = false
+        }
+        guard remainingPlayers(in: state).count > 1, noFurtherBetting else {
             return EngineResult(state: state, events: [])
         }
         return try advanceOneStreet(state)

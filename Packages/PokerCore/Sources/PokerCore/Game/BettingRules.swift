@@ -3,7 +3,7 @@ public enum BettingRules {
         for seat: SeatID,
         in state: HoldemState
     ) throws -> LegalActionSet {
-        try validateState(state)
+        try validate(state)
         guard state.currentActor == seat else {
             throw PokerRuleError.illegalAction("not current actor")
         }
@@ -176,7 +176,7 @@ public enum BettingRules {
         state.seats[seatIndex].isAllIn = state.seats[seatIndex].stack.rawValue == 0
     }
 
-    private static func validateState(_ state: HoldemState) throws {
+    static func validate(_ state: HoldemState) throws {
         guard Set(state.seats.map(\.id)).count == state.seats.count else {
             throw PokerRuleError.invalidState("duplicate seat ids")
         }
@@ -191,8 +191,18 @@ public enum BettingRules {
         }) else {
             throw PokerRuleError.invalidState("hand commitment below street commitment")
         }
+        if state.street == .preflop {
+            guard state.forcedBringIn == state.config.bigBlind else {
+                throw PokerRuleError.invalidState("invalid forced bring-in")
+            }
+        } else {
+            guard state.forcedBringIn.rawValue == 0 else {
+                throw PokerRuleError.invalidState("forced bring-in outside preflop")
+            }
+        }
         let maximumCommitment = state.seats.map(\.committedThisStreet.rawValue).max() ?? 0
-        guard state.currentBet.rawValue == maximumCommitment else {
+        let effectiveMaximum = max(maximumCommitment, state.forcedBringIn.rawValue)
+        guard state.currentBet.rawValue == effectiveMaximum else {
             throw PokerRuleError.invalidState("current bet mismatch")
         }
         let knownSeats = Set(state.seats.map(\.id))
