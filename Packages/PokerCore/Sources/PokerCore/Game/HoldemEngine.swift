@@ -1,0 +1,279 @@
+public enum HoldemEngine {
+    public static func start(
+        config: HandConfig,
+        stacks: [SeatID: Chips],
+        seed: UInt64
+    ) throws -> EngineResult {
+        guard stacks.count >= 2 else {
+            throw PokerRuleError.insufficientPlayers
+        }
+        guard stacks[config.dealer] != nil else {
+            throw PokerRuleError.invalidState("dealer is not seated")
+        }
+
+        let orderedIDs = stacks.keys.sorted()
+        let smallBlindSeat: SeatID
+        let bigBlindSeat: SeatID
+        if orderedIDs.count == 2 {
+            smallBlindSeat = config.dealer
+            bigBlindSeat = try nextSeat(after: config.dealer, among: orderedIDs)
+        } else {
+            smallBlindSeat = try nextSeat(after: config.dealer, among: orderedIDs)
+            bigBlindSeat = try nextSeat(after: smallBlindSeat, among: orderedIDs)
+        }
+
+        let seats = orderedIDs.map { id in
+            let stack = stacks[id]!
+            return SeatState(
+                id: id,
+                stack: stack,
+                committedThisStreet: Chips(rawValue: 0)!,
+                committedThisHand: Chips(rawValue: 0)!,
+                holeCards: [],
+                hasFolded: false,
+                isAllIn: stack.rawValue == 0,
+                isSittingOut: false
+            )
+        }
+        let initialTotalChips = try checkedSum(seats.map { $0.stack.rawValue })
+        var state = HoldemState(
+            config: config,
+            deck: Deck.shuffled(seed: seed),
+            seats: seats,
+            dealer: config.dealer,
+            smallBlindSeat: smallBlindSeat,
+            bigBlindSeat: bigBlindSeat,
+            currentActor: nil,
+            street: .preflop,
+            communityCards: [],
+            currentBet: Chips(rawValue: 0)!,
+            lastFullRaiseSize: config.bigBlind,
+            actedSinceLastFullRaise: [],
+            lastActedAtBet: [:],
+            actionHistory: [],
+            settledPots: [],
+            awards: [:],
+            unallocatedPot: Chips(rawValue: 0)!,
+            initialTotalChips: initialTotalChips
+        )
+        var events: [GameEvent] = [.handStarted(seed: seed)]
+
+        let postedSmallBlind = try postBlind(config.smallBlind, by: smallBlindSeat, to: &state)
+        events.append(.blindPosted(seat: smallBlindSeat, amount: postedSmallBlind))
+        let postedBigBlind = try postBlind(config.bigBlind, by: bigBlindSeat, to: &state)
+        events.append(.blindPosted(seat: bigBlindSeat, amount: postedBigBlind))
+        state.currentBet = state.seats.map(\.committedThisStreet).max() ?? Chips(rawValue: 0)!
+
+        let dealingOrder = circularOrder(after: config.dealer, among: orderedIDs)
+        for _ in 0..<2 {
+            for id in dealingOrder {
+                let card = try state.deck.draw()
+                guard let index = state.seats.firstIndex(where: { $0.id == id }) else {
+                    throw PokerRuleError.invalidState("dealt seat missing")
+                }
+                state.seats[index].holeCards.append(card)
+                events.append(.holeCardsDealt(seat: id))
+            }
+        }
+
+        state.currentActor = nextActor(after: bigBlindSeat, in: state)
+        let advanced = try advanceIfNoActionIsPossible(state)
+        events.append(contentsOf: advanced.events)
+        return EngineResult(state: advanced.state, events: events)
+    }
+
+    public static func applying(
+        _ action: PlayerAction,
+        by seat: SeatID,
+        to state: HoldemState
+    ) throws -> EngineResult {
+        guard [.preflop, .flop, .turn, .river].contains(state.street) else {
+            throw PokerRuleError.illegalAction("hand is not accepting actions")
+        }
+
+        var result = try BettingRules.applying(action, by: seat, to: state)
+        var events: [GameEvent] = [.actionApplied(seat: seat, action: action)]
+
+        if remainingPlayers(in: result).count <= 1 {
+            result.currentActor = nil
+            result.street = .showdown
+            events.append(.streetChanged(.showdown))
+            return EngineResult(state: result, events: events)
+        }
+
+        if roundIsComplete(result) {
+            let advanced = try advanceOneStreet(result)
+            events.append(contentsOf: advanced.events)
+            return EngineResult(state: advanced.state, events: events)
+        }
+
+        result.currentActor = nextActorNeedingAction(after: seat, in: result)
+        guard result.currentActor != nil else {
+            throw PokerRuleError.invalidState("betting round has no next actor")
+        }
+        return EngineResult(state: result, events: events)
+    }
+
+    public static func advanceIfRoundComplete(_ state: HoldemState) throws -> EngineResult {
+        guard [.preflop, .flop, .turn, .river].contains(state.street) else {
+            return EngineResult(state: state, events: [])
+        }
+        if remainingPlayers(in: state).count <= 1 {
+            var result = state
+            result.currentActor = nil
+            result.street = .showdown
+            return EngineResult(state: result, events: [.streetChanged(.showdown)])
+        }
+        guard roundIsComplete(state) || actionablePlayers(in: state).isEmpty else {
+            return EngineResult(state: state, events: [])
+        }
+        return try advanceOneStreet(state)
+    }
+
+    private static func advanceOneStreet(_ state: HoldemState) throws -> EngineResult {
+        var result = state
+        var events: [GameEvent] = []
+
+        switch state.street {
+        case .preflop:
+            try beginStreet(.flop, drawing: 3, state: &result, events: &events)
+        case .flop:
+            try beginStreet(.turn, drawing: 1, state: &result, events: &events)
+        case .turn:
+            try beginStreet(.river, drawing: 1, state: &result, events: &events)
+        case .river:
+            result.currentActor = nil
+            result.street = .showdown
+            events.append(.streetChanged(.showdown))
+            return EngineResult(state: result, events: events)
+        case .showdown, .complete:
+            return EngineResult(state: result, events: events)
+        }
+
+        let runout = try advanceIfNoActionIsPossible(result)
+        events.append(contentsOf: runout.events)
+        return EngineResult(state: runout.state, events: events)
+    }
+
+    private static func beginStreet(
+        _ street: Street,
+        drawing cardCount: Int,
+        state: inout HoldemState,
+        events: inout [GameEvent]
+    ) throws {
+        state.street = street
+        state.currentBet = Chips(rawValue: 0)!
+        state.lastFullRaiseSize = state.config.bigBlind
+        state.actedSinceLastFullRaise = []
+        state.lastActedAtBet = [:]
+        for index in state.seats.indices {
+            state.seats[index].committedThisStreet = Chips(rawValue: 0)!
+        }
+        state.currentActor = nextActor(after: state.dealer, in: state)
+        events.append(.streetChanged(street))
+
+        var dealt: [Card] = []
+        for _ in 0..<cardCount {
+            let card = try state.deck.draw()
+            state.communityCards.append(card)
+            dealt.append(card)
+        }
+        events.append(.communityCardsDealt(dealt))
+    }
+
+    private static func advanceIfNoActionIsPossible(_ state: HoldemState) throws -> EngineResult {
+        guard remainingPlayers(in: state).count > 1,
+              actionablePlayers(in: state).isEmpty else {
+            return EngineResult(state: state, events: [])
+        }
+        return try advanceOneStreet(state)
+    }
+
+    private static func roundIsComplete(_ state: HoldemState) -> Bool {
+        let players = actionablePlayers(in: state)
+        return players.allSatisfy {
+            $0.committedThisStreet == state.currentBet
+                && state.actedSinceLastFullRaise.contains($0.id)
+        }
+    }
+
+    private static func actionablePlayers(in state: HoldemState) -> [SeatState] {
+        state.seats.filter { state.canAct($0.id) }
+    }
+
+    private static func remainingPlayers(in state: HoldemState) -> [SeatState] {
+        state.seats.filter { !$0.hasFolded && !$0.isSittingOut }
+    }
+
+    private static func nextActor(after anchor: SeatID, in state: HoldemState) -> SeatID? {
+        let ids = state.seats.map(\.id)
+        return circularOrder(after: anchor, among: ids).first(where: state.canAct)
+    }
+
+    private static func nextActorNeedingAction(
+        after anchor: SeatID,
+        in state: HoldemState
+    ) -> SeatID? {
+        let ids = state.seats.map(\.id)
+        return circularOrder(after: anchor, among: ids).first { id in
+            guard state.canAct(id),
+                  let seat = state.seats.first(where: { $0.id == id }) else {
+                return false
+            }
+            return seat.committedThisStreet < state.currentBet
+                || !state.actedSinceLastFullRaise.contains(id)
+        }
+    }
+
+    private static func postBlind(
+        _ blind: Chips,
+        by id: SeatID,
+        to state: inout HoldemState
+    ) throws -> Chips {
+        guard let index = state.seats.firstIndex(where: { $0.id == id }) else {
+            throw PokerRuleError.invalidState("blind seat missing")
+        }
+        let amount = min(blind.rawValue, state.seats[index].stack.rawValue)
+        state.seats[index].stack = Chips(
+            rawValue: state.seats[index].stack.rawValue - amount
+        )!
+        state.seats[index].committedThisStreet = Chips(rawValue: amount)!
+        state.seats[index].committedThisHand = Chips(rawValue: amount)!
+        state.seats[index].isAllIn = state.seats[index].stack.rawValue == 0
+        state.unallocatedPot = Chips(
+            rawValue: try checkedAdd(state.unallocatedPot.rawValue, amount)
+        )!
+        return Chips(rawValue: amount)!
+    }
+
+    private static func nextSeat(after anchor: SeatID, among ids: [SeatID]) throws -> SeatID {
+        guard let next = circularOrder(after: anchor, among: ids).first else {
+            throw PokerRuleError.invalidState("seat order is empty")
+        }
+        return next
+    }
+
+    private static func circularOrder(after anchor: SeatID, among ids: [SeatID]) -> [SeatID] {
+        ids.sorted {
+            clockwiseDistance(from: anchor, to: $0)
+                < clockwiseDistance(from: anchor, to: $1)
+        }
+    }
+
+    private static func clockwiseDistance(from anchor: SeatID, to id: SeatID) -> Int {
+        let distance = (id.rawValue - anchor.rawValue + 9) % 9
+        return distance == 0 ? 9 : distance
+    }
+
+    private static func checkedSum(_ values: [Int]) throws -> Int {
+        try values.reduce(0, checkedAdd)
+    }
+
+    private static func checkedAdd(_ lhs: Int, _ rhs: Int) throws -> Int {
+        let (result, overflow) = lhs.addingReportingOverflow(rhs)
+        guard !overflow else {
+            throw PokerRuleError.invalidState("chip arithmetic overflow")
+        }
+        return result
+    }
+}

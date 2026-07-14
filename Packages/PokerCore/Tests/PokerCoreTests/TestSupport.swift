@@ -39,6 +39,43 @@ enum Cards {
 }
 
 enum Fixtures {
+    static func nineStacks(_ amount: Int) -> [SeatID: Chips] {
+        stacks(count: 9, amount: amount)
+    }
+
+    static func twoStacks(_ amount: Int) -> [SeatID: Chips] {
+        stacks(count: 2, amount: amount)
+    }
+
+    static func completePreflopState() throws -> HoldemState {
+        let config = try HandConfig(
+            smallBlind: Chips(50),
+            bigBlind: Chips(100),
+            dealer: SeatID(0)
+        )
+        let started = try HoldemEngine.start(
+            config: config,
+            stacks: twoStacks(10_000),
+            seed: 1
+        )
+        let called = try HoldemEngine.applying(
+            .call,
+            by: SeatID(0),
+            to: started.state
+        )
+        return try HoldemEngine.applying(
+            .check,
+            by: SeatID(1),
+            to: called.state
+        ).state
+    }
+
+    private static func stacks(count: Int, amount: Int) -> [SeatID: Chips] {
+        Dictionary(uniqueKeysWithValues: (0..<count).map {
+            (SeatID(rawValue: $0)!, Chips(rawValue: amount)!)
+        })
+    }
+
     static func bettingState(
         currentBet: Int,
         seatCommitment: Int,
