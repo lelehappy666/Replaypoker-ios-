@@ -15,6 +15,8 @@ public enum GameEvent: Equatable, Sendable {
     case actionApplied(seat: SeatID, action: PlayerAction)
     case streetChanged(Street)
     case communityCardsDealt([Card])
+    /// 同一次结算的未跟注退回事件按 SeatID 升序发出，且先于底池事件。
+    case uncalledBetReturned(seat: SeatID, amount: Chips)
     case potCreated(Pot)
     case potAwarded(potIndex: Int, winners: [SeatID], amounts: [SeatID: Chips])
     case handCompleted

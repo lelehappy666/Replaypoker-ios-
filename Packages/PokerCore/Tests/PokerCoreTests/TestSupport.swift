@@ -236,6 +236,7 @@ enum Fixtures {
             actionHistory: [],
             settledPots: [],
             awards: [:],
+            uncalledReturns: [:],
             unallocatedPot: Chips(rawValue: seats.reduce(0) {
                 $0 + $1.committedThisHand.rawValue
             })!,

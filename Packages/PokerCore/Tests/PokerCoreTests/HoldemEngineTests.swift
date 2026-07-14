@@ -231,8 +231,28 @@ import Testing
     #expect(folded.state.currentBet == Chips(rawValue: 50)!)
     try BettingRules.validateStructuralState(folded.state)
     let settled = try HoldemEngine.advanceIfRoundComplete(folded.state)
+    let seatZero = SeatID(rawValue: 0)!
+    let seatOne = SeatID(rawValue: 1)!
     #expect(settled.state.street == .complete)
-    #expect(settled.state.awards == [SeatID(rawValue: 1)!: Chips(rawValue: 60)!])
+    #expect(settled.state.seats.first { $0.id == seatZero }?.stack == Chips(rawValue: 970)!)
+    #expect(settled.state.seats.first { $0.id == seatOne }?.stack == Chips(rawValue: 60)!)
+    #expect(settled.state.settledPots == [
+        Pot(amount: Chips(rawValue: 60)!, eligible: [seatOne]),
+    ])
+    #expect(settled.state.awards == [seatOne: Chips(rawValue: 60)!])
+    #expect(settled.state.uncalledReturns == [seatZero: Chips(rawValue: 20)!])
+    #expect(settled.events == [
+        .uncalledBetReturned(seat: seatZero, amount: Chips(rawValue: 20)!),
+        .potCreated(Pot(amount: Chips(rawValue: 60)!, eligible: [seatOne])),
+        .potAwarded(
+            potIndex: 0,
+            winners: [seatOne],
+            amounts: [seatOne: Chips(rawValue: 60)!]
+        ),
+        .handCompleted,
+    ])
+    #expect(settled.state.uncalledReturns.values.reduce(0) { $0 + $1.rawValue }
+        + settled.state.settledPots.reduce(0) { $0 + $1.amount.rawValue } == 80)
     #expect(settled.state.totalSeatChips == settled.state.initialTotalChips)
 }
 
@@ -657,31 +677,45 @@ private func completeHeadsUpCheckRound(_ state: HoldemState) throws -> HoldemSta
 
 @Test func potAwardEventsMatchSettledPotsInOrderAndAmount() throws {
     let result = try Fixtures.resolveThreeWayAllInWithTwoSidePots()
-    let potAwards = result.events.compactMap {
-        event -> (index: Int, winners: [SeatID], amounts: [SeatID: Chips])? in
-        guard case let .potAwarded(index, winners, amounts) = event else { return nil }
-        return (index, winners, amounts)
-    }
-    let createdPots = result.events.compactMap { event -> Pot? in
-        guard case let .potCreated(pot) = event else { return nil }
-        return pot
-    }
+    let seatZero = SeatID(rawValue: 0)!
+    let seatOne = SeatID(rawValue: 1)!
+    let seatTwo = SeatID(rawValue: 2)!
+    let pots = result.state.settledPots
 
-    #expect(createdPots == result.state.settledPots)
-    #expect(potAwards.count == result.state.settledPots.count)
-    for (position, potAward) in potAwards.enumerated() {
-        #expect(potAward.index == position)
-        #expect(potAward.amounts.values.reduce(0) { $0 + $1.rawValue }
-            == result.state.settledPots[position].amount.rawValue)
-        #expect(Set(potAward.winners) == Set(potAward.amounts.keys))
+    #expect(result.events == [
+        .potCreated(pots[0]),
+        .potCreated(pots[1]),
+        .potCreated(pots[2]),
+        .potAwarded(
+            potIndex: 0,
+            winners: [seatZero],
+            amounts: [seatZero: Chips(rawValue: 300)!]
+        ),
+        .potAwarded(
+            potIndex: 1,
+            winners: [seatOne],
+            amounts: [seatOne: Chips(rawValue: 200)!]
+        ),
+        .potAwarded(
+            potIndex: 2,
+            winners: [seatTwo],
+            amounts: [seatTwo: Chips(rawValue: 100)!]
+        ),
+        .handCompleted,
+    ])
+
+    let eventAwards = try result.events.reduce(into: [SeatID: Chips]()) { awards, event in
+        guard case let .potAwarded(_, _, amounts) = event else { return }
+        for (seat, amount) in amounts {
+            let (total, overflow) = (awards[seat]?.rawValue ?? 0)
+                .addingReportingOverflow(amount.rawValue)
+            guard !overflow else {
+                throw PokerRuleError.invalidState("test award overflow")
+            }
+            awards[seat] = Chips(rawValue: total)!
+        }
     }
-    #expect(potAwards[0].winners == [SeatID(rawValue: 0)!])
-    #expect(potAwards[0].amounts == [SeatID(rawValue: 0)!: Chips(rawValue: 300)!])
-    #expect(potAwards[1].winners == [SeatID(rawValue: 1)!])
-    #expect(potAwards[1].amounts == [SeatID(rawValue: 1)!: Chips(rawValue: 200)!])
-    #expect(potAwards[2].winners == [SeatID(rawValue: 2)!])
-    #expect(potAwards[2].amounts == [SeatID(rawValue: 2)!: Chips(rawValue: 100)!])
-    #expect(result.events.last == .handCompleted)
+    #expect(result.state.awards == eventAwards)
 }
 
 @Test func completionClearsLiveAccountingAndPreservesSettlementHistory() throws {
@@ -697,6 +731,7 @@ private func completeHeadsUpCheckRound(_ state: HoldemState) throws -> HoldemSta
     })
     #expect(!result.state.settledPots.isEmpty)
     #expect(!result.state.awards.isEmpty)
+    #expect(result.state.uncalledReturns.isEmpty)
     try BettingRules.validateStructuralState(result.state)
 }
 

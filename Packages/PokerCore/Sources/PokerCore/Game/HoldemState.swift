@@ -81,6 +81,7 @@ public struct HoldemState: Codable, Equatable, Sendable {
     public var actionHistory: [RecordedAction]
     public var settledPots: [Pot]
     public var awards: [SeatID: Chips]
+    public var uncalledReturns: [SeatID: Chips]
     public var unallocatedPot: Chips
     public let initialTotalChips: Int
 
@@ -159,6 +160,7 @@ public struct HoldemState: Codable, Equatable, Sendable {
         result.lastActedAtBet = [:]
         result.settledPots = pots
         result.awards = awards
+        result.uncalledReturns = uncalledReturns
         result.unallocatedPot = Chips(rawValue: 0)!
         return result
     }

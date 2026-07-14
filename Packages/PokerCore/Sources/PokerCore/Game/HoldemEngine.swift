@@ -54,6 +54,7 @@ public enum HoldemEngine {
             actionHistory: [],
             settledPots: [],
             awards: [:],
+            uncalledReturns: [:],
             unallocatedPot: Chips(rawValue: 0)!,
             initialTotalChips: initialTotalChips
         )
@@ -174,10 +175,11 @@ public enum HoldemEngine {
             })
         }
 
-        let awards = try PotBuilder.awards(for: pots, ranks: ranks, dealer: state.dealer)
-        let perPotAwards = try pots.map {
-            try PotBuilder.awards(for: [$0], ranks: ranks, dealer: state.dealer)
-        }
+        let perPotAwards = try Dictionary(uniqueKeysWithValues: pots.enumerated().map {
+            index, pot in
+            (index, try PotBuilder.awards(for: [pot], ranks: ranks, dealer: state.dealer))
+        })
+        let awards = try aggregateAwards(perPotAwards)
         let completed = try state.completingHand(
             pots: pots,
             awards: awards,
@@ -185,9 +187,13 @@ public enum HoldemEngine {
         )
         try BettingRules.validateStructuralState(completed)
 
-        var events = pots.map(GameEvent.potCreated)
-        events.append(contentsOf: perPotAwards.enumerated().map { index, amounts in
-            .potAwarded(
+        var events = uncalledReturns.keys.sorted().map {
+            GameEvent.uncalledBetReturned(seat: $0, amount: uncalledReturns[$0]!)
+        }
+        events.append(contentsOf: pots.map(GameEvent.potCreated))
+        events.append(contentsOf: pots.indices.map { index in
+            let amounts = perPotAwards[index]!
+            return GameEvent.potAwarded(
                 potIndex: index,
                 winners: circularOrder(after: state.dealer, among: Array(amounts.keys)),
                 amounts: amounts
@@ -195,6 +201,17 @@ public enum HoldemEngine {
         })
         events.append(.handCompleted)
         return EngineResult(state: completed, events: events)
+    }
+
+    private static func aggregateAwards(
+        _ perPotAwards: [Int: [SeatID: Chips]]
+    ) throws -> [SeatID: Chips] {
+        try perPotAwards.values.reduce(into: [SeatID: Chips]()) { result, awards in
+            for (seat, amount) in awards {
+                let total = try checkedAdd(result[seat]?.rawValue ?? 0, amount.rawValue)
+                result[seat] = Chips(rawValue: total)!
+            }
+        }
     }
 
     private static func advanceOneStreet(_ state: HoldemState) throws -> EngineResult {
