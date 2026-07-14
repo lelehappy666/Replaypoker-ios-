@@ -51,6 +51,7 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
             case let .rebuy(sessionID, _, _, _, _, _): inferredSessionIDs.insert(sessionID)
             case let .zeroStackLeave(sessionID, _): inferredSessionIDs.insert(sessionID)
             case let .cashOut(sessionID, _, _): inferredSessionIDs.insert(sessionID)
+            case .legacyCashBuyIn, .legacyCashOut: break
             case .legacyLedgerOnly: break
             }
         }
@@ -184,18 +185,47 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
                 case let .rebuy(sessionID, _, _, _, _, _): usedSessionIDs.insert(sessionID)
                 case let .zeroStackLeave(sessionID, _): usedSessionIDs.insert(sessionID)
                 case let .cashOut(sessionID, _, _): usedSessionIDs.insert(sessionID)
+                case .legacyCashBuyIn, .legacyCashOut: break
                 case .legacyLedgerOnly: break
                 }
             }
-            for entry in ledger.entries where commandReceipts[entry.businessID] == nil {
+            var segmentHasBuyIn = false
+            var openMigratedBuyInIDs: [BusinessID] = []
+            for entry in ledger.entries {
                 switch entry.reason {
-                case .cashBuyIn, .cashOut:
-                    commandReceipts[entry.businessID] = .legacyLedgerOnly(
-                        reason: entry.reason
-                    )
+                case let .cashBuyIn(table):
+                    let kind: LegacyCashBuyInKind = segmentHasBuyIn ? .rebuy : .sitDown
+                    segmentHasBuyIn = true
+                    if commandReceipts[entry.businessID] == nil {
+                        commandReceipts[entry.businessID] = .legacyCashBuyIn(
+                            kind: kind,
+                            table: table,
+                            amount: try Chips(-entry.delta),
+                            belongsToOpenSession: false
+                        )
+                        openMigratedBuyInIDs.append(entry.businessID)
+                    }
+                case .cashOut:
+                    if commandReceipts[entry.businessID] == nil {
+                        commandReceipts[entry.businessID] = .legacyCashOut(
+                            reason: entry.reason
+                        )
+                    }
+                    segmentHasBuyIn = false
+                    openMigratedBuyInIDs.removeAll()
                 case .dailyGift, .bankruptcyRelief:
                     break
                 }
+            }
+            for id in openMigratedBuyInIDs {
+                guard case let .legacyCashBuyIn(kind, table, amount, _) = commandReceipts[id]
+                else { continue }
+                commandReceipts[id] = .legacyCashBuyIn(
+                    kind: kind,
+                    table: table,
+                    amount: amount,
+                    belongsToOpenSession: true
+                )
             }
             for record in records.values {
                 if let transactionID = record.transactionID {
@@ -342,6 +372,26 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
             }
         }
 
+        var expectedLegacyBuyInKinds: [BusinessID: LegacyCashBuyInKind] = [:]
+        var openLegacyBuyInIDs: Set<BusinessID> = []
+        var segmentHasBuyIn = false
+        for entry in ledger.entries {
+            switch entry.reason {
+            case .cashBuyIn:
+                let kind: LegacyCashBuyInKind = segmentHasBuyIn ? .rebuy : .sitDown
+                segmentHasBuyIn = true
+                if case .legacyCashBuyIn = commandReceipts[entry.businessID] {
+                    expectedLegacyBuyInKinds[entry.businessID] = kind
+                    openLegacyBuyInIDs.insert(entry.businessID)
+                }
+            case .cashOut:
+                segmentHasBuyIn = false
+                openLegacyBuyInIDs.removeAll()
+            case .dailyGift, .bankruptcyRelief:
+                break
+            }
+        }
+
         for (id, receipt) in commandReceipts {
             switch receipt {
             case let .sitDown(request, result):
@@ -397,6 +447,24 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
                       entry.reason == .cashOut(table: table),
                       entry.delta == amount.rawValue,
                       usedSessionIDs.contains(sessionID)
+                else {
+                    throw PokerSessionError.corruptSnapshot
+                }
+            case let .legacyCashBuyIn(kind, table, amount, belongsToOpenSession):
+                guard let entry = ledgerEntriesByID[id],
+                      entry.reason == .cashBuyIn(table: table),
+                      entry.delta == -amount.rawValue,
+                      expectedLegacyBuyInKinds[id] == kind,
+                      openLegacyBuyInIDs.contains(id) == belongsToOpenSession
+                else {
+                    throw PokerSessionError.corruptSnapshot
+                }
+            case let .legacyCashOut(reason):
+                guard case .cashOut = reason else {
+                    throw PokerSessionError.corruptSnapshot
+                }
+                guard let entry = ledgerEntriesByID[id],
+                      entry.reason == reason
                 else {
                     throw PokerSessionError.corruptSnapshot
                 }

@@ -333,7 +333,97 @@ import Testing
         )
     }
     #expect(throws: PokerSessionError.businessIDConflict) {
+        try retryStore.sitDown(
+            request: cashTableRequest(human: 4_000, bots: 4_001),
+            businessID: BusinessID("buy-4000")
+        )
+    }
+    #expect(throws: PokerSessionError.businessIDConflict) {
         try retryStore.claimDailyGift(businessID: BusinessID("buy-4000"))
+    }
+}
+
+@Test func migratedVersionOneBuyInsCannotReplayAcrossCommandKinds() throws {
+    let repository = InMemorySessionRepository()
+    let store = try seatedStore(repository: repository)
+    let rebuyID = try BusinessID("typed-legacy-rebuy")
+    _ = try store.rebuyHuman(amount: Chips(100), businessID: rebuyID)
+    _ = try store.startHand(id: HandID("typed-legacy-hand"), seed: 83)
+    let migrated = try migratedEarlyVersionOneState(from: repository)
+    let retryRepository = InMemorySessionRepository(state: migrated)
+    let retryStore = try LocalPokerStore(repository: retryRepository, clock: storeClock)
+
+    #expect(throws: PokerSessionError.businessIDConflict) {
+        try retryStore.rebuyHuman(
+            amount: Chips(4_000),
+            businessID: BusinessID("buy-4000")
+        )
+    }
+    #expect(throws: PokerSessionError.businessIDConflict) {
+        try retryStore.sitDown(
+            request: cashTableRequest(human: 100),
+            businessID: rebuyID
+        )
+    }
+    #expect(
+        try retryStore.rebuyHuman(amount: Chips(100), businessID: rebuyID)
+            == store.cashSession
+    )
+    #expect(retryRepository.saveCount == 0)
+}
+
+@Test func migratedClosedVersionOneBuyInCannotAttachToNewActiveSession() throws {
+    let repository = InMemorySessionRepository()
+    let store = try seatedStore(repository: repository)
+    try store.leave(businessID: BusinessID("typed-old-cashout"))
+    _ = try store.sitDown(
+        request: cashTableRequest(
+            human: 4_000,
+            sessionID: "typed-new-session"
+        ),
+        businessID: BusinessID("typed-new-buy")
+    )
+    let migrated = try migratedEarlyVersionOneState(from: repository)
+    let retryStore = try LocalPokerStore(
+        repository: InMemorySessionRepository(state: migrated),
+        clock: storeClock
+    )
+
+    #expect(throws: PokerSessionError.businessIDConflict) {
+        try retryStore.rebuyHuman(
+            amount: Chips(4_000),
+            businessID: BusinessID("buy-4000")
+        )
+    }
+    #expect(throws: PokerSessionError.businessIDConflict) {
+        try retryStore.sitDown(
+            request: cashTableRequest(
+                human: 4_000,
+                sessionID: "typed-new-session"
+            ),
+            businessID: BusinessID("buy-4000")
+        )
+    }
+}
+
+@Test func aggregateRejectsForgedLegacyCashSegmentClassification() throws {
+    let repository = InMemorySessionRepository()
+    let store = try seatedStore(repository: repository)
+    try store.leave(businessID: BusinessID("forged-segment-cashout"))
+    _ = try store.sitDown(
+        request: cashTableRequest(human: 4_000, sessionID: "forged-segment-new"),
+        businessID: BusinessID("forged-segment-new-buy")
+    )
+    var migrated = try migratedEarlyVersionOneState(from: repository)
+    migrated.commandReceipts[try BusinessID("buy-4000")] = .legacyCashBuyIn(
+        kind: .sitDown,
+        table: try TableID("jade"),
+        amount: try Chips(4_000),
+        belongsToOpenSession: true
+    )
+
+    #expect(throws: EncodingError.self) {
+        try JSONEncoder().encode(migrated)
     }
 }
 

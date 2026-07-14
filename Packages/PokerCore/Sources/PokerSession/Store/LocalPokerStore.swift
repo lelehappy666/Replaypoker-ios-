@@ -106,16 +106,18 @@ public final class LocalPokerStore {
                     throw PokerSessionError.businessIDConflict
                 }
                 return result
-            case let .legacyLedgerOnly(reason):
-                guard case .cashBuyIn = reason else {
+            case let .legacyCashBuyIn(kind, table, amount, belongsToOpenSession):
+                guard kind == .sitDown, belongsToOpenSession else {
                     throw PokerSessionError.businessIDConflict
                 }
                 return try legacySitDownRetry(
                     request: request,
                     businessID: businessID,
-                    reason: reason
+                    table: table,
+                    amount: amount
                 )
-            case .rebuy, .zeroStackLeave, .cashOut:
+            case .rebuy, .zeroStackLeave, .cashOut, .legacyCashOut,
+                 .legacyLedgerOnly:
                 throw PokerSessionError.businessIDConflict
             }
         }
@@ -289,7 +291,7 @@ public final class LocalPokerStore {
                 return
             case .sitDown, .rebuy:
                 throw PokerSessionError.businessIDConflict
-            case let .legacyLedgerOnly(reason):
+            case let .legacyCashOut(reason):
                 guard let existing = ledgerEntry(for: businessID),
                       case .cashOut = reason,
                       existing.reason == reason,
@@ -299,6 +301,8 @@ public final class LocalPokerStore {
                     throw PokerSessionError.businessIDConflict
                 }
                 return
+            case .legacyCashBuyIn, .legacyLedgerOnly:
+                throw PokerSessionError.businessIDConflict
             }
         }
         try requireAvailableForLedgerCommand(businessID)
@@ -344,11 +348,19 @@ public final class LocalPokerStore {
         businessID: BusinessID
     ) throws -> CashSessionView {
         if let receipt = committed.commandReceipts[businessID] {
-            if case let .legacyLedgerOnly(reason) = receipt {
+            if case let .legacyCashBuyIn(
+                kind,
+                table,
+                storedAmount,
+                belongsToOpenSession
+            ) = receipt {
                 guard let existing = ledgerEntry(for: businessID),
                       let session = committed.activeCashSession,
-                      case .cashBuyIn = reason,
-                      existing.reason == reason
+                      kind == .rebuy,
+                      belongsToOpenSession,
+                      storedAmount == amount,
+                      session.table == table,
+                      existing.reason == .cashBuyIn(table: table)
                 else {
                     throw PokerSessionError.businessIDConflict
                 }
@@ -494,10 +506,13 @@ public final class LocalPokerStore {
     private func legacySitDownRetry(
         request: CashTableRequest,
         businessID: BusinessID,
-        reason: LedgerReason
+        table: TableID,
+        amount: Chips
     ) throws -> CashSessionView {
         guard let existing = ledgerEntry(for: businessID),
-              existing.reason == reason
+              request.table == table,
+              try humanStack(in: request) == amount,
+              existing.reason == .cashBuyIn(table: table)
         else {
             throw PokerSessionError.businessIDConflict
         }

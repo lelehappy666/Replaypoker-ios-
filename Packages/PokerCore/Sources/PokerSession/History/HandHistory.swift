@@ -65,6 +65,11 @@ public enum DeleteAllConfirmation: Sendable {
     case confirmed
 }
 
+package enum LegacyCashBuyInKind: String, Codable, Equatable, Sendable {
+    case sitDown
+    case rebuy
+}
+
 package enum CommandReceipt: Codable, Equatable, Sendable {
     case sitDown(request: CashTableRequest, result: CashSessionView)
     case rebuy(
@@ -81,6 +86,13 @@ package enum CommandReceipt: Codable, Equatable, Sendable {
         table: TableID,
         amount: Chips
     )
+    case legacyCashBuyIn(
+        kind: LegacyCashBuyInKind,
+        table: TableID,
+        amount: Chips,
+        belongsToOpenSession: Bool
+    )
+    case legacyCashOut(reason: LedgerReason)
     case legacyLedgerOnly(reason: LedgerReason)
 }
 
