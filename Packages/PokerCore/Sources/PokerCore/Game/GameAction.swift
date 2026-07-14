@@ -21,6 +21,25 @@ public struct Chips: RawRepresentable, Codable, Hashable, Comparable, Sendable {
         self.rawValue = rawValue
     }
 
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let value = try container.decode(Int.self)
+
+        do {
+            self = try Self(value)
+        } catch {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Invalid Chips value: \(value)"
+            )
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+
     public static func < (lhs: Self, rhs: Self) -> Bool {
         lhs.rawValue < rhs.rawValue
     }
@@ -37,6 +56,25 @@ public struct SeatID: RawRepresentable, Codable, Hashable, Comparable, Sendable 
     public init?(rawValue: Int) {
         guard (0...8).contains(rawValue) else { return nil }
         self.rawValue = rawValue
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let value = try container.decode(Int.self)
+
+        do {
+            self = try Self(value)
+        } catch {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Invalid SeatID value: \(value)"
+            )
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
     }
 
     public static func < (lhs: Self, rhs: Self) -> Bool {
