@@ -6,11 +6,13 @@ struct PokerTableView: View {
     @Bindable var coordinator: CashTableCoordinator
     let table: PokerTableSummary
     let balance: Int
-    let onExit: () -> Void
+    let sendIntent: @MainActor (TableIntent) async throws -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var actionRequest = TableActionRequestModel()
     @State private var animationPresentation = TableAnimationPresentation()
     @State private var animationResetTask: Task<Void, Never>?
+    @State private var actionTask: Task<Void, Never>?
+    @State private var retryTask: Task<Void, Never>?
 
     private var state: TableViewState { coordinator.state }
 
@@ -88,7 +90,13 @@ struct PokerTableView: View {
             present(state.animation, sequence: sequence)
         }
         .onDisappear {
-            animationResetTask?.cancel()
+            cancelViewTasks()
+        }
+        .onChange(of: state.phase) { _, phase in
+            if phase == .suspended {
+                actionTask?.cancel()
+                retryTask?.cancel()
+            }
         }
     }
 
@@ -147,13 +155,6 @@ struct PokerTableView: View {
 
     private var topBar: some View {
         HStack(spacing: 10) {
-            Button(action: onExit) {
-                Label("返回", systemImage: "chevron.left")
-                    .frame(minHeight: 44)
-            }
-            .buttonStyle(.bordered)
-            .tint(RCTheme.gold)
-
             Text(PokerTablePresentation.title(for: table))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(RCTheme.primaryText)
@@ -263,21 +264,30 @@ struct PokerTableView: View {
     }
 
     private func send(_ intent: TableIntent) {
-        Task { @MainActor in
+        actionTask = Task { @MainActor in
             await actionRequest.send(intent) { intent in
-                try await coordinator.send(intent)
+                try await sendIntent(intent)
             }
         }
     }
 
     private func retryFailedAction() {
-        Task { @MainActor in
+        retryTask = Task { @MainActor in
             await actionRequest.retry(
                 for: state.phase,
-                send: { intent in try await coordinator.send(intent) },
+                send: sendIntent,
                 resume: { try await coordinator.resume() }
             )
         }
+    }
+
+    private func cancelViewTasks() {
+        actionTask?.cancel()
+        retryTask?.cancel()
+        animationResetTask?.cancel()
+        actionTask = nil
+        retryTask = nil
+        animationResetTask = nil
     }
 
     private func present(_ event: TableAnimationEvent?, sequence: Int) {

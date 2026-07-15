@@ -1,3 +1,4 @@
+import PokerSession
 import Testing
 @testable import PokerCoordinator
 
@@ -180,4 +181,34 @@ private func advanceScheduledTicks(
         await clock.waitUntilScheduled()
         await clock.advanceOneSecond()
     }
+}
+
+@Test @MainActor func 旧手牌标识的倒计时刻不更新也不提交超时动作() async throws {
+    let scenario = try await CoordinatorScenario.humanCanCheck()
+    let beforeSeconds = scenario.coordinator.state.secondsRemaining
+    let beforeActions = try scenario.actionCount()
+
+    await scenario.coordinator.receiveCountdownTick(
+        remaining: 0,
+        handID: try HandID("old-hand"),
+        stateVersion: scenario.coordinator.state.stateVersion
+    )
+
+    #expect(scenario.coordinator.state.secondsRemaining == beforeSeconds)
+    #expect(try scenario.actionCount() == beforeActions)
+}
+
+@Test @MainActor func 旧状态版本的倒计时刻不更新也不提交超时动作() async throws {
+    let scenario = try await CoordinatorScenario.humanCanCheck()
+    let beforeSeconds = scenario.coordinator.state.secondsRemaining
+    let beforeActions = try scenario.actionCount()
+
+    await scenario.coordinator.receiveCountdownTick(
+        remaining: 0,
+        handID: try HandID(#require(scenario.coordinator.state.handID)),
+        stateVersion: scenario.coordinator.state.stateVersion - 1
+    )
+
+    #expect(scenario.coordinator.state.secondsRemaining == beforeSeconds)
+    #expect(try scenario.actionCount() == beforeActions)
 }

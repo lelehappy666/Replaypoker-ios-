@@ -52,4 +52,14 @@ final class PokerTableLayoutTests: XCTestCase {
         XCTAssertEqual(PokerTableLayout.betControlSize.width, 330)
         XCTAssertEqual(PokerTableLayout.betControlSize.height, 164)
     }
+
+    func testPlayableTableDoesNotExposeBackOrExitControl() throws {
+        let source = try String(
+            contentsOfFile: #filePath
+                .replacingOccurrences(of: "RiverClubTests/PokerTableLayoutTests.swift", with: "RiverClub/Features/Table/PokerTableView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertFalse(source.contains("Label(\"返回\""))
+        XCTAssertFalse(source.contains("onExit"))
+    }
 }

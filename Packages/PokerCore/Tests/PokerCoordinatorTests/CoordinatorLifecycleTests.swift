@@ -81,3 +81,18 @@ func 取消服务返回后仍等待旧机器人任务完整退出() async throws
     fixture.coordinator.suspend()
     await fixture.botService.finishAllDecisions()
 }
+
+@Test @MainActor
+func 等待下一手与保存失败阶段不会被生命周期暂停改写() async throws {
+    let ready = try CoordinatorScenario.readyToStartWithHumanFirst()
+    ready.coordinator.suspend()
+    #expect(ready.coordinator.state.phase == .awaitingNextHand)
+
+    let failed = try await CoordinatorScenario.pendingSettlement(
+        repository: FailOnceSessionRepository()
+    )
+    await failed.coordinator.finishSettlement()
+    #expect(failed.coordinator.state.phase == .saveFailed)
+    failed.coordinator.suspend()
+    #expect(failed.coordinator.state.phase == .saveFailed)
+}

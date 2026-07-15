@@ -163,10 +163,7 @@ public final class CashTableCoordinator {
 
         switch phase {
         case .readyForHand:
-            guard let frozenSettings else {
-                throw PokerCoordinatorError.invalidPhase
-            }
-            try await startHand(settings: frozenSettings)
+            throw PokerCoordinatorError.invalidPhase
         case .handInProgress, .settlementPending:
             guard currentHandID != nil else {
                 throw PokerCoordinatorError.invalidPhase
@@ -174,6 +171,10 @@ public final class CashTableCoordinator {
             do {
                 incrementStateVersion()
                 try refreshProjection()
+                var operationVersion = stateVersion
+                guard try await advanceCompletedRounds(
+                    operationVersion: &operationVersion
+                ) else { return }
                 await scheduleCurrentActorIfReady()
             } catch {
                 suspend()
@@ -190,11 +191,7 @@ public final class CashTableCoordinator {
         }
         switch intent {
         case .nextHand:
-            guard let frozenSettings else {
-                throw PokerCoordinatorError.invalidPhase
-            }
-            try await startNextHand(settings: frozenSettings)
-            return
+            throw PokerCoordinatorError.invalidPhase
         case .retrySave:
             try await retrySave()
             return
@@ -315,6 +312,11 @@ public final class CashTableCoordinator {
     }
 
     public func suspend() {
+        guard (store.cashSession?.phase == .handInProgress
+                || store.cashSession?.phase == .settlementPending),
+              state.phase != .saveFailed,
+              state.phase != .awaitingNextHand
+        else { return }
         cancelCountdown()
         cancelBotDecision()
         incrementStateVersion()
@@ -411,20 +413,16 @@ public final class CashTableCoordinator {
                 } catch {
                     return
                 }
-                guard let tick = self?.handleCountdownTick(
+                guard let self else { return }
+                await self.receiveCountdownTick(
                     remaining: remaining,
                     handID: handID,
                     stateVersion: version
-                ) else { return }
-                switch tick {
-                case .continueCountdown:
-                    continue
-                case .performTimeout:
-                    await self?.performTimeout(handID: handID, stateVersion: version)
-                    return
-                case .stop:
-                    return
-                }
+                )
+                guard remaining > 0,
+                      self.currentHandID == handID,
+                      self.stateVersion == version
+                else { return }
             }
         }
         countdownTask.replace(with: task)
@@ -577,6 +575,23 @@ public final class CashTableCoordinator {
         return .performTimeout
     }
 
+    package func receiveCountdownTick(
+        remaining: Int,
+        handID: HandID,
+        stateVersion version: Int
+    ) async {
+        switch handleCountdownTick(
+            remaining: remaining,
+            handID: handID,
+            stateVersion: version
+        ) {
+        case .continueCountdown, .stop:
+            return
+        case .performTimeout:
+            await performTimeout(handID: handID, stateVersion: version)
+        }
+    }
+
     private func performTimeout(handID: HandID, stateVersion version: Int) async {
         guard currentHandID == handID,
               stateVersion == version,
@@ -653,15 +668,39 @@ public final class CashTableCoordinator {
             beforeAction: beforeAction
         )
         var animationStreet: Street?
+        var visibleCards = Dictionary(uniqueKeysWithValues: state.seats.map {
+            ($0.id, $0.cards)
+        })
+        var visibleCommunityCards = state.communityCards
         for animation in animations {
             guard isCurrentOperation(operationVersion) else { return false }
+            let publishedAnimation: TableAnimationEvent
+            switch animation {
+            case let .dealHoleCard(seat, card):
+                visibleCards[seat, default: []].append(card)
+                publishedAnimation = animation
+            case let .revealCommunityCard(card, _):
+                publishedAnimation = .revealCommunityCard(
+                    card: card,
+                    index: visibleCommunityCards.count
+                )
+                visibleCommunityCards.append(card)
+            default:
+                publishedAnimation = animation
+            }
             if case let .highlightWinner(seat) = animation {
                 winnerSeats.insert(seat)
             }
             if case let .streetChanged(street) = animation {
                 animationStreet = street
             }
-            try refreshProjection(animation: animation)
+            try refreshProjection(animation: publishedAnimation)
+            state = animationState(
+                from: state,
+                event: publishedAnimation,
+                visibleCards: visibleCards,
+                visibleCommunityCards: visibleCommunityCards
+            )
             if !winnerSeats.isEmpty {
                 state = stateReplacing(winners: winnerSeats)
             }
@@ -675,6 +714,53 @@ public final class CashTableCoordinator {
             guard isCurrentOperation(operationVersion) else { return false }
         }
         return true
+    }
+
+    private func animationState(
+        from projected: TableViewState,
+        event: TableAnimationEvent,
+        visibleCards: [SeatID: [TableCardState]],
+        visibleCommunityCards: [Card]
+    ) -> TableViewState {
+        let phase: TableFlowPhase
+        switch event.kind {
+        case .dealHoleCard, .postBlind:
+            phase = .dealing
+        case .revealCommunityCard, .streetChanged:
+            phase = .revealingBoard
+        case .awardPot, .highlightWinner, .returnUncalledBet:
+            phase = .settling
+        case .showAction, .moveCommitmentToPot:
+            phase = .animatingAction
+        }
+        let seats = projected.seats.map { seat in
+            TableSeatState(
+                id: seat.id,
+                displayName: seat.displayName,
+                isHuman: seat.isHuman,
+                stack: seat.stack,
+                committedThisStreet: seat.committedThisStreet,
+                hasFolded: seat.hasFolded,
+                isAllIn: seat.isAllIn,
+                isDealer: seat.isDealer,
+                isCurrentActor: false,
+                cards: visibleCards[seat.id] ?? []
+            )
+        }
+        return TableViewState(
+            handID: projected.handID,
+            stateVersion: projected.stateVersion,
+            animationSequence: projected.animationSequence,
+            phase: phase,
+            seats: seats,
+            communityCards: visibleCommunityCards,
+            pot: projected.pot,
+            controls: nil,
+            secondsRemaining: nil,
+            winners: projected.winners,
+            errorMessage: projected.errorMessage,
+            animation: projected.animation
+        )
     }
 
     private func transitionSnapshot() -> CashTableAnimationSnapshot {

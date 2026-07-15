@@ -333,6 +333,71 @@ final class CashTableEntryTests: XCTestCase {
         XCTAssertEqual(fixture.session.chipBalance, balanceAfterBuyIn)
         XCTAssertNil(fixture.session.tableStartupError)
     }
+
+    @MainActor
+    func testNextHandIntentFreezesLatestAppSettingsBeforeStartingRealCoordinator() async throws {
+        let fixture = try AppSessionFixture()
+        try fixture.session.joinCashTable(
+            fixture.table,
+            buyIn: 16_000,
+            autoTopUp: false,
+            reduceMotion: true
+        )
+        let latest = try BotSettings(
+            difficulty: .hard,
+            model: .aggressive,
+            aggression: 80,
+            bluffFrequency: 45,
+            callingWidth: 60,
+            betSizing: 70,
+            thinkingSpeed: .fast,
+            analyzesHistory: false
+        )
+        try fixture.session.saveBotSettings(latest)
+
+        try await fixture.session.sendTableIntent(.nextHand)
+
+        XCTAssertEqual(fixture.session.frozenBotSettings, latest)
+        XCTAssertEqual(fixture.store.cashSession?.phase, .handInProgress)
+    }
+
+    @MainActor
+    func testLifecyclePauseAndResumeKeepsSameHandWithoutBackgroundProgress() async throws {
+        let ids = JoinAttemptIDSpy()
+        let clock = AppLifecycleManualClock()
+        let fixture = try AppSessionFixture(
+            dependencies: makeDependencies(ids: ids, sleep: clock.sleep)
+        )
+        try fixture.session.joinCashTable(
+            fixture.table,
+            buyIn: 16_000,
+            autoTopUp: false,
+            reduceMotion: true
+        )
+        await fixture.session.startOrResumeTableHand()
+        let coordinator = try XCTUnwrap(fixture.session.tableCoordinator)
+        let handID = coordinator.state.handID
+        let actions = try XCTUnwrap(try fixture.store.humanObservation()).actions.count
+
+        fixture.session.suspendTableForLifecycle()
+        await clock.advance(seconds: 60)
+        XCTAssertEqual(coordinator.state.phase, .suspended)
+        XCTAssertEqual(try fixture.store.humanObservation()?.actions.count, actions)
+
+        await fixture.session.resumeTableForLifecycle()
+        XCTAssertEqual(coordinator.state.handID, handID)
+        XCTAssertNotEqual(coordinator.state.phase, .suspended)
+    }
+}
+
+private actor AppLifecycleManualClock {
+    func sleep(_ duration: Duration) async throws {
+        try await Task.sleep(for: duration)
+    }
+
+    func advance(seconds: Int) async {
+        for _ in 0..<seconds { await Task.yield() }
+    }
 }
 
 @MainActor

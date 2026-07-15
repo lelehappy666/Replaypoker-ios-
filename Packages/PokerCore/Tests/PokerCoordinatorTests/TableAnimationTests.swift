@@ -212,3 +212,45 @@ import Testing
     #expect(reducedOpening.count == opening.count)
     #expect(reducedOpening.allSatisfy { $0 == .zero })
 }
+
+@Test @MainActor func 发牌每个序号只公布已发的牌且隐藏操作区() async throws {
+    let recorder = AnimationPublicationRecorder()
+    let scenario = try CoordinatorScenario.readyToStartWithHumanFirst(
+        publicationRecorder: recorder
+    )
+    recorder.coordinator = scenario.coordinator
+
+    try await scenario.coordinator.startHand(settings: .recommended)
+
+    let dealing = recorder.states.filter { $0.animation?.kind == .dealHoleCard }
+    #expect(dealing.count == 18)
+    for (offset, state) in dealing.enumerated() {
+        #expect(state.phase == .dealing)
+        #expect(state.controls == nil)
+        #expect(state.communityCards.isEmpty)
+        #expect(state.seats.flatMap(\.cards).count == offset + 1)
+        #expect(state.seats.filter { !$0.isHuman }.flatMap(\.cards).allSatisfy { $0 == .faceDown })
+    }
+}
+
+@Test @MainActor func 公共牌逐张公布且减少动态仍保留发布顺序() async throws {
+    for reduceMotion in [false, true] {
+        let recorder = AnimationPublicationRecorder()
+        let scenario = try await CoordinatorScenario.automaticSettlement(
+            repository: FailOnceSessionRepository(failSettlementOnce: false),
+            animationRecorder: nil,
+            reduceMotion: reduceMotion,
+            publicationRecorder: recorder
+        )
+        recorder.coordinator = scenario.coordinator
+        try await scenario.playDeterministicallyToSettlement()
+        await scenario.waitForAutomaticSettlement()
+
+        let reveals = recorder.states.filter {
+            $0.animation?.kind == .revealCommunityCard
+        }
+        #expect(reveals.count == 5)
+        #expect(reveals.map(\.communityCards.count) == [1, 2, 3, 4, 5])
+        #expect(reveals.allSatisfy { $0.phase == .revealingBoard && $0.controls == nil })
+    }
+}

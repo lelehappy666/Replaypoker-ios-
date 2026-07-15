@@ -106,4 +106,20 @@ final class PokerTableInteractionTests: XCTestCase {
         XCTAssertEqual(presentation.winnerScale(for: winner), 1)
         XCTAssertFalse(presentation.isWinnerHighlighted(winner))
     }
+
+    func testCancelledActionDoesNotPublishFailureAndRestoresSendingState() async throws {
+        let model = TableActionRequestModel()
+        let task = Task { @MainActor in
+            await model.send(.fold) { _ in
+                try await Task.sleep(for: .seconds(60))
+            }
+        }
+        await Task.yield()
+
+        task.cancel()
+        await task.value
+
+        XCTAssertFalse(model.isSending)
+        XCTAssertNil(model.errorMessage)
+    }
 }

@@ -21,6 +21,9 @@ final class TableActionRequestModel {
         do {
             try await operation(intent)
             failedIntent = nil
+        } catch is CancellationError {
+            failedIntent = nil
+            errorMessage = nil
         } catch {
             failedIntent = intent
             errorMessage = "操作失败，请重试。"
@@ -71,6 +74,8 @@ final class TableActionRequestModel {
                 try await send(intent)
             }
             failedIntent = nil
+        } catch is CancellationError {
+            errorMessage = nil
         } catch {
             errorMessage = phase == .suspended
                 ? "恢复牌局失败，请重试。"

@@ -148,3 +148,17 @@ import Testing
     try await scenario.coordinator.startNextHand(settings: nextSettings)
     #expect(scenario.coordinator.frozenSettings == nextSettings)
 }
+
+@Test @MainActor func 通用意图入口拒绝绕过应用层启动下一手() async throws {
+    let scenario = try await CoordinatorScenario.pendingSettlement(
+        repository: FailOnceSessionRepository(failSettlementOnce: false)
+    )
+    await scenario.coordinator.finishSettlement()
+    #expect(scenario.coordinator.state.phase == .awaitingNextHand)
+
+    await #expect(throws: PokerCoordinatorError.invalidPhase) {
+        try await scenario.coordinator.send(.nextHand)
+    }
+
+    #expect(scenario.store.cashSession?.phase == .readyForHand)
+}

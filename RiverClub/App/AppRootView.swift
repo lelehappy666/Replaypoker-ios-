@@ -7,6 +7,7 @@ enum MotionPolicy {
 struct AppRootView: View {
     @Bindable var session: AppSession
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     private let repository: any PokerRepository = MockPokerRepository()
     @State private var pendingBuyInTable: PokerTableSummary?
     @State private var buyInError: String?
@@ -29,9 +30,7 @@ struct AppRootView: View {
                                 coordinator: coordinator,
                                 table: table,
                                 balance: session.chipBalance,
-                                onExit: {
-                                    session.leaveTable(returningTo: tableReturnRoute)
-                                }
+                                sendIntent: session.sendTableIntent
                             )
                         }
                     case .lobby, .tournaments, .tables, .profile:
@@ -70,6 +69,16 @@ struct AppRootView: View {
                 : nil,
             value: pendingBuyInTable
         )
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .active:
+                Task { await session.resumeTableForLifecycle() }
+            case .inactive, .background:
+                session.suspendTableForLifecycle()
+            @unknown default:
+                session.suspendTableForLifecycle()
+            }
+        }
     }
 
     @ViewBuilder

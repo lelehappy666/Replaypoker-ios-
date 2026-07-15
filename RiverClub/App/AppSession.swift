@@ -281,6 +281,37 @@ final class AppSession {
         }
     }
 
+    func sendTableIntent(_ intent: TableIntent) async throws {
+        guard let tableCoordinator else {
+            throw PokerCoordinatorError.invalidPhase
+        }
+        if intent == .nextHand {
+            try await tableCoordinator.startNextHand(
+                settings: freezeBotSettingsForNextHand()
+            )
+        } else {
+            try await tableCoordinator.send(intent)
+        }
+    }
+
+    func suspendTableForLifecycle() {
+        guard route == .table else { return }
+        tableCoordinator?.suspend()
+    }
+
+    func resumeTableForLifecycle() async {
+        guard route == .table,
+              let tableCoordinator,
+              tableCoordinator.state.phase == .suspended
+        else { return }
+        do {
+            try await tableCoordinator.resume()
+            tableStartupError = nil
+        } catch {
+            tableStartupError = "牌局恢复失败，请重试。"
+        }
+    }
+
     func leaveTable(returningTo route: AppRoute) {
         tableState.leave()
         tableStartupError = nil

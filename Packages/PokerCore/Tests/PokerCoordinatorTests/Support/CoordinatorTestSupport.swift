@@ -243,6 +243,7 @@ struct AnimationPublication: Equatable {
 final class AnimationPublicationRecorder {
     weak var coordinator: CashTableCoordinator?
     private(set) var publications: [AnimationPublication] = []
+    private(set) var states: [TableViewState] = []
 
     func capture() {
         guard let state = coordinator?.state,
@@ -255,6 +256,7 @@ final class AnimationPublicationRecorder {
                 stateVersion: state.stateVersion
             )
         )
+        states.append(state)
     }
 }
 
@@ -437,8 +439,9 @@ final class CoordinatorScenario {
     }
 
     static func readyToStartWithHumanFirst(
-        clock: ManualTableClock,
-        animationGate: ManualAnimationGate
+        clock: ManualTableClock = ManualTableClock(),
+        animationGate: ManualAnimationGate = ManualAnimationGate(),
+        publicationRecorder: AnimationPublicationRecorder? = nil
     ) throws -> CoordinatorScenario {
         let directory = try makeTemporaryDirectory(named: "human-start-gate")
         do {
@@ -452,6 +455,7 @@ final class CoordinatorScenario {
                 nextBusinessID: { purpose in try BusinessID("\(purpose)-human-start-gate") },
                 nextSeed: { 23 },
                 sleep: { duration in
+                    await publicationRecorder?.capture()
                     if duration == .zero {
                         await animationGate.sleepIfEnabled()
                     } else {
@@ -678,7 +682,8 @@ final class CoordinatorScenario {
         repository: FailOnceSessionRepository,
         businessIDs: BusinessIDSequence = BusinessIDSequence(),
         animationRecorder: AnimationSleepRecorder? = nil,
-        reduceMotion: Bool = true
+        reduceMotion: Bool = true,
+        publicationRecorder: AnimationPublicationRecorder? = nil
     ) async throws -> CoordinatorScenario {
         let directory = try makeTemporaryDirectory(named: "automatic-settlement")
         do {
@@ -696,6 +701,7 @@ final class CoordinatorScenario {
                     nextSeed: { 43 },
                     sleep: { duration in
                         await animationRecorder?.sleep(for: duration)
+                        await publicationRecorder?.capture()
                     },
                     reduceMotion: reduceMotion
                 )
