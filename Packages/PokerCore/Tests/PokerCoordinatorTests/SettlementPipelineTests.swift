@@ -73,6 +73,25 @@ import Testing
     #expect(scenario.coordinator.state.phase == .awaitingNextHand)
 }
 
+@Test @MainActor func 摊牌后机器人亮牌仍不改变唯一真人身份() async throws {
+    let repository = FailOnceSessionRepository(failSettlementOnce: false)
+    let scenario = try await CoordinatorScenario.pendingSettlement(repository: repository)
+
+    await scenario.coordinator.finishSettlement()
+
+    let humans = scenario.coordinator.state.seats.filter { $0.isHuman }
+    #expect(humans.map(\.id) == [try SeatID(0)])
+    let revealedBot = try #require(
+        scenario.coordinator.state.seats.first(where: {
+            !$0.isHuman && $0.cards.contains { card in
+                if case .faceUp = card { return true }
+                return false
+            }
+        })
+    )
+    #expect(!revealedBot.isHuman)
+}
+
 @Test @MainActor func 未弃牌但安全观察无牌面时仍显示两张牌背() async throws {
     let scenario = try await CoordinatorScenario.pendingSettlementWithoutRanks()
     let showdown = try #require(scenario.store.pendingShowdownObservation)

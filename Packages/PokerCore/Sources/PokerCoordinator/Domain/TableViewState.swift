@@ -27,6 +27,7 @@ public struct TableSeatProfile: Codable, Equatable, Identifiable, Sendable {
 public struct TableSeatState: Codable, Equatable, Identifiable, Sendable {
     public let id: SeatID
     public let displayName: String
+    public let isHuman: Bool
     public let stack: Chips
     public let committedThisStreet: Chips
     public let hasFolded: Bool

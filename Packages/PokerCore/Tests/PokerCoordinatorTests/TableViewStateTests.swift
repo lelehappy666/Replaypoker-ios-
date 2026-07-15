@@ -27,3 +27,15 @@ import Testing
     #expect(!text.contains("checkpoint"))
     #expect(!text.contains("opponentHoleCards"))
 }
+
+@Test func 安全状态明确且唯一标记真人身份() throws {
+    let state = try makeSafeTableViewState()
+    let humans = state.seats.filter { $0.isHuman }
+
+    #expect(humans.count == 1)
+    #expect(humans[0].displayName == "玩家")
+    #expect(
+        state.seats.first(where: { !$0.isHuman })?.cards
+            == [.faceDown, .faceDown]
+    )
+}

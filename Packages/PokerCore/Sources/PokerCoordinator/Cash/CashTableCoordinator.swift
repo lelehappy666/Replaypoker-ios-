@@ -76,6 +76,7 @@ public final class CashTableCoordinator {
             return TableSeatState(
                 id: seat.id,
                 displayName: profile.displayName,
+                isHuman: seat.id == humanSeat,
                 stack: seat.stack,
                 committedThisStreet: try Chips(0),
                 hasFolded: seat.hasFolded,
@@ -270,6 +271,7 @@ public final class CashTableCoordinator {
             TableSeatState(
                 id: seat.id,
                 displayName: seat.displayName,
+                isHuman: seat.isHuman,
                 stack: seat.stack,
                 committedThisStreet: seat.committedThisStreet,
                 hasFolded: seat.hasFolded,
@@ -683,6 +685,7 @@ public final class CashTableCoordinator {
             TableSeatState(
                 id: seat.id,
                 displayName: seat.displayName,
+                isHuman: seat.isHuman,
                 stack: stacks[seat.id] ?? seat.stack,
                 committedThisStreet: Chips(rawValue: 0)!,
                 hasFolded: seat.hasFolded,

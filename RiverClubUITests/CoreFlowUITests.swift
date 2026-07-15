@@ -4,7 +4,7 @@ import XCTest
 final class CoreFlowUITests: XCTestCase {
     private let firstTableIdentifier = "tableRow.10000000-0000-0000-0000-000000000001"
 
-    func testGuestCanCompleteHandAndStartNextHand() {
+    func testGuestCanCompleteHandAndStartNextHand() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-uiTesting", "-uiTestingImmediatePoker"]
         app.launch()
@@ -24,7 +24,10 @@ final class CoreFlowUITests: XCTestCase {
         slider.adjust(toNormalizedSliderPosition: 0.25)
         app.buttons["buyIn.confirm"].tap()
 
-        XCTAssertTrue(app.otherElements["table.safeCanvas"].waitForExistence(timeout: 5))
+        let safeCanvas = app.otherElements["table.safeCanvas"]
+        XCTAssertTrue(safeCanvas.waitForExistence(timeout: 5))
+        let firstHandID = try XCTUnwrap(safeCanvas.value as? String)
+        XCTAssertFalse(firstHandID.isEmpty)
 
         for index in 0..<9 {
             XCTAssertTrue(
@@ -49,9 +52,16 @@ final class CoreFlowUITests: XCTestCase {
         let nextHand = app.buttons["action.nextHand"]
         XCTAssertTrue(nextHand.waitForExistence(timeout: 15))
         nextHand.tap()
-        XCTAssertTrue(
-            app.staticTexts["table.phase"].waitForExistence(timeout: 5)
-                || app.buttons["action.fold"].waitForExistence(timeout: 5)
+        expectation(
+            for: NSPredicate(format: "exists == false"),
+            evaluatedWith: nextHand
         )
+        expectation(
+            for: NSPredicate(format: "value != %@", firstHandID),
+            evaluatedWith: safeCanvas
+        )
+        waitForExpectations(timeout: 10)
+        XCTAssertNotEqual(safeCanvas.value as? String, firstHandID)
+        XCTAssertTrue(app.buttons["action.fold"].waitForExistence(timeout: 10))
     }
 }

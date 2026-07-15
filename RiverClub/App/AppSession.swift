@@ -80,6 +80,7 @@ final class AppSession {
     @ObservationIgnored private let dependencies: AppSessionDependencies
     private var tableState = TableSessionState()
     private var cashTableJoinAttempt: CashTableJoinAttempt?
+    private var isStartingOrResumingTableHand = false
 
     var chipBalance: Int { pokerStore.accountBalance.rawValue }
     var selectedTable: PokerTableSummary? { tableState.selectedTable }
@@ -249,11 +250,20 @@ final class AppSession {
     }
 
     func startOrResumeTableHand() async {
-        tableStartupError = nil
+        guard !isStartingOrResumingTableHand else { return }
         guard let tableCoordinator else {
             tableStartupError = "牌局启动失败，请重试。"
             return
         }
+        if pokerStore.cashSession?.phase != .readyForHand,
+           tableCoordinator.state.phase != .suspended {
+            tableStartupError = nil
+            return
+        }
+
+        isStartingOrResumingTableHand = true
+        defer { isStartingOrResumingTableHand = false }
+        tableStartupError = nil
         do {
             if pokerStore.cashSession?.phase == .readyForHand {
                 try await tableCoordinator.startHand(

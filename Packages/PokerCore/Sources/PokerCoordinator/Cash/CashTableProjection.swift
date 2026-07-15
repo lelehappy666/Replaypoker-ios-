@@ -49,6 +49,7 @@ enum CashTableProjection {
             return TableSeatState(
                 id: seat.id,
                 displayName: profile.displayName,
+                isHuman: seat.id == humanSeat,
                 stack: seat.stack,
                 committedThisStreet: seat.committedThisStreet,
                 hasFolded: seat.hasFolded,

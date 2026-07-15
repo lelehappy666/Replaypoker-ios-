@@ -33,6 +33,7 @@ func makeSafeTableViewState() throws -> TableViewState {
             TableSeatState(
                 id: humanSeat,
                 displayName: "玩家",
+                isHuman: true,
                 stack: try Chips(3_800),
                 committedThisStreet: try Chips(200),
                 hasFolded: false,
@@ -47,6 +48,7 @@ func makeSafeTableViewState() throws -> TableViewState {
             TableSeatState(
                 id: botSeat,
                 displayName: "机器人",
+                isHuman: false,
                 stack: try Chips(3_400),
                 committedThisStreet: try Chips(600),
                 hasFolded: false,

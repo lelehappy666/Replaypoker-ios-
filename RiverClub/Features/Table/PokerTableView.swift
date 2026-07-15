@@ -8,8 +8,10 @@ struct PokerTableView: View {
     let balance: Int
     let onExit: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isSendingIntent = false
-    @State private var animationPulse = false
+    @State private var actionRequest = TableActionRequestModel()
+    @State private var animationPresentation = TableAnimationPresentation()
+    @State private var animationToken = 0
+    @State private var animationResetTask: Task<Void, Never>?
 
     private var state: TableViewState { coordinator.state }
 
@@ -22,6 +24,7 @@ struct PokerTableView: View {
                     .contentShape(Rectangle())
                     .accessibilityElement()
                     .accessibilityLabel("牌桌安全画布")
+                    .accessibilityValue(state.handID ?? "尚未开局")
                     .accessibilityIdentifier("table.safeCanvas")
 
                 tableSurface
@@ -46,9 +49,8 @@ struct PokerTableView: View {
                                     ? state.secondsRemaining
                                     : nil,
                                 isWinner: state.winners.contains(seat.id),
-                                animationPulse: animationPulse,
                                 reduceMotion: reduceMotion,
-                                animation: state.animation
+                                animation: animationPresentation
                             )
 
                             Color.clear
@@ -83,13 +85,11 @@ struct PokerTableView: View {
         .safeAreaPadding(.horizontal, 16)
         .safeAreaPadding(.vertical, 6)
         .background(RCTheme.background.ignoresSafeArea())
-        .onChange(of: state.animation) { _, animation in
-            guard animation != nil else { return }
-            withAnimation(
-                reduceMotion ? nil : .easeOut(duration: 0.22)
-            ) {
-                animationPulse.toggle()
-            }
+        .onChange(of: state.stateVersion) { _, _ in
+            present(state.animation)
+        }
+        .onDisappear {
+            animationResetTask?.cancel()
         }
     }
 
@@ -112,13 +112,17 @@ struct PokerTableView: View {
     private var centerBoard: some View {
         VStack(spacing: 6) {
             HStack(spacing: 5) {
-                ForEach(Array(state.communityCards.enumerated()), id: \.offset) { _, card in
+                ForEach(Array(state.communityCards.enumerated()), id: \.offset) { index, card in
                     TableCardView(card: card)
                         .frame(width: 34, height: 46)
-                        .transition(reduceMotion ? .identity : .scale.combined(with: .opacity))
+                        .scaleEffect(
+                            reduceMotion ? 1 : animationPresentation.communityCardScale(at: index)
+                        )
+                        .opacity(
+                            reduceMotion ? 1 : animationPresentation.communityCardOpacity(at: index)
+                        )
                 }
             }
-            .scaleEffect(boardScale)
 
             Text("底池 \(state.pot.rawValue.formatted())")
                 .font(.caption.monospacedDigit().weight(.bold))
@@ -133,34 +137,13 @@ struct PokerTableView: View {
                         .overlay { Circle().stroke(RCTheme.background, lineWidth: 1) }
                 }
             }
-            .offset(y: potOffset)
+            .offset(y: reduceMotion ? 0 : animationPresentation.chipOffset)
             .accessibilityLabel("底池筹码堆")
         }
     }
 
     private var chipCount: Int {
         state.pot.rawValue == 0 ? 0 : min(6, max(1, state.pot.rawValue / 200))
-    }
-
-    private var boardScale: CGFloat {
-        guard !reduceMotion,
-              state.animation?.kind == .revealCommunityCard
-        else { return 1 }
-        return animationPulse ? 1 : 0.88
-    }
-
-    private var potOffset: CGFloat {
-        guard !reduceMotion else { return 0 }
-        switch state.animation?.kind {
-        case .moveCommitmentToPot:
-            return animationPulse ? 7 : 0
-        case .returnUncalledBet:
-            return animationPulse ? -7 : 0
-        case .awardPot:
-            return animationPulse ? -12 : 0
-        default:
-            return 0
-        }
     }
 
     private var topBar: some View {
@@ -203,18 +186,23 @@ struct PokerTableView: View {
 
     @ViewBuilder
     private var phaseControls: some View {
+        ZStack(alignment: .bottomTrailing) {
+            phaseContent
+
+            if let errorMessage = actionRequest.errorMessage {
+                localErrorPanel(message: errorMessage)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var phaseContent: some View {
         switch state.phase {
         case .waitingForHuman:
             if let controls = state.controls {
-                BetControlBar(
-                    controls: controls,
-                    pot: state.pot,
-                    onIntent: send
-                )
-                .disabled(isSendingIntent)
-            } else {
-                statusPanel("等待操作")
-            }
+                BetControlBar(controls: controls, pot: state.pot, onIntent: send)
+                    .disabled(actionRequest.isSending)
+            } else { statusPanel("等待操作") }
         case .awaitingNextHand:
             VStack(alignment: .trailing, spacing: 8) {
                 statusText(PokerTablePresentation.status(for: state.phase))
@@ -222,21 +210,44 @@ struct PokerTableView: View {
                     .buttonStyle(.borderedProminent)
                     .tint(RCTheme.gold)
                     .foregroundStyle(RCTheme.background)
-                    .disabled(isSendingIntent)
+                    .disabled(actionRequest.isSending)
                     .accessibilityIdentifier("action.nextHand")
             }
         case .saveFailed:
             TableErrorPanel(
                 message: state.errorMessage ?? "牌局保存失败，请重试。",
                 retryTitle: "重试保存",
-                isRetrying: isSendingIntent,
+                isRetrying: actionRequest.isSending,
                 onRetry: { send(.retrySave) }
             )
         default:
-            statusPanel(
-                state.errorMessage ?? PokerTablePresentation.status(for: state.phase)
-            )
+            statusPanel(state.errorMessage ?? PokerTablePresentation.status(for: state.phase))
         }
+    }
+
+    private func localErrorPanel(message: String) -> some View {
+        VStack(spacing: 8) {
+            Label(message, systemImage: "exclamationmark.triangle.fill")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.orange)
+
+            HStack {
+                Button("关闭") { actionRequest.dismissError() }
+                    .accessibilityIdentifier("action.dismissError")
+                if let retry = actionRequest.retryIntent(for: state.phase) {
+                    Button("重试") {
+                        actionRequest.dismissError()
+                        send(retry)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("action.retryIntent")
+                }
+            }
+        }
+        .padding(12)
+        .background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: RCTheme.corner))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("table.actionError")
     }
 
     private func statusPanel(_ text: String) -> some View {
@@ -254,11 +265,33 @@ struct PokerTableView: View {
     }
 
     private func send(_ intent: TableIntent) {
-        guard !isSendingIntent else { return }
-        isSendingIntent = true
         Task { @MainActor in
-            defer { isSendingIntent = false }
-            try? await coordinator.send(intent)
+            await actionRequest.send(intent) { intent in
+                try await coordinator.send(intent)
+            }
+        }
+    }
+
+    private func present(_ event: TableAnimationEvent?) {
+        animationResetTask?.cancel()
+        animationToken += 1
+        let token = animationToken
+
+        guard let event, !reduceMotion else {
+            animationPresentation = TableAnimationPresentation()
+            return
+        }
+
+        animationPresentation.begin(event, token: token)
+        withAnimation(.easeOut(duration: 0.22)) {
+            animationPresentation.advance(token: token)
+        }
+        animationResetTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(220))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.12)) {
+                animationPresentation.reset(token: token)
+            }
         }
     }
 }

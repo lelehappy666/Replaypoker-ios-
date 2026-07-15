@@ -223,6 +223,27 @@ final class CashTableEntryTests: XCTestCase {
     }
 
     @MainActor
+    func testRepeatedStartRequestKeepsHealthyHandRunning() async throws {
+        let ids = JoinAttemptIDSpy()
+        let fixture = try AppSessionFixture(dependencies: makeDependencies(ids: ids))
+        try fixture.session.joinCashTable(
+            fixture.table,
+            buyIn: 16_000,
+            autoTopUp: false,
+            reduceMotion: true
+        )
+        await fixture.session.startOrResumeTableHand()
+        let phase = fixture.session.tableCoordinator?.state.phase
+
+        await fixture.session.startOrResumeTableHand()
+
+        XCTAssertEqual(fixture.store.cashSession?.phase, .handInProgress)
+        XCTAssertEqual(fixture.session.tableCoordinator?.state.phase, phase)
+        XCTAssertNotEqual(fixture.session.tableCoordinator?.state.phase, .suspended)
+        XCTAssertNil(fixture.session.tableStartupError)
+    }
+
+    @MainActor
     func testStartupFailureIsVisibleAndRetryResumesSameHand() async throws {
         let ids = JoinAttemptIDSpy()
         let dependencies = makeDependencies(

@@ -2,7 +2,8 @@ import PokerCoordinator
 import SwiftUI
 
 enum PokerTableLayout {
-    static let seatSize = CGSize(width: 104, height: 92)
+    static let seatSize = CGSize(width: 108, height: 96)
+    static let seatContentSize = CGSize(width: 104, height: 92)
     static let betControlSize = CGSize(width: 330, height: 164)
 
     static func positions(for canvas: CGSize) -> [CGPoint] {
@@ -11,13 +12,13 @@ enum PokerTableLayout {
         let leftX = seatSize.width / 2 + 2
         let rightX = canvas.width - seatSize.width / 2 - 2
         let sideTopY = max(canvas.height * 0.52, topY + seatSize.height + 4)
-        let sideBottomY = min(bottomY - 18, sideTopY + seatSize.height + 8)
+        let sideBottomY = min(bottomY - 16, sideTopY + seatSize.height)
 
         return [
             .init(x: canvas.width * 0.20, y: topY),
             .init(x: canvas.width * 0.50, y: topY),
             .init(x: canvas.width * 0.70, y: topY),
-            .init(x: rightX, y: topY + seatSize.height / 2 + 4),
+            .init(x: rightX, y: topY + seatSize.height / 2 + 2),
             .init(x: leftX, y: sideTopY),
             .init(x: leftX, y: sideBottomY),
             .init(x: canvas.width * 0.22, y: bottomY),
@@ -69,16 +70,8 @@ struct PokerSeatView: View {
     let seat: TableSeatState
     let secondsRemaining: Int?
     let isWinner: Bool
-    let animationPulse: Bool
     let reduceMotion: Bool
-    let animation: TableAnimationEvent?
-
-    private var isHuman: Bool {
-        seat.cards.contains { card in
-            if case .faceUp = card { return true }
-            return false
-        }
-    }
+    let animation: TableAnimationPresentation
 
     private var initials: String {
         String(seat.displayName.prefix(2))
@@ -91,7 +84,7 @@ struct PokerSeatView: View {
                     TableCardView(cardState: card)
                         .frame(width: 29, height: 39)
                         .accessibilityIdentifier(
-                            isHuman ? "table.localHoleCard" : "table.botHoleCard"
+                            seat.isHuman ? "table.localHoleCard" : "table.botHoleCard"
                         )
                 }
             }
@@ -101,10 +94,10 @@ struct PokerSeatView: View {
             HStack(spacing: 4) {
                 Text(initials)
                     .font(.caption2.weight(.bold))
-                    .foregroundStyle(isHuman ? RCTheme.gold : RCTheme.primaryText)
+                    .foregroundStyle(seat.isHuman ? RCTheme.gold : RCTheme.primaryText)
                     .frame(width: 26, height: 26)
                     .background(
-                        isHuman ? RCTheme.gold.opacity(0.24) : RCTheme.surfaceRaised,
+                        seat.isHuman ? RCTheme.gold.opacity(0.24) : RCTheme.surfaceRaised,
                         in: Circle()
                     )
 
@@ -128,25 +121,24 @@ struct PokerSeatView: View {
             }
         }
         .foregroundStyle(RCTheme.primaryText)
-        .frame(width: PokerTableLayout.seatSize.width, height: PokerTableLayout.seatSize.height)
+        .frame(
+            width: PokerTableLayout.seatContentSize.width,
+            height: PokerTableLayout.seatContentSize.height
+        )
         .padding(2)
         .background(.black.opacity(0.16), in: RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(isWinner || seat.isCurrentActor ? RCTheme.gold : .clear, lineWidth: 2)
         }
-        .scaleEffect(isWinner && animationPulse && !reduceMotion ? 1.08 : 1)
+        .scaleEffect(reduceMotion ? 1 : animation.winnerScale(for: seat.id))
         .opacity(seat.hasFolded ? 0.58 : 1)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityDescription)
     }
 
     private var holeCardScale: CGFloat {
-        guard !reduceMotion,
-              case let .dealHoleCard(animatedSeat, _)? = animation,
-              animatedSeat == seat.id
-        else { return 1 }
-        return animationPulse ? 1 : 0.72
+        reduceMotion ? 1 : animation.holeCardScale(for: seat.id)
     }
 
     private var statusText: String {
@@ -157,7 +149,7 @@ struct PokerSeatView: View {
     }
 
     private var accessibilityDescription: String {
-        var result = "\(isHuman ? "本人" : "玩家")\(seat.displayName)，娱乐筹码 \(seat.stack.rawValue)"
+        var result = "\(seat.isHuman ? "本人" : "玩家")\(seat.displayName)，娱乐筹码 \(seat.stack.rawValue)"
         if seat.isCurrentActor { result += "，\(statusText)" }
         if seat.hasFolded { result += "，已弃牌" }
         if seat.isAllIn { result += "，全下" }

@@ -35,6 +35,9 @@ targets:
     type: bundle.unit-test
     platform: iOS
     sources: [RiverClubTests]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
     dependencies:
       - target: RiverClub
       - package: PokerCore
@@ -48,4 +51,7 @@ targets:
     type: bundle.ui-testing
     platform: iOS
     sources: [RiverClubUITests]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
     dependencies: [{target: RiverClub}]
