@@ -6,17 +6,20 @@ public struct TableRuntimeDependencies: Sendable {
     public let nextBusinessID: @Sendable (_ purpose: String) throws -> BusinessID
     public let nextSeed: @Sendable () -> UInt64
     public let sleep: @Sendable (_ duration: Duration) async throws -> Void
+    public let reduceMotion: Bool
 
     public init(
         nextHandID: @escaping @Sendable () throws -> HandID,
         nextBusinessID: @escaping @Sendable (_ purpose: String) throws -> BusinessID,
         nextSeed: @escaping @Sendable () -> UInt64,
-        sleep: @escaping @Sendable (_ duration: Duration) async throws -> Void
+        sleep: @escaping @Sendable (_ duration: Duration) async throws -> Void,
+        reduceMotion: Bool = false
     ) {
         self.nextHandID = nextHandID
         self.nextBusinessID = nextBusinessID
         self.nextSeed = nextSeed
         self.sleep = sleep
+        self.reduceMotion = reduceMotion
     }
 }
 
@@ -26,7 +29,8 @@ package extension TableRuntimeDependencies {
             nextHandID: { try HandID("hand-1") },
             nextBusinessID: { purpose in try BusinessID("\(purpose)-1") },
             nextSeed: { seed },
-            sleep: { _ in }
+            sleep: { _ in },
+            reduceMotion: true
         )
     }
 }

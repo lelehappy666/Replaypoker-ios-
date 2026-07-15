@@ -201,6 +201,35 @@ final class FailOnceSessionRepository: SessionRepository {
     func attemptedBusinessIDs() -> [BusinessID] { attemptedIDs }
 }
 
+final class BusinessIDSequence: @unchecked Sendable {
+    private let lock = NSLock()
+    private var generated: [BusinessID] = []
+
+    func next(for purpose: String) throws -> BusinessID {
+        try lock.withLock {
+            let id = try BusinessID("\(purpose)-\(generated.count + 1)")
+            generated.append(id)
+            return id
+        }
+    }
+
+    func values() -> [BusinessID] {
+        lock.withLock { generated }
+    }
+}
+
+actor AnimationSleepRecorder {
+    private var durations: [Duration] = []
+
+    func sleep(for duration: Duration) {
+        durations.append(duration)
+    }
+
+    func animationDurations() -> [Duration] {
+        durations.filter { $0 < .seconds(1) }
+    }
+}
+
 private let coordinatorClock = FixedSessionClock(
     now: Date(timeIntervalSince1970: 1_752_499_800),
     day: try! LocalDay("2026-07-14")
@@ -394,7 +423,8 @@ final class CoordinatorScenario {
                     } else {
                         try await clock.sleep(for: duration)
                     }
-                }
+                },
+                reduceMotion: true
             )
             let coordinator = try CashTableCoordinator(
                 store: store,
@@ -526,7 +556,8 @@ final class CoordinatorScenario {
                         try BusinessID("\(purpose)-bot-\(seed)")
                     },
                     nextSeed: { seed },
-                    sleep: { _ in }
+                    sleep: { _ in },
+                    reduceMotion: true
                 ),
                 botService: botService
             )
@@ -543,7 +574,9 @@ final class CoordinatorScenario {
     }
 
     static func pendingSettlement(
-        repository: FailOnceSessionRepository
+        repository: FailOnceSessionRepository,
+        businessIDs: BusinessIDSequence = BusinessIDSequence(),
+        failBusinessIDGeneration: Bool = false
     ) async throws -> CoordinatorScenario {
         let directory = try makeTemporaryDirectory(named: "pending-settlement")
         do {
@@ -556,7 +589,10 @@ final class CoordinatorScenario {
                 dependencies: TableRuntimeDependencies(
                     nextHandID: { try HandID("pending-settlement-\(UUID().uuidString)") },
                     nextBusinessID: { purpose in
-                        try BusinessID("\(purpose)-stable")
+                        if failBusinessIDGeneration {
+                            throw PokerCoordinatorError.saveFailed
+                        }
+                        return try businessIDs.next(for: purpose)
                     },
                     nextSeed: { 41 },
                     sleep: { _ in }
@@ -567,6 +603,84 @@ final class CoordinatorScenario {
                 in: store,
                 foldedSeat: try SeatID(3)
             )
+            return CoordinatorScenario(
+                coordinator: coordinator,
+                store: store,
+                directory: directory
+            )
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            throw error
+        }
+    }
+
+    static func automaticSettlement(
+        repository: FailOnceSessionRepository,
+        businessIDs: BusinessIDSequence = BusinessIDSequence(),
+        animationRecorder: AnimationSleepRecorder? = nil,
+        reduceMotion: Bool = true
+    ) async throws -> CoordinatorScenario {
+        let directory = try makeTemporaryDirectory(named: "automatic-settlement")
+        do {
+            let humanSeat = try SeatID(0)
+            let store = try makeSeatedStore(repository: repository)
+            let coordinator = try CashTableCoordinator(
+                store: store,
+                humanSeat: humanSeat,
+                seatProfiles: try makeSeatProfiles(),
+                dependencies: TableRuntimeDependencies(
+                    nextHandID: {
+                        try HandID("automatic-settlement-\(UUID().uuidString)")
+                    },
+                    nextBusinessID: businessIDs.next,
+                    nextSeed: { 43 },
+                    sleep: { duration in
+                        await animationRecorder?.sleep(for: duration)
+                    },
+                    reduceMotion: reduceMotion
+                )
+            )
+            try await coordinator.startHand(settings: .recommended)
+            return CoordinatorScenario(
+                coordinator: coordinator,
+                store: store,
+                directory: directory
+            )
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            throw error
+        }
+    }
+
+    static func pendingSettlementWithoutRanks() async throws -> CoordinatorScenario {
+        let repository = FailOnceSessionRepository(failSettlementOnce: false)
+        let scenario = try await pendingSettlementBase(repository: repository)
+        try foldExistingHandToOneWinner(in: scenario.store)
+        return scenario
+    }
+
+    private static func pendingSettlementBase(
+        repository: FailOnceSessionRepository
+    ) async throws -> CoordinatorScenario {
+        let directory = try makeTemporaryDirectory(named: "pending-without-ranks")
+        do {
+            let humanSeat = try SeatID(0)
+            let store = try makeSeatedStore(repository: repository)
+            let coordinator = try CashTableCoordinator(
+                store: store,
+                humanSeat: humanSeat,
+                seatProfiles: try makeSeatProfiles(),
+                dependencies: TableRuntimeDependencies(
+                    nextHandID: { try HandID("pending-without-ranks") },
+                    nextBusinessID: { purpose in
+                        try BusinessID("\(purpose)-without-ranks")
+                    },
+                    nextSeed: { 47 },
+                    sleep: { _ in },
+                    reduceMotion: true
+                )
+            )
+            try await coordinator.startHand(settings: .recommended)
             return CoordinatorScenario(
                 coordinator: coordinator,
                 store: store,
@@ -604,6 +718,16 @@ final class CoordinatorScenario {
         #expect(remainingSteps > 0)
     }
 
+    func waitForAutomaticSettlement() async {
+        for _ in 0..<10_000 {
+            if coordinator.state.phase == .awaitingNextHand
+                || coordinator.state.phase == .saveFailed {
+                return
+            }
+            await Task.yield()
+        }
+    }
+
     private static func make(
         clock: ManualTableClock,
         dealer: SeatID,
@@ -633,7 +757,8 @@ final class CoordinatorScenario {
                     } else {
                         try await clock.sleep(for: duration)
                     }
-                }
+                },
+                reduceMotion: true
             )
             let coordinator = try CashTableCoordinator(
                 store: store,
@@ -709,6 +834,30 @@ private func playExistingHandToShowdown(
     }
     #expect(remainingSteps > 0)
     #expect(hasFoldedDesignatedSeat)
+    #expect(store.cashSession?.phase == .settlementPending)
+}
+
+private func foldExistingHandToOneWinner(in store: LocalPokerStore) throws {
+    var remainingSteps = 30
+    while store.cashSession?.phase == .handInProgress, remainingSteps > 0 {
+        remainingSteps -= 1
+        if let actor = store.cashSession?.currentActor {
+            let observation = try #require(try store.playerObservation(for: actor))
+            let legal = try #require(observation.legalActions)
+            let action: PlayerAction
+            if legal.canFold {
+                action = .fold
+            } else if legal.canCheck {
+                action = .check
+            } else {
+                action = .call
+            }
+            _ = try store.apply(action, by: actor)
+        } else {
+            _ = try store.advanceIfRoundComplete()
+        }
+    }
+    #expect(remainingSteps > 0)
     #expect(store.cashSession?.phase == .settlementPending)
 }
 

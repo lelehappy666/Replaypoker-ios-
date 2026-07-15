@@ -19,30 +19,31 @@ func 二百手确定性机器人串行且筹码守恒() async throws {
 
             try await scenario.playDeterministicallyToSettlement()
 
-            #expect(scenario.store.cashSession?.phase == .settlementPending)
-            let showdown = try #require(scenario.store.pendingShowdownObservation)
-            #expect(showdown.cardsBySeat.values.allSatisfy { $0.count == 2 })
-            let spectator = try #require(scenario.store.spectatorObservation)
-            #expect(spectator.street == .complete)
+            #expect(scenario.store.cashSession?.phase == .readyForHand)
+            #expect(scenario.coordinator.state.phase == .awaitingNextHand)
+            let record = try #require(scenario.store.handRecords().first).record
+            #expect(record.handRanksBySeat.keys.allSatisfy {
+                record.holeCardsBySeat[$0]?.count == 2
+            })
             let requests = await botService.requests()
             let botActions = await botService.actions()
             #expect(requests.count == botActions.count)
             #expect(zip(requests, botActions).allSatisfy { request, action in
                 legal(request.observation.legalActions, contains: action)
             })
-            #expect(spectator.actions.allSatisfy { action in
+            #expect(record.actions.allSatisfy { action in
                 actionWasLegal(action, in: requests)
                     || action.seat == (try? SeatID(0))
             })
             #expect(
-                spectator.actions.filter { $0.seat != (try? SeatID(0)) }.count
+                record.actions.filter { $0.seat != (try? SeatID(0)) }.count
                     == botActions.count
             )
             #expect(await botService.maximumConcurrentCalls() == 1)
 
-            let finalStacks = spectator.publicSeats
-                .sorted { $0.id < $1.id }
-                .map(\.stack.rawValue)
+            let finalStacks = record.finalStacks.keys.sorted().map {
+                record.finalStacks[$0]!.rawValue
+            }
             #expect(finalStacks.reduce(0, +) == 36_000)
             if repetition == 0 {
                 firstRun.append(finalStacks)

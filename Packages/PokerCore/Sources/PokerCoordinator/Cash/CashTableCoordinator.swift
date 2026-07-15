@@ -16,6 +16,7 @@ public final class CashTableCoordinator {
     private let botService: any BotDecisionServing
     private var currentHandID: HandID?
     private var pendingSettlementID: BusinessID?
+    private var settlementPipelineRunning = false
     private var winnerSeats: Set<SeatID> = []
     private var stateVersion = 0
     private nonisolated let countdownTask = CountdownTaskBox()
@@ -170,14 +171,32 @@ public final class CashTableCoordinator {
         else {
             throw PokerCoordinatorError.invalidPhase
         }
-        await persistPendingSettlement()
+        await finishSettlement()
     }
 
     package func finishSettlement() async {
-        guard store.cashSession?.phase == .settlementPending,
-              currentHandID != nil,
-              let showdown = store.pendingShowdownObservation
-        else {
+        guard state.phase != .suspended,
+              !settlementPipelineRunning,
+              store.cashSession?.phase == .settlementPending,
+              currentHandID != nil
+        else { return }
+
+        if pendingSettlementID == nil {
+            do {
+                pendingSettlementID = try dependencies.nextBusinessID("settlement")
+            } catch {
+                state = stateReplacing(
+                    phase: .settling,
+                    errorMessage: "无法创建牌局保存编号。"
+                )
+                return
+            }
+        }
+        guard let transactionID = pendingSettlementID else { return }
+
+        settlementPipelineRunning = true
+        defer { settlementPipelineRunning = false }
+        guard let showdown = store.pendingShowdownObservation else {
             state = stateReplacing(
                 phase: .saveFailed,
                 errorMessage: "牌局保存失败，请重试。"
@@ -225,7 +244,16 @@ public final class CashTableCoordinator {
             errorMessage: nil,
             animation: state.animation
         )
-        await persistPendingSettlement()
+        do {
+            state = stateReplacing(phase: .savingResult, errorMessage: nil)
+            _ = try store.commitPendingHand(transactionID: transactionID)
+            applyCommittedSettlementState()
+        } catch {
+            state = stateReplacing(
+                phase: .saveFailed,
+                errorMessage: "牌局保存失败，请重试。"
+            )
+        }
     }
 
     public func suspend() {
@@ -282,8 +310,12 @@ public final class CashTableCoordinator {
 
     private func scheduleCurrentActorIfReady() async {
         cancelCountdown()
+        guard state.phase != .suspended else { return }
+        if store.cashSession?.phase == .settlementPending {
+            await finishSettlement()
+            return
+        }
         guard let handID = currentHandID,
-              state.phase != .suspended,
               store.cashSession?.phase == .handInProgress,
               let actor = store.cashSession?.currentActor
         else { return }
@@ -549,16 +581,26 @@ public final class CashTableCoordinator {
             humanCards: humanCards,
             beforeAction: beforeAction
         )
+        var animationStreet: Street?
         for animation in animations {
             guard isCurrentOperation(operationVersion) else { return false }
             if case let .highlightWinner(seat) = animation {
                 winnerSeats.insert(seat)
             }
+            if case let .streetChanged(street) = animation {
+                animationStreet = street
+            }
             try refreshProjection(animation: animation)
             if !winnerSeats.isEmpty {
                 state = stateReplacing(winners: winnerSeats)
             }
-            try await dependencies.sleep(.zero)
+            try await dependencies.sleep(
+                CashTableAnimationTiming.duration(
+                    for: animation,
+                    street: animationStreet,
+                    reduceMotion: dependencies.reduceMotion
+                )
+            )
             guard isCurrentOperation(operationVersion) else { return false }
         }
         return true
@@ -583,52 +625,36 @@ public final class CashTableCoordinator {
         )
     }
 
-    private func persistPendingSettlement() async {
-        do {
-            let transactionID: BusinessID
-            if let pendingSettlementID {
-                transactionID = pendingSettlementID
-            } else {
-                transactionID = try dependencies.nextBusinessID("settlement")
-                pendingSettlementID = transactionID
-            }
-            state = stateReplacing(phase: .savingResult, errorMessage: nil)
-            _ = try store.commitPendingHand(transactionID: transactionID)
-            let stacks = Dictionary(uniqueKeysWithValues:
-                (store.cashSession?.seats ?? []).map { ($0.id, $0.stack) }
-            )
-            let seats = state.seats.map { seat in
-                TableSeatState(
-                    id: seat.id,
-                    displayName: seat.displayName,
-                    stack: stacks[seat.id] ?? seat.stack,
-                    committedThisStreet: try! Chips(0),
-                    hasFolded: seat.hasFolded,
-                    isAllIn: (stacks[seat.id] ?? seat.stack).rawValue == 0,
-                    isDealer: seat.isDealer,
-                    isCurrentActor: false,
-                    cards: seat.cards
-                )
-            }
-            state = TableViewState(
-                handID: state.handID,
-                stateVersion: stateVersion,
-                phase: .awaitingNextHand,
-                seats: seats,
-                communityCards: state.communityCards,
-                pot: state.pot,
-                controls: nil,
-                secondsRemaining: nil,
-                winners: state.winners,
-                errorMessage: nil,
-                animation: state.animation
-            )
-        } catch {
-            state = stateReplacing(
-                phase: .saveFailed,
-                errorMessage: "牌局保存失败，请重试。"
+    private func applyCommittedSettlementState() {
+        let stacks = Dictionary(uniqueKeysWithValues:
+            (store.cashSession?.seats ?? []).map { ($0.id, $0.stack) }
+        )
+        let seats = state.seats.map { seat in
+            TableSeatState(
+                id: seat.id,
+                displayName: seat.displayName,
+                stack: stacks[seat.id] ?? seat.stack,
+                committedThisStreet: Chips(rawValue: 0)!,
+                hasFolded: seat.hasFolded,
+                isAllIn: (stacks[seat.id] ?? seat.stack).rawValue == 0,
+                isDealer: seat.isDealer,
+                isCurrentActor: false,
+                cards: seat.cards
             )
         }
+        state = TableViewState(
+            handID: state.handID,
+            stateVersion: stateVersion,
+            phase: .awaitingNextHand,
+            seats: seats,
+            communityCards: state.communityCards,
+            pot: state.pot,
+            controls: nil,
+            secondsRemaining: nil,
+            winners: state.winners,
+            errorMessage: nil,
+            animation: state.animation
+        )
     }
 
     private func isCurrentOperation(_ operationVersion: Int) -> Bool {

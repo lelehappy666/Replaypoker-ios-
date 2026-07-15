@@ -1,4 +1,5 @@
 import Foundation
+import PokerSession
 import PokerCore
 import Testing
 @testable import PokerCoordinator
@@ -181,4 +182,33 @@ import Testing
         .showAction(seat: seat, action: .allIn),
         .moveCommitmentToPot(seat: seat, amount: try Chips(900)),
     ])
+}
+
+@Test @MainActor func 播放器记录正常节奏且减少动态时全部为零() async throws {
+    let normalRecorder = AnimationSleepRecorder()
+    let normal = try await CoordinatorScenario.automaticSettlement(
+        repository: FailOnceSessionRepository(failSettlementOnce: false),
+        animationRecorder: normalRecorder,
+        reduceMotion: false
+    )
+
+    let opening = await normalRecorder.animationDurations()
+    #expect(opening.filter { $0 == .milliseconds(80) }.count == 18)
+    try await normal.playDeterministicallyToSettlement()
+    await normal.waitForAutomaticSettlement()
+    let allDurations = await normalRecorder.animationDurations()
+    #expect(allDurations.filter { $0 == .milliseconds(180) }.count == 3)
+    #expect(allDurations.filter { $0 == .milliseconds(220) }.count == 2)
+    #expect(allDurations.contains(.milliseconds(250)))
+    #expect(allDurations.contains(.milliseconds(650)))
+
+    let reducedRecorder = AnimationSleepRecorder()
+    _ = try await CoordinatorScenario.automaticSettlement(
+        repository: FailOnceSessionRepository(failSettlementOnce: false),
+        animationRecorder: reducedRecorder,
+        reduceMotion: true
+    )
+    let reducedOpening = await reducedRecorder.animationDurations()
+    #expect(reducedOpening.count == opening.count)
+    #expect(reducedOpening.allSatisfy { $0 == .zero })
 }
