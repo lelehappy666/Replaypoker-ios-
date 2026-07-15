@@ -2,6 +2,64 @@ import Foundation
 import PokerCore
 import PokerSession
 import Testing
+@testable import PokerCoordinator
+
+func decodeLegalActions(_ json: String) throws -> LegalActionSet {
+    try JSONDecoder().decode(LegalActionSet.self, from: Data(json.utf8))
+}
+
+func makeSafeTableViewState() throws -> TableViewState {
+    let humanSeat = try SeatID(0)
+    let botSeat = try SeatID(1)
+    let aceOfSpades = try #require(
+        Card.fullDeck.first { $0.rank == .ace && $0.suit == .spades }
+    )
+    let kingOfSpades = try #require(
+        Card.fullDeck.first { $0.rank == .king && $0.suit == .spades }
+    )
+    let queenOfHearts = try #require(
+        Card.fullDeck.first { $0.rank == .queen && $0.suit == .hearts }
+    )
+    return TableViewState(
+        handID: "safe-hand",
+        stateVersion: 1,
+        phase: .waitingForHuman,
+        seats: [
+            TableSeatState(
+                id: humanSeat,
+                displayName: "玩家",
+                stack: try Chips(3_800),
+                committedThisStreet: try Chips(200),
+                hasFolded: false,
+                isAllIn: false,
+                isDealer: true,
+                isCurrentActor: true,
+                cards: [
+                    .faceUp(aceOfSpades),
+                    .faceUp(kingOfSpades),
+                ]
+            ),
+            TableSeatState(
+                id: botSeat,
+                displayName: "机器人",
+                stack: try Chips(3_400),
+                committedThisStreet: try Chips(600),
+                hasFolded: false,
+                isAllIn: false,
+                isDealer: false,
+                isCurrentActor: false,
+                cards: [.faceDown, .faceDown]
+            ),
+        ],
+        communityCards: [queenOfHearts],
+        pot: try Chips(800),
+        controls: nil,
+        secondsRemaining: 12,
+        winners: [],
+        errorMessage: nil,
+        animation: .dealHoleCard(seat: botSeat, card: .faceDown)
+    )
+}
 
 final class CoordinatorStoreFixture {
     let store: LocalPokerStore
