@@ -7,7 +7,15 @@ import SwiftUI
 
     init() {
         do {
-            _session = State(initialValue: try AppSession.live())
+            let arguments = ProcessInfo.processInfo.arguments
+            let initialSession: AppSession
+            if arguments.contains("-uiTesting"),
+               arguments.contains("-uiTestingImmediatePoker") {
+                initialSession = try AppSession.uiTestingImmediate()
+            } else {
+                initialSession = try AppSession.live()
+            }
+            _session = State(initialValue: initialSession)
         } catch {
             _session = State(initialValue: nil)
         }

@@ -45,4 +45,9 @@ final class PokerTableLayoutTests: XCTestCase {
             XCTAssertGreaterThan(local.y, canvas.height * 0.8)
         }
     }
+
+    func testActionRegionKeepsApprovedLandscapeFootprint() {
+        XCTAssertEqual(PokerTableLayout.betControlSize.width, 330)
+        XCTAssertEqual(PokerTableLayout.betControlSize.height, 164)
+    }
 }

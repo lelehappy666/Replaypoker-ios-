@@ -129,6 +129,56 @@ final class AppSession {
         )
     }
 
+    static func uiTestingImmediate() throws -> AppSession {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory.appendingPathComponent(
+            "RiverClub-Immediate-UITests",
+            isDirectory: true
+        )
+        try? fileManager.removeItem(at: directory)
+        try fileManager.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        let ids = UITestIDSequence()
+        let store = try LocalPokerStore.open(
+            directory: directory,
+            clock: AppSessionClock()
+        )
+        return AppSession(
+            pokerStore: store,
+            botSettingsRepository: MemoryBotSettingsRepository(initial: .recommended),
+            dependencies: AppSessionDependencies(
+                nextSessionID: { try SessionID("ui-session") },
+                nextBusinessID: { purpose in
+                    try BusinessID("ui:\(purpose)")
+                },
+                makeRuntimeDependencies: { _ in
+                    TableRuntimeDependencies(
+                        nextHandID: { try HandID(ids.nextHandID()) },
+                        nextBusinessID: { purpose in
+                            try BusinessID("ui:\(purpose):\(ids.nextBusinessID())")
+                        },
+                        nextSeed: { 37 },
+                        sleep: { duration in
+                            guard duration > .zero else { return }
+                            try await ContinuousClock().sleep(for: .seconds(300))
+                        },
+                        reduceMotion: true
+                    )
+                },
+                makeCoordinator: { store, humanSeat, profiles, runtime in
+                    try CashTableCoordinator(
+                        store: store,
+                        humanSeat: humanSeat,
+                        seatProfiles: profiles,
+                        dependencies: runtime
+                    )
+                }
+            )
+        )
+    }
+
     func continueAsGuest() { route = .lobby }
     func logout() { route = .login }
     func open(_ route: AppRoute) { self.route = route }
@@ -245,6 +295,26 @@ final class AppSession {
     func freezeBotSettingsForNextHand() -> BotSettings {
         frozenBotSettings = botSettings
         return botSettings
+    }
+}
+
+private final class UITestIDSequence: @unchecked Sendable {
+    private let lock = NSLock()
+    private var hand = 0
+    private var business = 0
+
+    func nextHandID() -> String {
+        lock.withLock {
+            hand += 1
+            return "ui-hand-\(hand)"
+        }
+    }
+
+    func nextBusinessID() -> Int {
+        lock.withLock {
+            business += 1
+            return business
+        }
     }
 }
 

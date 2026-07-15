@@ -1,3 +1,4 @@
+import PokerCoordinator
 import SwiftUI
 
 enum PokerTableLayout {
@@ -64,51 +65,61 @@ enum PokerTableLayout {
     }
 }
 
-enum PokerTablePresentation {
-    static func title(for table: PokerTableSummary) -> String {
-        "\(table.name) · \(table.smallBlind.formatted()) / \(table.bigBlind.formatted())"
-    }
-}
-
 struct PokerSeatView: View {
-    let seat: PokerSeat
-    var isActing = false
+    let seat: TableSeatState
+    let secondsRemaining: Int?
+    let isWinner: Bool
+    let animationPulse: Bool
+    let reduceMotion: Bool
+    let animation: TableAnimationEvent?
+
+    private var isHuman: Bool {
+        seat.cards.contains { card in
+            if case .faceUp = card { return true }
+            return false
+        }
+    }
+
+    private var initials: String {
+        String(seat.displayName.prefix(2))
+    }
 
     var body: some View {
-        VStack(spacing: 3) {
-            ZStack {
-                Circle()
-                    .fill(seat.isLocalPlayer ? RCTheme.gold.opacity(0.24) : RCTheme.surfaceRaised)
-
-                Text(seat.initials)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(seat.isLocalPlayer ? RCTheme.gold : RCTheme.primaryText)
+        VStack(spacing: 2) {
+            HStack(spacing: -6) {
+                ForEach(Array(seat.cards.enumerated()), id: \.offset) { _, card in
+                    TableCardView(cardState: card)
+                        .frame(width: 29, height: 39)
+                        .accessibilityIdentifier(
+                            isHuman ? "table.localHoleCard" : "table.botHoleCard"
+                        )
+                }
             }
-            .frame(width: 42, height: 42)
-            .clipShape(Circle())
-            .fixedSize()
-            .overlay {
-                Circle()
-                    .stroke(isActing ? RCTheme.gold : RCTheme.secondaryText.opacity(0.55), lineWidth: isActing ? 3 : 2)
+            .frame(height: 39)
+            .scaleEffect(holeCardScale)
+
+            HStack(spacing: 4) {
+                Text(initials)
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(isHuman ? RCTheme.gold : RCTheme.primaryText)
+                    .frame(width: 26, height: 26)
+                    .background(
+                        isHuman ? RCTheme.gold.opacity(0.24) : RCTheme.surfaceRaised,
+                        in: Circle()
+                    )
+
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(seat.displayName)
+                        .font(.caption2.weight(.semibold))
+                        .lineLimit(1)
+                    Text(seat.stack.rawValue.formatted())
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(RCTheme.gold)
+                }
             }
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier(
-                seat.isLocalPlayer ? "table.localAvatar" : "table.avatar.\(seat.position)"
-            )
 
-            ViewThatFits(in: .horizontal) {
-                Text(seat.name)
-                Text(seat.initials)
-            }
-            .font(.caption2.weight(.semibold))
-            .lineLimit(1)
-
-            Text(seat.chips.formatted())
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(RCTheme.gold)
-
-            if isActing || seat.status != nil {
-                Text(isActing ? "行动中 · 18秒" : seat.status ?? "")
+            if seat.isCurrentActor || seat.hasFolded || seat.isAllIn {
+                Text(statusText)
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(RCTheme.background)
                     .padding(.horizontal, 5)
@@ -117,8 +128,39 @@ struct PokerSeatView: View {
             }
         }
         .foregroundStyle(RCTheme.primaryText)
-        .frame(width: PokerTableLayout.seatSize.width, height: PokerTableLayout.seatSize.height, alignment: .top)
+        .frame(width: PokerTableLayout.seatSize.width, height: PokerTableLayout.seatSize.height)
+        .padding(2)
+        .background(.black.opacity(0.16), in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isWinner || seat.isCurrentActor ? RCTheme.gold : .clear, lineWidth: 2)
+        }
+        .scaleEffect(isWinner && animationPulse && !reduceMotion ? 1.08 : 1)
+        .opacity(seat.hasFolded ? 0.58 : 1)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(seat.isLocalPlayer ? "本人" : "玩家")\(seat.name)，娱乐筹码 \(seat.chips)\(isActing ? "，行动中，剩余 18 秒" : seat.status.map { "，\($0)" } ?? "")")
+        .accessibilityLabel(accessibilityDescription)
+    }
+
+    private var holeCardScale: CGFloat {
+        guard !reduceMotion,
+              case let .dealHoleCard(animatedSeat, _)? = animation,
+              animatedSeat == seat.id
+        else { return 1 }
+        return animationPulse ? 1 : 0.72
+    }
+
+    private var statusText: String {
+        if seat.hasFolded { return "已弃牌" }
+        if seat.isAllIn { return "全下" }
+        if let secondsRemaining { return "行动中 · \(secondsRemaining)秒" }
+        return "行动中"
+    }
+
+    private var accessibilityDescription: String {
+        var result = "\(isHuman ? "本人" : "玩家")\(seat.displayName)，娱乐筹码 \(seat.stack.rawValue)"
+        if seat.isCurrentActor { result += "，\(statusText)" }
+        if seat.hasFolded { result += "，已弃牌" }
+        if seat.isAllIn { result += "，全下" }
+        return result
     }
 }

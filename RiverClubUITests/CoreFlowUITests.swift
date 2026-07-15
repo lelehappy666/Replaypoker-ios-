@@ -4,9 +4,9 @@ import XCTest
 final class CoreFlowUITests: XCTestCase {
     private let firstTableIdentifier = "tableRow.10000000-0000-0000-0000-000000000001"
 
-    func testGuestCanBuyInAndReachNineSeatTable() {
+    func testGuestCanCompleteHandAndStartNextHand() {
         let app = XCUIApplication()
-        app.launchArguments = ["-uiTesting"]
+        app.launchArguments = ["-uiTesting", "-uiTestingImmediatePoker"]
         app.launch()
 
         let guestLogin = app.buttons["login.guest"]
@@ -24,15 +24,34 @@ final class CoreFlowUITests: XCTestCase {
         slider.adjust(toNormalizedSliderPosition: 0.25)
         app.buttons["buyIn.confirm"].tap()
 
+        XCTAssertTrue(app.otherElements["table.safeCanvas"].waitForExistence(timeout: 5))
+
         for index in 0..<9 {
             XCTAssertTrue(
                 app.otherElements["table.seat.\(index)"].waitForExistence(timeout: 5),
                 "缺少第 \(index) 个座位"
             )
         }
-        XCTAssertTrue(app.staticTexts["table.pot"].exists)
-        XCTAssertTrue(app.buttons["action.fold"].exists)
-        XCTAssertTrue(app.buttons["action.call"].exists)
-        XCTAssertTrue(app.buttons["action.raise"].exists)
+        XCTAssertEqual(
+            app.descendants(matching: .any)
+                .matching(identifier: "table.localHoleCard")
+                .count,
+            2
+        )
+
+        let fold = app.buttons["action.fold"]
+        XCTAssertTrue(fold.waitForExistence(timeout: 10))
+        XCTAssertTrue(
+            app.buttons["action.middle"].exists || app.buttons["action.aggressive"].exists
+        )
+        fold.tap()
+
+        let nextHand = app.buttons["action.nextHand"]
+        XCTAssertTrue(nextHand.waitForExistence(timeout: 15))
+        nextHand.tap()
+        XCTAssertTrue(
+            app.staticTexts["table.phase"].waitForExistence(timeout: 5)
+                || app.buttons["action.fold"].waitForExistence(timeout: 5)
+        )
     }
 }

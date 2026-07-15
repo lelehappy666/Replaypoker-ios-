@@ -1,16 +1,17 @@
+import PokerCoordinator
+import PokerCore
 import SwiftUI
 
 struct PokerTableView: View {
+    @Bindable var coordinator: CashTableCoordinator
     let table: PokerTableSummary
-    let seats: [PokerSeat]
-    @Bindable var session: AppSession
+    let balance: Int
     let onExit: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isSendingIntent = false
+    @State private var animationPulse = false
 
-    private var orderedSeats: [PokerSeat] {
-        let opponents = seats.filter { !$0.isLocalPlayer }.prefix(8)
-        let localPlayer = seats.filter(\.isLocalPlayer).prefix(1)
-        return Array(opponents + localPlayer)
-    }
+    private var state: TableViewState { coordinator.state }
 
     var body: some View {
         GeometryReader { proxy in
@@ -36,13 +37,29 @@ struct PokerTableView: View {
                     )
                     .accessibilityIdentifier("table.centerBoard")
 
-                ForEach(Array(orderedSeats.enumerated()), id: \.element.id) { index, seat in
-                    PokerSeatView(seat: seat, isActing: index == 0)
-                        .position(
-                            x: positions[index].x,
-                            y: positions[index].y
-                        )
-                        .accessibilityIdentifier("table.seat.\(index)")
+                ForEach(Array(state.seats.enumerated()), id: \.element.id) { index, seat in
+                    if positions.indices.contains(index) {
+                        ZStack {
+                            PokerSeatView(
+                                seat: seat,
+                                secondsRemaining: seat.isCurrentActor
+                                    ? state.secondsRemaining
+                                    : nil,
+                                isWinner: state.winners.contains(seat.id),
+                                animationPulse: animationPulse,
+                                reduceMotion: reduceMotion,
+                                animation: state.animation
+                            )
+
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .accessibilityElement()
+                                .accessibilityLabel("第 \(index + 1) 个座位")
+                                .accessibilityIdentifier("table.seat.\(index)")
+                                .allowsHitTesting(false)
+                        }
+                        .position(x: positions[index].x, y: positions[index].y)
+                    }
                 }
 
                 topBar
@@ -52,13 +69,12 @@ struct PokerTableView: View {
                 chatControls
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
 
-                BetControlBar(callAmount: 800, onFold: {}, onCall: {}, onRaise: { _ in })
+                phaseControls
                     .frame(
                         width: PokerTableLayout.betControlSize.width,
                         height: PokerTableLayout.betControlSize.height,
                         alignment: .bottomTrailing
                     )
-                    .accessibilityIdentifier("table.betControls")
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
             }
         }
@@ -67,6 +83,14 @@ struct PokerTableView: View {
         .safeAreaPadding(.horizontal, 16)
         .safeAreaPadding(.vertical, 6)
         .background(RCTheme.background.ignoresSafeArea())
+        .onChange(of: state.animation) { _, animation in
+            guard animation != nil else { return }
+            withAnimation(
+                reduceMotion ? nil : .easeOut(duration: 0.22)
+            ) {
+                animationPulse.toggle()
+            }
+        }
     }
 
     private var tableSurface: some View {
@@ -79,7 +103,7 @@ struct PokerTableView: View {
                 )
             )
             .overlay { Capsule().stroke(Color(red: 0.30, green: 0.16, blue: 0.08), lineWidth: 12) }
-            .shadow(color: .black.opacity(0.5), radius: 18, y: 8)
+            .shadow(color: .black.opacity(0.5), radius: reduceMotion ? 0 : 18, y: reduceMotion ? 0 : 8)
             .padding(.horizontal, 70)
             .padding(.vertical, 34)
             .accessibilityHidden(true)
@@ -88,27 +112,54 @@ struct PokerTableView: View {
     private var centerBoard: some View {
         VStack(spacing: 6) {
             HStack(spacing: 5) {
-                CommunityCard(rank: "A", suit: "♠")
-                CommunityCard(rank: "10", suit: "♥")
-                CommunityCard(rank: "7", suit: "♦")
-                CommunityCard(rank: "3", suit: "♣")
-                CommunityCard(rank: "K", suit: "♠")
+                ForEach(Array(state.communityCards.enumerated()), id: \.offset) { _, card in
+                    TableCardView(card: card)
+                        .frame(width: 34, height: 46)
+                        .transition(reduceMotion ? .identity : .scale.combined(with: .opacity))
+                }
             }
+            .scaleEffect(boardScale)
 
-            Text("底池 3,600")
+            Text("底池 \(state.pot.rawValue.formatted())")
                 .font(.caption.monospacedDigit().weight(.bold))
                 .foregroundStyle(RCTheme.primaryText)
                 .accessibilityIdentifier("table.pot")
 
             HStack(spacing: -5) {
-                ForEach(0..<4, id: \.self) { _ in
+                ForEach(0..<chipCount, id: \.self) { _ in
                     Circle()
                         .fill(RCTheme.gold)
                         .frame(width: 14, height: 14)
                         .overlay { Circle().stroke(RCTheme.background, lineWidth: 1) }
                 }
             }
+            .offset(y: potOffset)
             .accessibilityLabel("底池筹码堆")
+        }
+    }
+
+    private var chipCount: Int {
+        state.pot.rawValue == 0 ? 0 : min(6, max(1, state.pot.rawValue / 200))
+    }
+
+    private var boardScale: CGFloat {
+        guard !reduceMotion,
+              state.animation?.kind == .revealCommunityCard
+        else { return 1 }
+        return animationPulse ? 1 : 0.88
+    }
+
+    private var potOffset: CGFloat {
+        guard !reduceMotion else { return 0 }
+        switch state.animation?.kind {
+        case .moveCommitmentToPot:
+            return animationPulse ? 7 : 0
+        case .returnUncalledBet:
+            return animationPulse ? -7 : 0
+        case .awardPot:
+            return animationPulse ? -12 : 0
+        default:
+            return 0
         }
     }
 
@@ -126,7 +177,9 @@ struct PokerTableView: View {
                 .foregroundStyle(RCTheme.primaryText)
 
             Spacer()
-            ChipBalancePill(balance: session.chipBalance)
+
+            ChipBalancePill(balance: balance)
+
             Button("设置", systemImage: "gearshape") {}
                 .labelStyle(.iconOnly)
                 .frame(width: 44, height: 44)
@@ -147,21 +200,87 @@ struct PokerTableView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("牌桌聊天和表情")
     }
+
+    @ViewBuilder
+    private var phaseControls: some View {
+        switch state.phase {
+        case .waitingForHuman:
+            if let controls = state.controls {
+                BetControlBar(
+                    controls: controls,
+                    pot: state.pot,
+                    onIntent: send
+                )
+                .disabled(isSendingIntent)
+            } else {
+                statusPanel("等待操作")
+            }
+        case .awaitingNextHand:
+            VStack(alignment: .trailing, spacing: 8) {
+                statusText(PokerTablePresentation.status(for: state.phase))
+                Button("下一手") { send(.nextHand) }
+                    .buttonStyle(.borderedProminent)
+                    .tint(RCTheme.gold)
+                    .foregroundStyle(RCTheme.background)
+                    .disabled(isSendingIntent)
+                    .accessibilityIdentifier("action.nextHand")
+            }
+        case .saveFailed:
+            TableErrorPanel(
+                message: state.errorMessage ?? "牌局保存失败，请重试。",
+                retryTitle: "重试保存",
+                isRetrying: isSendingIntent,
+                onRetry: { send(.retrySave) }
+            )
+        default:
+            statusPanel(
+                state.errorMessage ?? PokerTablePresentation.status(for: state.phase)
+            )
+        }
+    }
+
+    private func statusPanel(_ text: String) -> some View {
+        statusText(text)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(.black.opacity(0.34), in: Capsule())
+    }
+
+    private func statusText(_ text: String) -> some View {
+        Text(text)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(RCTheme.primaryText)
+            .accessibilityIdentifier("table.phase")
+    }
+
+    private func send(_ intent: TableIntent) {
+        guard !isSendingIntent else { return }
+        isSendingIntent = true
+        Task { @MainActor in
+            defer { isSendingIntent = false }
+            try? await coordinator.send(intent)
+        }
+    }
 }
 
-private struct CommunityCard: View {
-    let rank: String
-    let suit: String
+enum PokerTablePresentation {
+    static func title(for table: PokerTableSummary) -> String {
+        "\(table.name) · \(table.smallBlind.formatted()) / \(table.bigBlind.formatted())"
+    }
 
-    var body: some View {
-        VStack(spacing: -2) {
-            Text(rank)
-            Text(suit)
+    static func status(for phase: TableFlowPhase) -> String {
+        switch phase {
+        case .preparingHand: "正在准备牌局"
+        case .dealing: "发牌中"
+        case .waitingForHuman: "等待操作"
+        case .botThinking: "思考中"
+        case .animatingAction: "结算行动中"
+        case .revealingBoard: "翻开公共牌"
+        case .settling: "正在结算"
+        case .savingResult: "正在保存结果"
+        case .awaitingNextHand: "本手牌已结束"
+        case .saveFailed: "牌局保存失败"
+        case .suspended: "牌局已暂停"
         }
-        .font(.caption.weight(.bold))
-        .foregroundStyle(suit == "♥" || suit == "♦" ? .red : .black)
-        .frame(width: 34, height: 46)
-        .background(.white, in: RoundedRectangle(cornerRadius: 5))
-        .accessibilityLabel("\(rank)\(suit)")
     }
 }
