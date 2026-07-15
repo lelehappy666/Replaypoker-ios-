@@ -11,6 +11,62 @@ extension AppRoute {
     static let sidebarRoutes: [AppRoute] = [.lobby, .tournaments, .tables, .profile]
 }
 
+enum AppSessionError: Error, Equatable {
+    case conflictingCashTableAttempt
+}
+
+@MainActor
+struct AppSessionDependencies {
+    let nextSessionID: () throws -> SessionID
+    let nextBusinessID: (_ purpose: String) throws -> BusinessID
+    let makeRuntimeDependencies: (_ reduceMotion: Bool) -> TableRuntimeDependencies
+    let makeCoordinator: (
+        _ store: LocalPokerStore,
+        _ humanSeat: SeatID,
+        _ profiles: [TableSeatProfile],
+        _ runtime: TableRuntimeDependencies
+    ) throws -> CashTableCoordinator
+
+    static var live: Self {
+        Self(
+            nextSessionID: { try SessionID(UUID().uuidString) },
+            nextBusinessID: { purpose in
+                try BusinessID("\(purpose):\(UUID().uuidString)")
+            },
+            makeRuntimeDependencies: TableRuntimeDependencies.live,
+            makeCoordinator: { store, humanSeat, profiles, runtime in
+                try CashTableCoordinator(
+                    store: store,
+                    humanSeat: humanSeat,
+                    seatProfiles: profiles,
+                    dependencies: runtime
+                )
+            }
+        )
+    }
+}
+
+private struct CashTableJoinAttempt {
+    let table: PokerTableSummary
+    let buyIn: Int
+    let autoTopUp: Bool
+    let request: CashTableRequest
+    let businessID: BusinessID
+    let profiles: [TableSeatProfile]
+
+    func matches(
+        table: PokerTableSummary,
+        buyIn: Int,
+        autoTopUp: Bool,
+        profiles: [TableSeatProfile]?
+    ) -> Bool {
+        self.table == table
+            && self.buyIn == buyIn
+            && self.autoTopUp == autoTopUp
+            && (profiles == nil || profiles == self.profiles)
+    }
+}
+
 @MainActor @Observable
 final class AppSession {
     var route: AppRoute = .login
@@ -19,18 +75,23 @@ final class AppSession {
     private(set) var botSettings: BotSettings
     private(set) var frozenBotSettings: BotSettings?
     private(set) var botSettingsError: String?
+    private(set) var tableStartupError: String?
     @ObservationIgnored private let botSettingsRepository: any BotSettingsPersisting
+    @ObservationIgnored private let dependencies: AppSessionDependencies
     private var tableState = TableSessionState()
+    private var cashTableJoinAttempt: CashTableJoinAttempt?
 
     var chipBalance: Int { pokerStore.accountBalance.rawValue }
     var selectedTable: PokerTableSummary? { tableState.selectedTable }
 
     init(
         pokerStore: LocalPokerStore,
-        botSettingsRepository: any BotSettingsPersisting
+        botSettingsRepository: any BotSettingsPersisting,
+        dependencies: AppSessionDependencies = .live
     ) {
         self.pokerStore = pokerStore
         self.botSettingsRepository = botSettingsRepository
+        self.dependencies = dependencies
         do {
             botSettings = try botSettingsRepository.load()
             botSettingsError = nil
@@ -63,7 +124,8 @@ final class AppSession {
         )
         return AppSession(
             pokerStore: store,
-            botSettingsRepository: try BotSettingsRepository.applicationSupport()
+            botSettingsRepository: try BotSettingsRepository.applicationSupport(),
+            dependencies: .live
         )
     }
 
@@ -78,32 +140,90 @@ final class AppSession {
         reduceMotion: Bool = false,
         seatProfiles: [TableSeatProfile]? = nil
     ) throws {
-        _ = autoTopUp
-        let request = try CashTableRequestFactory.make(table: table, buyIn: buyIn)
-        let profiles = try seatProfiles
-            ?? TableSeatProfileFactory.make(humanSeat: request.humanSeat)
-        try CashTableCoordinator.validateSeatProfiles(
-            profiles,
-            matching: Array(request.stacks.keys),
-            humanSeat: request.humanSeat
-        )
+        let attempt: CashTableJoinAttempt
+        if let existing = cashTableJoinAttempt {
+            guard existing.matches(
+                table: table,
+                buyIn: buyIn,
+                autoTopUp: autoTopUp,
+                profiles: seatProfiles
+            ) else {
+                throw AppSessionError.conflictingCashTableAttempt
+            }
+            attempt = existing
+        } else {
+            try CashTableRequestFactory.validate(
+                table: table,
+                buyIn: buyIn,
+                balance: chipBalance
+            )
+            let request = try CashTableRequestFactory.make(
+                table: table,
+                buyIn: buyIn,
+                balance: chipBalance,
+                sessionID: try dependencies.nextSessionID()
+            )
+            let profiles = try seatProfiles
+                ?? TableSeatProfileFactory.make(humanSeat: request.humanSeat)
+            try CashTableCoordinator.validateSeatProfiles(
+                profiles,
+                matching: Array(request.stacks.keys),
+                humanSeat: request.humanSeat
+            )
+            attempt = CashTableJoinAttempt(
+                table: table,
+                buyIn: buyIn,
+                autoTopUp: autoTopUp,
+                request: request,
+                businessID: try dependencies.nextBusinessID(
+                    "sit-down:\(request.sessionID.rawValue)"
+                ),
+                profiles: profiles
+            )
+            cashTableJoinAttempt = attempt
+        }
         _ = try pokerStore.sitDown(
-            request: request,
-            businessID: try BusinessID("sit-down:\(request.sessionID.rawValue)")
+            request: attempt.request,
+            businessID: attempt.businessID
         )
-        let coordinator = try CashTableCoordinator(
-            store: pokerStore,
-            humanSeat: request.humanSeat,
-            seatProfiles: profiles,
-            dependencies: TableRuntimeDependencies.live(reduceMotion: reduceMotion)
+        let coordinator = try dependencies.makeCoordinator(
+            pokerStore,
+            attempt.request.humanSeat,
+            attempt.profiles,
+            dependencies.makeRuntimeDependencies(reduceMotion)
         )
         tableCoordinator = coordinator
         tableState.enter(table)
+        tableStartupError = nil
         route = .table
+    }
+
+    func startOrResumeTableHand() async {
+        tableStartupError = nil
+        guard let tableCoordinator else {
+            tableStartupError = "牌局启动失败，请重试。"
+            return
+        }
+        do {
+            if pokerStore.cashSession?.phase == .readyForHand {
+                try await tableCoordinator.startHand(
+                    settings: freezeBotSettingsForNextHand()
+                )
+            } else {
+                try await tableCoordinator.resume()
+            }
+            tableStartupError = nil
+        } catch {
+            if tableCoordinator.state.phase != .suspended {
+                tableCoordinator.suspend()
+            }
+            tableStartupError = "牌局启动失败，请重试。"
+        }
     }
 
     func leaveTable(returningTo route: AppRoute) {
         tableState.leave()
+        tableStartupError = nil
         self.route = route
     }
 
@@ -149,11 +269,36 @@ struct AppSessionClock: SessionClock {
 }
 
 enum CashTableRequestFactory {
+    static func validate(
+        table: PokerTableSummary,
+        buyIn: Int,
+        balance: Int
+    ) throws {
+        guard table.capacity == 9 else { throw PokerSessionError.invalidTable }
+        let (minimum, minimumOverflow) = table.bigBlind.multipliedReportingOverflow(
+            by: SessionEconomy.minimumBuyInBigBlinds
+        )
+        let (maximum, maximumOverflow) = table.bigBlind.multipliedReportingOverflow(
+            by: SessionEconomy.maximumBuyInBigBlinds
+        )
+        guard !minimumOverflow, !maximumOverflow else {
+            throw PokerSessionError.chipArithmeticOverflow
+        }
+        guard (minimum...maximum).contains(buyIn) else {
+            throw PokerSessionError.invalidBuyIn
+        }
+        guard buyIn <= balance else {
+            throw PokerSessionError.insufficientBalance
+        }
+    }
+
     static func make(
         table: PokerTableSummary,
-        buyIn: Int
+        buyIn: Int,
+        balance: Int,
+        sessionID: SessionID
     ) throws -> CashTableRequest {
-        guard table.capacity == 9 else { throw PokerSessionError.invalidTable }
+        try validate(table: table, buyIn: buyIn, balance: balance)
         let humanSeat = try SeatID(8)
         let dealer = try SeatID(0)
         let bigBlind = try Chips(table.bigBlind)
@@ -169,7 +314,7 @@ enum CashTableRequestFactory {
         stacks[humanSeat] = try Chips(buyIn)
 
         return CashTableRequest(
-            sessionID: try SessionID(UUID().uuidString),
+            sessionID: sessionID,
             table: try TableID(table.id.uuidString),
             config: try HandConfig(
                 smallBlind: try Chips(table.smallBlind),
@@ -200,7 +345,7 @@ enum TableSeatProfileFactory {
     }
 }
 
-private extension TableRuntimeDependencies {
+extension TableRuntimeDependencies {
     static func live(reduceMotion: Bool) -> Self {
         Self(
             nextHandID: { try HandID(UUID().uuidString) },

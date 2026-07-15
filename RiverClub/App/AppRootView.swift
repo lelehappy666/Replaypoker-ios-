@@ -57,6 +57,19 @@ struct AppRootView: View {
                     .transition(MotionPolicy.shouldAnimate(reduceMotion: reduceMotion) ? .opacity : .identity)
                     .zIndex(1)
             }
+
+            if session.route == .table,
+               let presentation = TableStartupRecoveryPresentation(
+                   errorMessage: session.tableStartupError
+               ) {
+                TableStartupRecoveryView(
+                    presentation: presentation,
+                    onRetry: {
+                        Task { await session.startOrResumeTableHand() }
+                    }
+                )
+                .zIndex(2)
+            }
         }
         .background(RCTheme.background)
         .preferredColorScheme(.dark)
@@ -108,14 +121,10 @@ struct AppRootView: View {
                             autoTopUp: autoTopUp,
                             reduceMotion: reduceMotion
                         )
-                        guard let coordinator = session.tableCoordinator else {
-                            return
-                        }
-                        let settings = session.freezeBotSettingsForNextHand()
                         buyInError = nil
                         pendingBuyInTable = nil
                         Task {
-                            try await coordinator.startHand(settings: settings)
+                            await session.startOrResumeTableHand()
                         }
                     } catch {
                         buyInError = "买入失败，请重试。"
@@ -161,3 +170,48 @@ struct AppRootView: View {
 }
 
 private enum TableSeatLoadError: Error { case incomplete }
+
+struct TableStartupRecoveryPresentation: Equatable {
+    let message: String
+    let retryTitle = "重试牌局"
+
+    init?(errorMessage: String?) {
+        guard let errorMessage else { return nil }
+        message = errorMessage
+    }
+}
+
+private struct TableStartupRecoveryView: View {
+    let presentation: TableStartupRecoveryPresentation
+    let onRetry: () -> Void
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Label(
+                presentation.message,
+                systemImage: "exclamationmark.triangle.fill"
+            )
+            .font(.headline)
+            .foregroundStyle(.orange)
+
+            Button(presentation.retryTitle, action: onRetry)
+                .buttonStyle(.borderedProminent)
+                .tint(RCTheme.gold)
+                .foregroundStyle(RCTheme.background)
+                .accessibilityIdentifier("table.startupRetry")
+        }
+        .padding(24)
+        .background(
+            RCTheme.surfaceRaised,
+            in: RoundedRectangle(cornerRadius: RCTheme.corner)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: RCTheme.corner)
+                .stroke(RCTheme.gold.opacity(0.28), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.45), radius: 24, y: 10)
+        .padding(32)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("table.startupError")
+    }
+}

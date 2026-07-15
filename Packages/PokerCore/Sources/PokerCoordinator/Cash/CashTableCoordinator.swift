@@ -128,17 +128,54 @@ public final class CashTableCoordinator {
             seed: dependencies.nextSeed()
         )
         currentHandID = handID
-        incrementStateVersion()
-        let operationVersion = stateVersion
-        guard try await present(
-            transition,
-            beforeAction: beforeSnapshot,
-            guardedBy: operationVersion
-        ) else { return }
-        guard isCurrentOperation(operationVersion) else { return }
-        try refreshProjection()
-        guard isCurrentOperation(operationVersion) else { return }
-        await scheduleCurrentActorIfReady()
+        do {
+            incrementStateVersion()
+            let operationVersion = stateVersion
+            guard try await present(
+                transition,
+                beforeAction: beforeSnapshot,
+                guardedBy: operationVersion
+            ) else { return }
+            guard isCurrentOperation(operationVersion) else { return }
+            try refreshProjection()
+            guard isCurrentOperation(operationVersion) else { return }
+            await scheduleCurrentActorIfReady()
+        } catch {
+            suspend()
+            throw error
+        }
+    }
+
+    public func resume() async throws {
+        guard state.phase == .suspended else {
+            throw PokerCoordinatorError.invalidPhase
+        }
+        cancelCountdown()
+        guard let phase = store.cashSession?.phase else {
+            throw PokerCoordinatorError.invalidPhase
+        }
+
+        switch phase {
+        case .readyForHand:
+            guard let frozenSettings else {
+                throw PokerCoordinatorError.invalidPhase
+            }
+            try await startHand(settings: frozenSettings)
+        case .handInProgress, .settlementPending:
+            guard currentHandID != nil else {
+                throw PokerCoordinatorError.invalidPhase
+            }
+            do {
+                incrementStateVersion()
+                try refreshProjection()
+                await scheduleCurrentActorIfReady()
+            } catch {
+                suspend()
+                throw error
+            }
+        case .left:
+            throw PokerCoordinatorError.invalidPhase
+        }
     }
 
     public func send(_ intent: TableIntent) async throws {

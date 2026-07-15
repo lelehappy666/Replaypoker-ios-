@@ -1,5 +1,6 @@
 import PokerBot
 import PokerCore
+import PokerSession
 import Testing
 @testable import PokerCoordinator
 
@@ -57,6 +58,36 @@ import Testing
     )
 }
 
+@Test @MainActor func 开局展示失败后暂停且恢复不重复开局() async throws {
+    let fixture = try CoordinatorStoreFixture.readyWithBustedBot()
+    let balanceBefore = fixture.store.accountBalance
+    let coordinator = try CashTableCoordinator(
+        store: fixture.store,
+        humanSeat: fixture.humanSeat,
+        seatProfiles: fixture.seatProfiles,
+        dependencies: TableRuntimeDependencies(
+            nextHandID: { try HandID("resume-hand") },
+            nextBusinessID: { purpose in try BusinessID("\(purpose)-resume") },
+            nextSeed: { 19 },
+            sleep: { _ in throw CoordinatorStartupTestError.animationSleep },
+            reduceMotion: true
+        )
+    )
+
+    await #expect(throws: CoordinatorStartupTestError.animationSleep) {
+        try await coordinator.startHand(settings: .recommended)
+    }
+    #expect(fixture.store.cashSession?.phase == .handInProgress)
+    #expect(coordinator.state.phase == .suspended)
+
+    try await coordinator.resume()
+
+    #expect(fixture.store.cashSession?.phase == .handInProgress)
+    #expect(coordinator.state.phase != .suspended)
+    #expect(coordinator.state.handID == "resume-hand")
+    #expect(fixture.store.accountBalance == balanceBefore)
+}
+
 @Test @MainActor func 初始化拒绝缺少座位资料() throws {
     let fixture = try CoordinatorStoreFixture.readyWithBustedBot()
     let profiles = Array(fixture.seatProfiles.dropLast())
@@ -108,4 +139,8 @@ import Testing
             for: overflowingBigBlind
         )
     }
+}
+
+private enum CoordinatorStartupTestError: Error {
+    case animationSleep
 }

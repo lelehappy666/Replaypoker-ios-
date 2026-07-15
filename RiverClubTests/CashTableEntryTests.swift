@@ -1,4 +1,8 @@
+import Foundation
+import PokerBot
 import PokerCoordinator
+import PokerCore
+import PokerSession
 import XCTest
 @testable import RiverClub
 
@@ -45,7 +49,12 @@ final class CashTableEntryTests: XCTestCase {
 
     func testNineProfilesAreUniqueAndMatchRequestSeats() throws {
         let table = AppSessionFixture.makeTable()
-        let request = try CashTableRequestFactory.make(table: table, buyIn: 16_000)
+        let request = try CashTableRequestFactory.make(
+            table: table,
+            buyIn: 16_000,
+            balance: 128_500,
+            sessionID: try SessionID("profile-test")
+        )
         let profiles = try TableSeatProfileFactory.make(humanSeat: request.humanSeat)
 
         XCTAssertEqual(request.stacks.count, 9)
@@ -58,7 +67,9 @@ final class CashTableEntryTests: XCTestCase {
     func testInvalidProfilesAreRejectedBeforeSitDownWithoutChangingState() throws {
         let request = try CashTableRequestFactory.make(
             table: AppSessionFixture.makeTable(),
-            buyIn: 16_000
+            buyIn: 16_000,
+            balance: 128_500,
+            sessionID: try SessionID("invalid-profile-test")
         )
         let profiles = try TableSeatProfileFactory.make(humanSeat: request.humanSeat)
         let duplicateSeat = Array(profiles.dropLast()) + [profiles[0]]
@@ -93,4 +104,228 @@ final class CashTableEntryTests: XCTestCase {
             XCTAssertNil(fixture.session.tableCoordinator)
         }
     }
+
+    @MainActor
+    func testJoinRejectsInvalidBuyInsBeforeGeneratingAttempt() throws {
+        let invalidCases: [(PokerTableSummary, Int)] = [
+            (AppSessionFixture.makeTable(), 15_600),
+            (AppSessionFixture.makeTable(), 40_400),
+            (makeTable(smallBlind: 2_000, bigBlind: 4_000), 160_000),
+        ]
+
+        for (table, buyIn) in invalidCases {
+            let ids = JoinAttemptIDSpy()
+            let fixture = try AppSessionFixture(dependencies: makeDependencies(ids: ids))
+            fixture.session.continueAsGuest()
+            let before = fixture.session.chipBalance
+
+            XCTAssertThrowsError(
+                try fixture.session.joinCashTable(
+                    table,
+                    buyIn: buyIn,
+                    autoTopUp: false,
+                    reduceMotion: true
+                )
+            )
+            XCTAssertEqual(ids.sessionIDCalls, 0)
+            XCTAssertEqual(ids.businessIDCalls, 0)
+            XCTAssertEqual(fixture.session.chipBalance, before)
+            XCTAssertNil(fixture.store.cashSession)
+            XCTAssertEqual(fixture.session.route, .lobby)
+            XCTAssertNil(fixture.session.tableCoordinator)
+        }
+    }
+
+    @MainActor
+    func testCoordinatorCreationRetryReusesAttemptWithoutSecondDeduction() throws {
+        let ids = JoinAttemptIDSpy()
+        var coordinatorCalls = 0
+        let dependencies = makeDependencies(
+            ids: ids,
+            makeCoordinator: { store, humanSeat, profiles, runtime in
+                coordinatorCalls += 1
+                if coordinatorCalls == 1 {
+                    throw CashTableEntryTestError.coordinatorCreation
+                }
+                return try CashTableCoordinator(
+                    store: store,
+                    humanSeat: humanSeat,
+                    seatProfiles: profiles,
+                    dependencies: runtime
+                )
+            }
+        )
+        let fixture = try AppSessionFixture(dependencies: dependencies)
+        fixture.session.continueAsGuest()
+        let table = makeTable(smallBlind: 642, bigBlind: 1_285)
+        let buyIn = 128_500
+        let before = fixture.session.chipBalance
+
+        XCTAssertThrowsError(
+            try fixture.session.joinCashTable(
+                table,
+                buyIn: buyIn,
+                autoTopUp: false,
+                reduceMotion: true
+            )
+        )
+        let afterFirstAttempt = fixture.session.chipBalance
+        XCTAssertEqual(afterFirstAttempt, 0)
+
+        XCTAssertThrowsError(
+            try fixture.session.joinCashTable(
+                table,
+                buyIn: 102_800,
+                autoTopUp: false,
+                reduceMotion: true
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? AppSessionError,
+                .conflictingCashTableAttempt
+            )
+        }
+        XCTAssertEqual(fixture.session.chipBalance, afterFirstAttempt)
+
+        try fixture.session.joinCashTable(
+            table,
+            buyIn: buyIn,
+            autoTopUp: false,
+            reduceMotion: true
+        )
+
+        XCTAssertEqual(ids.sessionIDCalls, 1)
+        XCTAssertEqual(ids.businessIDCalls, 1)
+        XCTAssertEqual(coordinatorCalls, 2)
+        XCTAssertEqual(fixture.session.chipBalance, afterFirstAttempt)
+        XCTAssertEqual(before, buyIn)
+        XCTAssertEqual(fixture.session.route, .table)
+        XCTAssertNotNil(fixture.session.tableCoordinator)
+    }
+
+    @MainActor
+    func testSuccessfulJoinAutomaticallyStartsHand() async throws {
+        let ids = JoinAttemptIDSpy()
+        let fixture = try AppSessionFixture(dependencies: makeDependencies(ids: ids))
+
+        try fixture.session.joinCashTable(
+            fixture.table,
+            buyIn: 16_000,
+            autoTopUp: false,
+            reduceMotion: true
+        )
+        await fixture.session.startOrResumeTableHand()
+
+        XCTAssertEqual(fixture.store.cashSession?.phase, .handInProgress)
+        XCTAssertNil(fixture.session.tableStartupError)
+        XCTAssertEqual(ids.sessionIDCalls, 1)
+        XCTAssertEqual(ids.businessIDCalls, 1)
+    }
+
+    @MainActor
+    func testStartupFailureIsVisibleAndRetryResumesSameHand() async throws {
+        let ids = JoinAttemptIDSpy()
+        let dependencies = makeDependencies(
+            ids: ids,
+            sleep: { _ in throw CashTableEntryTestError.animationSleep }
+        )
+        let fixture = try AppSessionFixture(dependencies: dependencies)
+        let before = fixture.session.chipBalance
+
+        try fixture.session.joinCashTable(
+            fixture.table,
+            buyIn: 16_000,
+            autoTopUp: false,
+            reduceMotion: true
+        )
+        await fixture.session.startOrResumeTableHand()
+
+        XCTAssertEqual(fixture.store.cashSession?.phase, .handInProgress)
+        XCTAssertEqual(fixture.session.tableCoordinator?.state.phase, .suspended)
+        XCTAssertEqual(fixture.session.tableStartupError, "牌局启动失败，请重试。")
+        let presentation = TableStartupRecoveryPresentation(
+            errorMessage: fixture.session.tableStartupError
+        )
+        XCTAssertEqual(presentation?.message, "牌局启动失败，请重试。")
+        XCTAssertEqual(presentation?.retryTitle, "重试牌局")
+        let afterBuyIn = fixture.session.chipBalance
+
+        await fixture.session.startOrResumeTableHand()
+
+        XCTAssertNil(fixture.session.tableStartupError)
+        XCTAssertNotEqual(fixture.session.tableCoordinator?.state.phase, .suspended)
+        XCTAssertEqual(fixture.store.cashSession?.phase, .handInProgress)
+        XCTAssertEqual(afterBuyIn, before - 16_000)
+        XCTAssertEqual(fixture.session.chipBalance, afterBuyIn)
+        XCTAssertEqual(ids.sessionIDCalls, 1)
+        XCTAssertEqual(ids.businessIDCalls, 1)
+    }
+}
+
+@MainActor
+private final class JoinAttemptIDSpy {
+    private(set) var sessionIDCalls = 0
+    private(set) var businessIDCalls = 0
+
+    func nextSessionID() throws -> SessionID {
+        sessionIDCalls += 1
+        return try SessionID("join-session-\(sessionIDCalls)")
+    }
+
+    func nextBusinessID(_ purpose: String) throws -> BusinessID {
+        businessIDCalls += 1
+        return try BusinessID("\(purpose)-\(businessIDCalls)")
+    }
+}
+
+@MainActor
+private func makeDependencies(
+    ids: JoinAttemptIDSpy,
+    sleep: @escaping @Sendable (Duration) async throws -> Void = { _ in },
+    makeCoordinator: (@MainActor (
+        LocalPokerStore,
+        SeatID,
+        [TableSeatProfile],
+        TableRuntimeDependencies
+    ) throws -> CashTableCoordinator)? = nil
+) -> AppSessionDependencies {
+    AppSessionDependencies(
+        nextSessionID: ids.nextSessionID,
+        nextBusinessID: ids.nextBusinessID,
+        makeRuntimeDependencies: { _ in
+            TableRuntimeDependencies(
+                nextHandID: { try HandID("app-session-hand") },
+                nextBusinessID: { purpose in try BusinessID("\(purpose)-app-session") },
+                nextSeed: { 37 },
+                sleep: sleep,
+                reduceMotion: true
+            )
+        },
+        makeCoordinator: makeCoordinator ?? { store, humanSeat, profiles, runtime in
+            try CashTableCoordinator(
+                store: store,
+                humanSeat: humanSeat,
+                seatProfiles: profiles,
+                dependencies: runtime
+            )
+        }
+    )
+}
+
+private func makeTable(smallBlind: Int, bigBlind: Int) -> PokerTableSummary {
+    PokerTableSummary(
+        id: UUID(),
+        name: "高额桌",
+        smallBlind: smallBlind,
+        bigBlind: bigBlind,
+        players: 6,
+        capacity: 9,
+        averagePot: 20_000,
+        isFavorite: false
+    )
+}
+
+private enum CashTableEntryTestError: Error {
+    case coordinatorCreation
+    case animationSleep
 }

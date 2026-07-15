@@ -89,7 +89,8 @@ final class AppSessionFixture {
         failingSave: Bool = false,
         botSettingsRepository: any BotSettingsPersisting = MemoryBotSettingsRepository(
             initial: .recommended
-        )
+        ),
+        dependencies: AppSessionDependencies = .live
     ) throws {
         directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("river-club-app-session-\(UUID().uuidString)")
@@ -109,7 +110,8 @@ final class AppSessionFixture {
         }
         session = AppSession(
             pokerStore: store,
-            botSettingsRepository: botSettingsRepository
+            botSettingsRepository: botSettingsRepository,
+            dependencies: dependencies
         )
         table = Self.makeTable()
     }
