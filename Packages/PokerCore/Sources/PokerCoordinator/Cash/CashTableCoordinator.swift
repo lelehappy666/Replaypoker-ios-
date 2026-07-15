@@ -15,6 +15,8 @@ public final class CashTableCoordinator {
     private let dependencies: TableRuntimeDependencies
     private let botService: any BotDecisionServing
     private var currentHandID: HandID?
+    private var pendingSettlementID: BusinessID?
+    private var winnerSeats: Set<SeatID> = []
     private var stateVersion = 0
     private nonisolated let countdownTask = CountdownTaskBox()
     private nonisolated let botTask = BotTaskBox()
@@ -101,8 +103,11 @@ public final class CashTableCoordinator {
             throw PokerCoordinatorError.invalidPhase
         }
         frozenSettings = settings
+        pendingSettlementID = nil
+        winnerSeats = []
         try refillBustedBotsToOneHundredBigBlinds()
 
+        let beforeSnapshot = transitionSnapshot()
         let handID = try dependencies.nextHandID()
         let transition = try store.startHand(
             id: handID,
@@ -113,6 +118,7 @@ public final class CashTableCoordinator {
         let operationVersion = stateVersion
         guard try await present(
             transition,
+            beforeAction: beforeSnapshot,
             guardedBy: operationVersion
         ) else { return }
         guard isCurrentOperation(operationVersion) else { return }
@@ -125,6 +131,19 @@ public final class CashTableCoordinator {
         guard state.phase != .suspended else {
             throw PokerCoordinatorError.suspended
         }
+        switch intent {
+        case .nextHand:
+            guard let frozenSettings else {
+                throw PokerCoordinatorError.invalidPhase
+            }
+            try await startNextHand(settings: frozenSettings)
+            return
+        case .retrySave:
+            try await retrySave()
+            return
+        case .fold, .middle, .aggressive:
+            break
+        }
         guard let observation = try store.humanObservation(),
               observation.currentActor == humanSeat,
               let legalActions = observation.legalActions
@@ -136,6 +155,77 @@ public final class CashTableCoordinator {
             legalActions: legalActions
         )
         try await applyHumanAction(action)
+    }
+
+    public func startNextHand(settings: BotSettings) async throws {
+        guard state.phase == .awaitingNextHand else {
+            throw PokerCoordinatorError.invalidPhase
+        }
+        try await startHand(settings: settings)
+    }
+
+    public func retrySave() async throws {
+        guard state.phase == .saveFailed,
+              pendingSettlementID != nil
+        else {
+            throw PokerCoordinatorError.invalidPhase
+        }
+        await persistPendingSettlement()
+    }
+
+    package func finishSettlement() async {
+        guard store.cashSession?.phase == .settlementPending,
+              currentHandID != nil,
+              let showdown = store.pendingShowdownObservation
+        else {
+            state = stateReplacing(
+                phase: .saveFailed,
+                errorMessage: "牌局保存失败，请重试。"
+            )
+            return
+        }
+
+        cancelCountdown()
+        cancelBotDecision()
+        incrementStateVersion()
+        do {
+            try refreshProjection()
+        } catch {
+            state = stateReplacing(
+                phase: .saveFailed,
+                errorMessage: "牌局保存失败，请重试。"
+            )
+            return
+        }
+        let revealedSeats = state.seats.map { seat in
+            TableSeatState(
+                id: seat.id,
+                displayName: seat.displayName,
+                stack: seat.stack,
+                committedThisStreet: seat.committedThisStreet,
+                hasFolded: seat.hasFolded,
+                isAllIn: seat.isAllIn,
+                isDealer: seat.isDealer,
+                isCurrentActor: false,
+                cards: showdown.cardsBySeat[seat.id]
+                    .map { $0.map(TableCardState.faceUp) }
+                    ?? [.faceDown, .faceDown]
+            )
+        }
+        state = TableViewState(
+            handID: state.handID,
+            stateVersion: stateVersion,
+            phase: .settling,
+            seats: revealedSeats,
+            communityCards: state.communityCards,
+            pot: state.pot,
+            controls: nil,
+            secondsRemaining: nil,
+            winners: winnerSeats,
+            errorMessage: nil,
+            animation: state.animation
+        )
+        await persistPendingSettlement()
     }
 
     public func suspend() {
@@ -172,14 +262,6 @@ public final class CashTableCoordinator {
         stateVersion = overflow ? Int.max : next
     }
 
-    private func present(_ transition: GameTransition) async throws {
-        for event in transition.events {
-            guard let animation = animation(for: event) else { continue }
-            try refreshProjection(animation: animation)
-            try await dependencies.sleep(.zero)
-        }
-    }
-
     private func refreshProjection(
         animation: TableAnimationEvent? = nil,
         secondsRemaining: Int? = nil
@@ -196,19 +278,6 @@ public final class CashTableCoordinator {
             animation: animation,
             secondsRemaining: secondsRemaining
         )
-    }
-
-    private func animation(for event: PublicGameEvent) -> TableAnimationEvent? {
-        switch event {
-        case let .blindPosted(seat, amount):
-            return .postBlind(seat: seat, amount: amount)
-        case let .holeCardsDealt(seat):
-            return .dealHoleCard(seat: seat, card: .faceDown)
-        case let .actionApplied(seat, action):
-            return .showAction(seat: seat, action: action)
-        default:
-            return nil
-        }
     }
 
     private func scheduleCurrentActorIfReady() async {
@@ -366,11 +435,16 @@ public final class CashTableCoordinator {
               stateVersion == version,
               store.cashSession?.currentActor == actor
         else { return }
+        let beforeSnapshot = transitionSnapshot()
         let transition = try store.apply(action, by: actor)
         botTask.clear()
         incrementStateVersion()
         var operationVersion = stateVersion
-        guard try await present(transition, guardedBy: operationVersion) else { return }
+        guard try await present(
+            transition,
+            beforeAction: beforeSnapshot,
+            guardedBy: operationVersion
+        ) else { return }
         guard isCurrentOperation(operationVersion) else { return }
         try refreshProjection()
         guard try await advanceCompletedRounds(
@@ -422,11 +496,16 @@ public final class CashTableCoordinator {
     }
 
     private func applyHumanAction(_ action: PlayerAction) async throws {
+        let beforeSnapshot = transitionSnapshot()
         let transition = try store.apply(action, by: humanSeat)
         cancelCountdown()
         incrementStateVersion()
         var operationVersion = stateVersion
-        guard try await present(transition, guardedBy: operationVersion) else { return }
+        guard try await present(
+            transition,
+            beforeAction: beforeSnapshot,
+            guardedBy: operationVersion
+        ) else { return }
         guard isCurrentOperation(operationVersion) else { return }
         try refreshProjection()
         guard try await advanceCompletedRounds(
@@ -442,11 +521,13 @@ public final class CashTableCoordinator {
         while store.cashSession?.phase == .handInProgress,
               store.cashSession?.currentActor == nil {
             guard isCurrentOperation(operationVersion) else { return false }
+            let beforeSnapshot = transitionSnapshot()
             let transition = try store.advanceIfRoundComplete()
             incrementStateVersion()
             operationVersion = stateVersion
             guard try await present(
                 transition,
+                beforeAction: beforeSnapshot,
                 guardedBy: operationVersion
             ) else { return false }
             guard isCurrentOperation(operationVersion) else { return false }
@@ -457,16 +538,97 @@ public final class CashTableCoordinator {
 
     private func present(
         _ transition: GameTransition,
+        beforeAction: CashTableAnimationSnapshot,
         guardedBy operationVersion: Int
     ) async throws -> Bool {
-        for event in transition.events {
+        let humanCards = try store.humanObservation()?.ownHoleCards
+            .map(TableCardState.faceUp) ?? []
+        let animations = try CashTableAnimationMapper.map(
+            transition.events,
+            humanSeat: humanSeat,
+            humanCards: humanCards,
+            beforeAction: beforeAction
+        )
+        for animation in animations {
             guard isCurrentOperation(operationVersion) else { return false }
-            guard let animation = animation(for: event) else { continue }
+            if case let .highlightWinner(seat) = animation {
+                winnerSeats.insert(seat)
+            }
             try refreshProjection(animation: animation)
+            if !winnerSeats.isEmpty {
+                state = stateReplacing(winners: winnerSeats)
+            }
             try await dependencies.sleep(.zero)
             guard isCurrentOperation(operationVersion) else { return false }
         }
         return true
+    }
+
+    private func transitionSnapshot() -> CashTableAnimationSnapshot {
+        guard let observation = store.spectatorObservation else {
+            return CashTableAnimationSnapshot(
+                commitments: [:],
+                stacks: [:],
+                currentBet: Chips(rawValue: 0)!
+            )
+        }
+        return CashTableAnimationSnapshot(
+            commitments: Dictionary(uniqueKeysWithValues: observation.publicSeats.map {
+                ($0.id, $0.committedThisStreet)
+            }),
+            stacks: Dictionary(uniqueKeysWithValues: observation.publicSeats.map {
+                ($0.id, $0.stack)
+            }),
+            currentBet: observation.currentBet
+        )
+    }
+
+    private func persistPendingSettlement() async {
+        do {
+            let transactionID: BusinessID
+            if let pendingSettlementID {
+                transactionID = pendingSettlementID
+            } else {
+                transactionID = try dependencies.nextBusinessID("settlement")
+                pendingSettlementID = transactionID
+            }
+            state = stateReplacing(phase: .savingResult, errorMessage: nil)
+            _ = try store.commitPendingHand(transactionID: transactionID)
+            let stacks = Dictionary(uniqueKeysWithValues:
+                (store.cashSession?.seats ?? []).map { ($0.id, $0.stack) }
+            )
+            let seats = state.seats.map { seat in
+                TableSeatState(
+                    id: seat.id,
+                    displayName: seat.displayName,
+                    stack: stacks[seat.id] ?? seat.stack,
+                    committedThisStreet: try! Chips(0),
+                    hasFolded: seat.hasFolded,
+                    isAllIn: (stacks[seat.id] ?? seat.stack).rawValue == 0,
+                    isDealer: seat.isDealer,
+                    isCurrentActor: false,
+                    cards: seat.cards
+                )
+            }
+            state = TableViewState(
+                handID: state.handID,
+                stateVersion: stateVersion,
+                phase: .awaitingNextHand,
+                seats: seats,
+                communityCards: state.communityCards,
+                pot: state.pot,
+                controls: nil,
+                secondsRemaining: nil,
+                winners: state.winners,
+                errorMessage: nil,
+                animation: state.animation
+            )
+        } catch {
+            state = stateReplacing(
+                phase: .saveFailed,
+                errorMessage: "牌局保存失败，请重试。"
+            )
+        }
     }
 
     private func isCurrentOperation(_ operationVersion: Int) -> Bool {
@@ -516,6 +678,26 @@ public final class CashTableCoordinator {
             secondsRemaining: secondsRemaining,
             winners: state.winners,
             errorMessage: state.errorMessage,
+            animation: state.animation
+        )
+    }
+
+    private func stateReplacing(
+        phase: TableFlowPhase? = nil,
+        winners: Set<SeatID>? = nil,
+        errorMessage: String? = nil
+    ) -> TableViewState {
+        TableViewState(
+            handID: state.handID,
+            stateVersion: stateVersion,
+            phase: phase ?? state.phase,
+            seats: state.seats,
+            communityCards: state.communityCards,
+            pot: state.pot,
+            controls: state.controls,
+            secondsRemaining: state.secondsRemaining,
+            winners: winners ?? state.winners,
+            errorMessage: errorMessage,
             animation: state.animation
         )
     }

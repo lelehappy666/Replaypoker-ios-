@@ -9,6 +9,10 @@ func decodeLegalActions(_ json: String) throws -> LegalActionSet {
     try JSONDecoder().decode(LegalActionSet.self, from: Data(json.utf8))
 }
 
+func decodeCards(_ json: String) throws -> [Card] {
+    try JSONDecoder().decode([Card].self, from: Data(json.utf8))
+}
+
 func makeSafeTableViewState() throws -> TableViewState {
     let humanSeat = try SeatID(0)
     let botSeat = try SeatID(1)
@@ -170,6 +174,31 @@ final class CoordinatorStoreFixture {
     ) throws -> CoordinatorStoreFixture {
         try finishedHandWithBustedBot(smallBlind: smallBlind, bigBlind: bigBlind)
     }
+}
+
+final class FailOnceSessionRepository: SessionRepository {
+    private var state = PersistedAppState()
+    private var shouldFailSettlement: Bool
+    private var attemptedIDs: [BusinessID] = []
+
+    init(failSettlementOnce: Bool = true) {
+        shouldFailSettlement = failSettlementOnce
+    }
+
+    func load() throws -> PersistedAppState { state }
+
+    func save(_ state: PersistedAppState) throws {
+        if let businessID = state.settlementReceipts.keys.first {
+            attemptedIDs.append(businessID)
+            if shouldFailSettlement {
+                shouldFailSettlement = false
+                throw PokerSessionError.persistenceFailed
+            }
+        }
+        self.state = state
+    }
+
+    func attemptedBusinessIDs() -> [BusinessID] { attemptedIDs }
 }
 
 private let coordinatorClock = FixedSessionClock(
@@ -513,6 +542,42 @@ final class CoordinatorScenario {
         }
     }
 
+    static func pendingSettlement(
+        repository: FailOnceSessionRepository
+    ) async throws -> CoordinatorScenario {
+        let directory = try makeTemporaryDirectory(named: "pending-settlement")
+        do {
+            let humanSeat = try SeatID(0)
+            let store = try makeSeatedStore(repository: repository)
+            let coordinator = try CashTableCoordinator(
+                store: store,
+                humanSeat: humanSeat,
+                seatProfiles: try makeSeatProfiles(),
+                dependencies: TableRuntimeDependencies(
+                    nextHandID: { try HandID("pending-settlement-\(UUID().uuidString)") },
+                    nextBusinessID: { purpose in
+                        try BusinessID("\(purpose)-stable")
+                    },
+                    nextSeed: { 41 },
+                    sleep: { _ in }
+                )
+            )
+            try await coordinator.startHand(settings: .recommended)
+            try playExistingHandToShowdown(
+                in: store,
+                foldedSeat: try SeatID(3)
+            )
+            return CoordinatorScenario(
+                coordinator: coordinator,
+                store: store,
+                directory: directory
+            )
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            throw error
+        }
+    }
+
     func actionCount() throws -> Int {
         try #require(try store.humanObservation()).actions.count
     }
@@ -588,6 +653,63 @@ final class CoordinatorScenario {
             throw error
         }
     }
+}
+
+private func makeSeatedStore(
+    repository: any SessionRepository
+) throws -> LocalPokerStore {
+    let humanSeat = try SeatID(0)
+    let stacks = try Dictionary(uniqueKeysWithValues: (0..<9).map {
+        (try SeatID($0), try Chips(4_000))
+    })
+    let store = try LocalPokerStore(repository: repository, clock: coordinatorClock)
+    _ = try store.sitDown(
+        request: CashTableRequest(
+            sessionID: try SessionID("settlement-session"),
+            table: try TableID("settlement-table"),
+            config: try HandConfig(
+                smallBlind: try Chips(50),
+                bigBlind: try Chips(100),
+                dealer: try SeatID(0)
+            ),
+            humanSeat: humanSeat,
+            stacks: stacks
+        ),
+        businessID: try BusinessID("settlement-buy-in")
+    )
+    return store
+}
+
+private func playExistingHandToShowdown(
+    in store: LocalPokerStore,
+    foldedSeat: SeatID
+) throws {
+    var hasFoldedDesignatedSeat = false
+    var remainingSteps = 200
+    while store.cashSession?.phase == .handInProgress, remainingSteps > 0 {
+        remainingSteps -= 1
+        if let actor = store.cashSession?.currentActor {
+            let observation = try #require(try store.playerObservation(for: actor))
+            let legal = try #require(observation.legalActions)
+            let action: PlayerAction
+            if actor == foldedSeat, !hasFoldedDesignatedSeat, legal.canFold {
+                action = .fold
+                hasFoldedDesignatedSeat = true
+            } else if legal.canCheck {
+                action = .check
+            } else if legal.callAmount != nil {
+                action = .call
+            } else {
+                action = .fold
+            }
+            _ = try store.apply(action, by: actor)
+        } else {
+            _ = try store.advanceIfRoundComplete()
+        }
+    }
+    #expect(remainingSteps > 0)
+    #expect(hasFoldedDesignatedSeat)
+    #expect(store.cashSession?.phase == .settlementPending)
 }
 
 actor RecordingBotDecisionService: BotDecisionServing {
