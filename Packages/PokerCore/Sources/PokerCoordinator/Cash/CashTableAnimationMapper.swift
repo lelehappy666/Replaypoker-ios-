@@ -7,6 +7,14 @@ struct CashTableAnimationSnapshot {
 }
 
 enum CashTableAnimationMapper {
+    static func completeWinnerSeats(in events: [PublicGameEvent]) -> Set<SeatID> {
+        events.reduce(into: Set<SeatID>()) { winners, event in
+            if case let .potAwarded(_, seats, _) = event {
+                winners.formUnion(seats)
+            }
+        }
+    }
+
     static func map(
         _ events: [PublicGameEvent],
         humanSeat: SeatID,

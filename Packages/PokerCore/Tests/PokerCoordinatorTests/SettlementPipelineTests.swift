@@ -162,3 +162,31 @@ import Testing
 
     #expect(scenario.store.cashSession?.phase == .readyForHand)
 }
+
+@Test @MainActor func 结算在分配与高亮之间暂停仍保留完整赢家并仅保存一次() async throws {
+    let repository = FailOnceSessionRepository(failSettlementOnce: false)
+    let gate = CoordinatorAnimationGate(targetKind: .awardPot)
+    let scenario = try await CoordinatorScenario.automaticSettlement(
+        repository: repository,
+        reduceMotion: true,
+        animationGate: gate
+    )
+    gate.coordinator = scenario.coordinator
+    let play = Task { @MainActor in
+        try await scenario.playDeterministicallyToSettlement(preserveHumanStack: true)
+    }
+    await gate.waitUntilBlocked()
+    let completeWinners = scenario.coordinator.completeWinnerSeats
+    #expect(!completeWinners.isEmpty)
+
+    scenario.coordinator.suspend()
+    _ = await play.result
+    #expect(scenario.coordinator.state.errorMessage == nil)
+    try await scenario.coordinator.resume()
+
+    #expect(scenario.coordinator.state.phase == .awaitingNextHand)
+    #expect(scenario.coordinator.state.winners == completeWinners)
+    #expect(scenario.store.handRecords().count == 1)
+    try await scenario.coordinator.startNextHand(settings: .recommended)
+    #expect(scenario.store.cashSession?.phase == .handInProgress)
+}

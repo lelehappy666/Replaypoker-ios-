@@ -18,6 +18,7 @@ public final class CashTableCoordinator {
     private var pendingSettlementID: BusinessID?
     private var settlementPipelineRunning = false
     private var winnerSeats: Set<SeatID> = []
+    package private(set) var completeWinnerSeats: Set<SeatID> = []
     private var stateVersion = 0
     private var animationSequence = 0
     private nonisolated let countdownTask = CountdownTaskBox()
@@ -124,6 +125,7 @@ public final class CashTableCoordinator {
         frozenSettings = settings
         pendingSettlementID = nil
         winnerSeats = []
+        completeWinnerSeats = []
         try refillBustedBotsToOneHundredBigBlinds()
 
         let beforeSnapshot = transitionSnapshot()
@@ -295,7 +297,7 @@ public final class CashTableCoordinator {
             pot: state.pot,
             controls: nil,
             secondsRemaining: nil,
-            winners: winnerSeats,
+            winners: completeWinnerSeats,
             errorMessage: nil,
             animation: state.animation
         )
@@ -314,6 +316,7 @@ public final class CashTableCoordinator {
     public func suspend() {
         guard (store.cashSession?.phase == .handInProgress
                 || store.cashSession?.phase == .settlementPending),
+              state.phase != .suspended,
               state.phase != .saveFailed,
               state.phase != .awaitingNextHand
         else { return }
@@ -521,7 +524,13 @@ public final class CashTableCoordinator {
                 handID: handID,
                 stateVersion: version
             )
+        } catch is CancellationError {
+            return
         } catch {
+            guard !Task.isCancelled,
+                  currentHandID == handID,
+                  state.phase != .suspended
+            else { return }
             showBotError()
         }
     }
@@ -538,7 +547,6 @@ public final class CashTableCoordinator {
         else { return }
         let beforeSnapshot = transitionSnapshot()
         let transition = try store.apply(action, by: actor)
-        botTask.clear()
         incrementStateVersion()
         var operationVersion = stateVersion
         guard try await present(
@@ -552,6 +560,7 @@ public final class CashTableCoordinator {
             operationVersion: &operationVersion
         ) else { return }
         guard isCurrentOperation(operationVersion) else { return }
+        botTask.clear()
         await scheduleCurrentActorIfReady()
     }
 
@@ -659,6 +668,9 @@ public final class CashTableCoordinator {
         beforeAction: CashTableAnimationSnapshot,
         guardedBy operationVersion: Int
     ) async throws -> Bool {
+        completeWinnerSeats.formUnion(
+            CashTableAnimationMapper.completeWinnerSeats(in: transition.events)
+        )
         let humanCards = try store.humanObservation()?.ownHoleCards
             .map(TableCardState.faceUp) ?? []
         let animations = try CashTableAnimationMapper.map(
@@ -668,10 +680,16 @@ public final class CashTableCoordinator {
             beforeAction: beforeAction
         )
         var animationStreet: Street?
-        var visibleCards = Dictionary(uniqueKeysWithValues: state.seats.map {
-            ($0.id, $0.cards)
-        })
-        var visibleCommunityCards = state.communityCards
+        let startsNewHand = transition.events.contains { event in
+            if case .handStarted = event { return true }
+            return false
+        }
+        var visibleCards: [SeatID: [TableCardState]] = startsNewHand
+            ? [:]
+            : Dictionary(uniqueKeysWithValues: state.seats.map { ($0.id, $0.cards) })
+        var visibleCommunityCards: [Card] = startsNewHand
+            ? []
+            : state.communityCards
         for animation in animations {
             guard isCurrentOperation(operationVersion) else { return false }
             let publishedAnimation: TableAnimationEvent

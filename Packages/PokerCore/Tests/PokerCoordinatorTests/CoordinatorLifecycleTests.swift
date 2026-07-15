@@ -96,3 +96,47 @@ func 等待下一手与保存失败阶段不会被生命周期暂停改写() asy
     failed.coordinator.suspend()
     #expect(failed.coordinator.state.phase == .saveFailed)
 }
+
+@Test @MainActor
+func inactive与background重复暂停只增加一次版本() async throws {
+    let scenario = try await CoordinatorScenario.humanCanCheck()
+    let before = scenario.coordinator.state.stateVersion
+
+    scenario.coordinator.suspend()
+    let suspended = scenario.coordinator.state.stateVersion
+    scenario.coordinator.suspend()
+
+    #expect(suspended == before + 1)
+    #expect(scenario.coordinator.state.stateVersion == suspended)
+    try await scenario.coordinator.resume()
+    #expect(scenario.coordinator.state.phase != .suspended)
+}
+
+@Test @MainActor
+func 机器人动作已提交后暂停动画不发布错误且只恢复一次() async throws {
+    let botService = SuspendedBotDecisionService()
+    let gate = CoordinatorAnimationGate(targetKind: .showAction)
+    let scenario = try await CoordinatorScenario.botOpeningAction(
+        botService: botService,
+        animationGate: gate
+    )
+    gate.coordinator = scenario.coordinator
+    await botService.waitUntilRequested()
+    let version = scenario.coordinator.state.stateVersion
+    await botService.resume(with: .fold, stateVersion: version)
+    await gate.waitUntilBlocked()
+
+    scenario.coordinator.suspend()
+    #expect(await gate.waitUntilReleased())
+    #expect(scenario.coordinator.state.phase == .suspended)
+    #expect(scenario.coordinator.state.errorMessage == nil)
+
+    try await scenario.coordinator.resume()
+    for _ in 0..<1_000 {
+        if await botService.requestCount() == 2 { break }
+        await Task.yield()
+    }
+    await Task.yield()
+    #expect(await botService.requestCount() == 2)
+    scenario.coordinator.suspend()
+}

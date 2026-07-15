@@ -258,6 +258,46 @@ final class AnimationPublicationRecorder {
         )
         states.append(state)
     }
+
+    func reset() {
+        publications.removeAll()
+        states.removeAll()
+    }
+}
+
+@MainActor
+final class CoordinatorAnimationGate {
+    weak var coordinator: CashTableCoordinator?
+    private let targetKind: TableAnimationKind
+    private let targetOccurrence: Int
+    private var occurrence = 0
+    private var blocked = false
+
+    init(targetKind: TableAnimationKind, occurrence: Int = 1) {
+        self.targetKind = targetKind
+        targetOccurrence = occurrence
+    }
+
+    func sleepIfNeeded() async throws {
+        guard coordinator?.state.animation?.kind == targetKind else { return }
+        occurrence += 1
+        guard occurrence == targetOccurrence else { return }
+        blocked = true
+        defer { blocked = false }
+        try await Task.sleep(for: .seconds(60))
+    }
+
+    func waitUntilBlocked() async {
+        while !blocked { await Task.yield() }
+    }
+
+    func waitUntilReleased() async -> Bool {
+        for _ in 0..<1_000 {
+            if !blocked { return true }
+            await Task.yield()
+        }
+        return !blocked
+    }
 }
 
 private let coordinatorClock = FixedSessionClock(
@@ -577,6 +617,7 @@ final class CoordinatorScenario {
     static func botOpeningAction(
         botService: any BotDecisionServing,
         clock: ManualTableClock? = nil,
+        animationGate: CoordinatorAnimationGate? = nil,
         seed: UInt64 = 31
     ) async throws -> CoordinatorScenario {
         let directory = try makeTemporaryDirectory(named: "bot-opening-action")
@@ -596,6 +637,7 @@ final class CoordinatorScenario {
                     },
                     nextSeed: { seed },
                     sleep: { duration in
+                        try await animationGate?.sleepIfNeeded()
                         try await clock?.sleep(for: duration)
                     },
                     reduceMotion: true
@@ -683,7 +725,8 @@ final class CoordinatorScenario {
         businessIDs: BusinessIDSequence = BusinessIDSequence(),
         animationRecorder: AnimationSleepRecorder? = nil,
         reduceMotion: Bool = true,
-        publicationRecorder: AnimationPublicationRecorder? = nil
+        publicationRecorder: AnimationPublicationRecorder? = nil,
+        animationGate: CoordinatorAnimationGate? = nil
     ) async throws -> CoordinatorScenario {
         let directory = try makeTemporaryDirectory(named: "automatic-settlement")
         do {
@@ -702,6 +745,7 @@ final class CoordinatorScenario {
                     sleep: { duration in
                         await animationRecorder?.sleep(for: duration)
                         await publicationRecorder?.capture()
+                        try await animationGate?.sleepIfNeeded()
                     },
                     reduceMotion: reduceMotion
                 )
@@ -762,7 +806,9 @@ final class CoordinatorScenario {
         try #require(try store.humanObservation()).actions.count
     }
 
-    func playDeterministicallyToSettlement() async throws {
+    func playDeterministicallyToSettlement(
+        preserveHumanStack: Bool = false
+    ) async throws {
         var remainingSteps = 300
         while store.cashSession?.phase == .handInProgress, remainingSteps > 0 {
             remainingSteps -= 1
@@ -775,7 +821,7 @@ final class CoordinatorScenario {
                 await Task.yield()
                 continue
             }
-            if legal.canCheck || legal.callAmount != nil {
+            if legal.canCheck || (!preserveHumanStack && legal.callAmount != nil) {
                 try await coordinator.send(.middle)
             } else {
                 try await coordinator.send(.fold)

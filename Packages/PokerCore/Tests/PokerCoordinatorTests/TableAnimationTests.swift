@@ -254,3 +254,45 @@ import Testing
         #expect(reveals.allSatisfy { $0.phase == .revealingBoard && $0.controls == nil })
     }
 }
+
+@Test @MainActor func 真实摊牌后下一手发牌不继承旧底牌和公共牌() async throws {
+    let recorder = AnimationPublicationRecorder()
+    let scenario = try await CoordinatorScenario.automaticSettlement(
+        repository: FailOnceSessionRepository(failSettlementOnce: false),
+        reduceMotion: true,
+        publicationRecorder: recorder
+    )
+    recorder.coordinator = scenario.coordinator
+    try await scenario.playDeterministicallyToSettlement(preserveHumanStack: true)
+    await scenario.waitForAutomaticSettlement()
+    #expect(scenario.coordinator.state.phase == .awaitingNextHand)
+    #expect(!scenario.coordinator.state.communityCards.isEmpty)
+    recorder.reset()
+
+    try await scenario.coordinator.startNextHand(settings: .recommended)
+
+    let dealing = recorder.states.filter { $0.animation?.kind == .dealHoleCard }
+    #expect(dealing.count == 18)
+    for state in dealing {
+        #expect(state.communityCards.isEmpty)
+        #expect(state.seats.allSatisfy { $0.cards.count <= 2 })
+        #expect(state.seats.filter { !$0.isHuman }.flatMap(\.cards).allSatisfy {
+            $0 == .faceDown
+        })
+    }
+    #expect(dealing.map { $0.seats.flatMap(\.cards).count } == Array(1...18))
+}
+
+@Test func 多个赢家的完整集合不依赖高亮播放进度() throws {
+    let first = try SeatID(1)
+    let second = try SeatID(4)
+    let events: [PublicGameEvent] = [
+        .potAwarded(
+            potIndex: 0,
+            winners: [second, first],
+            amounts: [first: try Chips(50), second: try Chips(50)]
+        ),
+    ]
+
+    #expect(CashTableAnimationMapper.completeWinnerSeats(in: events) == [first, second])
+}
