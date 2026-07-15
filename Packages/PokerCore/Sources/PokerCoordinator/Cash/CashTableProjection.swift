@@ -92,6 +92,7 @@ enum CashTableProjection {
     ) throws -> [SeatID: TableSeatProfile] {
         guard profiles.count == 9,
               Set(profiles.map(\.id)).count == 9,
+              Set(profiles.map(\.displayName)).count == 9,
               Set(profiles.map(\.id)) == Set(seats),
               profiles.contains(where: { $0.id == humanSeat })
         else {

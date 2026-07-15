@@ -61,7 +61,9 @@ final class BotSettingsRepositoryTests: XCTestCase {
     @MainActor
     func test编辑器确认保存并要求显式确认后恢复推荐设置() throws {
         let repository = MemoryBotSettingsRepository(initial: .recommended)
-        let session = AppSession(botSettingsRepository: repository)
+        let session = try AppSessionFixture(
+            botSettingsRepository: repository
+        ).session
         let editor = BotSettingsEditor(current: session.botSettings)
         let custom = try makeBotSettings(aggression: 88)
         editor.draft = custom
@@ -82,7 +84,9 @@ final class BotSettingsRepositoryTests: XCTestCase {
     @MainActor
     func test每手冻结快照不受本手中设置修改影响() throws {
         let repository = MemoryBotSettingsRepository(initial: .recommended)
-        let session = AppSession(botSettingsRepository: repository)
+        let session = try AppSessionFixture(
+            botSettingsRepository: repository
+        ).session
         let frozen = session.freezeBotSettingsForNextHand()
 
         try session.saveBotSettings(try makeBotSettings(aggression: 100))

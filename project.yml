@@ -19,6 +19,8 @@ targets:
         product: PokerSession
       - package: PokerCore
         product: PokerBot
+      - package: PokerCore
+        product: PokerCoordinator
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.dafengshuyi.riverclub
@@ -40,6 +42,8 @@ targets:
         product: PokerSession
       - package: PokerCore
         product: PokerBot
+      - package: PokerCore
+        product: PokerCoordinator
   RiverClubUITests:
     type: bundle.ui-testing
     platform: iOS

@@ -54,8 +54,8 @@ final class LoadableStateTests: XCTestCase {
     }
 
     @MainActor
-    func testStateMappingDoesNotChangeSidebarSelection() {
-        let session = AppSession()
+    func testStateMappingDoesNotChangeSidebarSelection() throws {
+        let session = try AppSessionFixture().session
         session.open(.tables)
 
         _ = LoadableState<[Int]>.loading.isLoading

@@ -1,4 +1,18 @@
 import SwiftUI
+import PokerSession
+
+struct BuyInRange: Equatable {
+    let minimum: Int
+    let maximum: Int
+
+    init(bigBlind: Int, balance: Int) {
+        minimum = bigBlind * SessionEconomy.minimumBuyInBigBlinds
+        maximum = min(
+            bigBlind * SessionEconomy.maximumBuyInBigBlinds,
+            balance
+        )
+    }
+}
 
 struct BuyInState: Equatable {
     let minimum: Int
@@ -29,6 +43,7 @@ struct BuyInState: Equatable {
 struct BuyInSheet: View {
     let table: PokerTableSummary
     let balance: Int
+    let errorMessage: String?
     let onConfirm: (Int, Bool) -> Void
     let onCancel: () -> Void
 
@@ -37,17 +52,20 @@ struct BuyInSheet: View {
     init(
         table: PokerTableSummary,
         balance: Int,
+        errorMessage: String? = nil,
         onConfirm: @escaping (Int, Bool) -> Void,
         onCancel: @escaping () -> Void
     ) {
         self.table = table
         self.balance = balance
+        self.errorMessage = errorMessage
         self.onConfirm = onConfirm
         self.onCancel = onCancel
+        let range = BuyInRange(bigBlind: table.bigBlind, balance: balance)
         _state = State(
             initialValue: BuyInState(
-                minimum: table.bigBlind * 10,
-                maximum: table.bigBlind * 50,
+                minimum: range.minimum,
+                maximum: range.maximum,
                 balance: balance
             )
         )
@@ -118,6 +136,13 @@ struct BuyInSheet: View {
                 .font(.subheadline)
                 .foregroundStyle(.orange)
                 .accessibilityIdentifier("buyIn.error")
+            }
+
+            if let errorMessage {
+                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(.orange)
+                    .accessibilityIdentifier("buyIn.transactionError")
             }
 
             Button {

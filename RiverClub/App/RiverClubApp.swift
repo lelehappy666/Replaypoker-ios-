@@ -3,16 +3,50 @@ import SwiftUI
 
 @main struct RiverClubApp: App {
     private let isUITesting = ProcessInfo.processInfo.arguments.contains("-uiTesting")
-    @State private var session = AppSession()
+    @State private var session: AppSession?
+
+    init() {
+        do {
+            _session = State(initialValue: try AppSession.live())
+        } catch {
+            _session = State(initialValue: nil)
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
-            AppRootView(session: session)
-                .transaction { transaction in
-                    if isUITesting {
-                        transaction.disablesAnimations = true
-                    }
+            Group {
+                if let session {
+                    AppRootView(session: session)
+                } else {
+                    PersistenceStartupErrorView()
                 }
+            }
+            .transaction { transaction in
+                if isUITesting {
+                    transaction.disablesAnimations = true
+                }
+            }
         }
+    }
+}
+
+struct PersistenceStartupErrorView: View {
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "externaldrive.badge.exclamationmark")
+                .font(.system(size: 42, weight: .semibold))
+                .foregroundStyle(.orange)
+            Text("牌局数据无法打开，请重新启动应用。")
+                .font(.headline)
+                .multilineTextAlignment(.center)
+        }
+        .foregroundStyle(RCTheme.primaryText)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(32)
+        .background(RCTheme.background.ignoresSafeArea())
+        .preferredColorScheme(.dark)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("persistence.startupError")
     }
 }

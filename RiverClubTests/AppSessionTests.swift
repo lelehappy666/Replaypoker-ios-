@@ -1,3 +1,6 @@
+import Foundation
+import PokerBot
+import PokerSession
 import XCTest
 @testable import RiverClub
 
@@ -12,8 +15,8 @@ final class AppSessionTests: XCTestCase {
     }
 
     @MainActor
-    func testGuestLoginOpensLobbyAndLogoutReturnsToLogin() {
-        let session = AppSession()
+    func testGuestLoginOpensLobbyAndLogoutReturnsToLogin() throws {
+        let session = try AppSessionFixture().session
         XCTAssertEqual(session.route, .login)
         session.continueAsGuest()
         XCTAssertEqual(session.route, .lobby)
@@ -22,11 +25,17 @@ final class AppSessionTests: XCTestCase {
     }
 
     @MainActor
-    func testEnteringTableStoresSelectedTable() {
-        let session = AppSession()
-        let table = makeTable(name: "星河湾", smallBlind: 200, bigBlind: 400)
+    func testJoiningTableStoresSelectedTable() throws {
+        let fixture = try AppSessionFixture()
+        let session = fixture.session
+        let table = fixture.table
 
-        session.enterTable(table)
+        try session.joinCashTable(
+            table,
+            buyIn: 16_000,
+            autoTopUp: false,
+            reduceMotion: true
+        )
 
         XCTAssertEqual(session.route, .table)
         XCTAssertEqual(session.selectedTable, table)
@@ -39,9 +48,15 @@ final class AppSessionTests: XCTestCase {
     }
 
     @MainActor
-    func testLeavingTableClearsSelectedTableAndRestoresRoute() {
-        let session = AppSession()
-        session.enterTable(makeTable(name: "星河湾", smallBlind: 200, bigBlind: 400))
+    func testLeavingTableClearsSelectedTableAndRestoresRoute() throws {
+        let fixture = try AppSessionFixture()
+        let session = fixture.session
+        try session.joinCashTable(
+            fixture.table,
+            buyIn: 16_000,
+            autoTopUp: false,
+            reduceMotion: true
+        )
 
         session.leaveTable(returningTo: .tables)
 
@@ -61,4 +76,56 @@ final class AppSessionTests: XCTestCase {
             isFavorite: false
         )
     }
+}
+
+@MainActor
+final class AppSessionFixture {
+    let directory: URL
+    let store: LocalPokerStore
+    let session: AppSession
+    let table: PokerTableSummary
+
+    init(
+        failingSave: Bool = false,
+        botSettingsRepository: any BotSettingsPersisting = MemoryBotSettingsRepository(
+            initial: .recommended
+        )
+    ) throws {
+        directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("river-club-app-session-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false
+        )
+        store = try LocalPokerStore.open(
+            directory: directory,
+            clock: FixedSessionClock(
+                now: Date(timeIntervalSince1970: 1_800_000_000),
+                day: try LocalDay("2027-01-15")
+            )
+        )
+        if failingSave {
+            try FileManager.default.removeItem(at: directory)
+        }
+        session = AppSession(
+            pokerStore: store,
+            botSettingsRepository: botSettingsRepository
+        )
+        table = Self.makeTable()
+    }
+
+    nonisolated static func makeTable() -> PokerTableSummary {
+        PokerTableSummary(
+            id: UUID(uuidString: "10000000-0000-0000-0000-000000000010")!,
+            name: "星河湾",
+            smallBlind: 200,
+            bigBlind: 400,
+            players: 6,
+            capacity: 9,
+            averagePot: 1_200,
+            isFavorite: false
+        )
+    }
+
+    deinit { try? FileManager.default.removeItem(at: directory) }
 }

@@ -2,6 +2,20 @@ import XCTest
 @testable import RiverClub
 
 final class BuyInTests: XCTestCase {
+    func testBuyInUsesFortyToOneHundredBigBlinds() {
+        let range = BuyInRange(bigBlind: 400, balance: 128_500)
+
+        XCTAssertEqual(range.minimum, 16_000)
+        XCTAssertEqual(range.maximum, 40_000)
+    }
+
+    func testBuyInMaximumDoesNotExceedBalance() {
+        let range = BuyInRange(bigBlind: 400, balance: 24_000)
+
+        XCTAssertEqual(range.minimum, 16_000)
+        XCTAssertEqual(range.maximum, 24_000)
+    }
+
     func testBuyInClampsToTableRangeAndBalance() {
         var state = BuyInState(minimum: 2_000, maximum: 10_000, balance: 6_500)
         state.amount = 9_000

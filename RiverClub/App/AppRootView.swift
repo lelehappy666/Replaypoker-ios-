@@ -9,6 +9,7 @@ struct AppRootView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let repository: any PokerRepository = MockPokerRepository()
     @State private var pendingBuyInTable: PokerTableSummary?
+    @State private var buyInError: String?
     @State private var tableSeatState: LoadableState<[PokerSeat]> = .loading
     @State private var tableReturnRoute: AppRoute = .lobby
 
@@ -93,17 +94,34 @@ struct AppRootView: View {
             Color.black.opacity(0.58)
                 .ignoresSafeArea()
                 .accessibilityHidden(true)
-                .onTapGesture { pendingBuyInTable = nil }
+                .onTapGesture { closeBuyIn() }
 
             BuyInSheet(
                 table: table,
                 balance: session.chipBalance,
-                onConfirm: { amount, _ in
-                    session.chipBalance -= amount
-                    pendingBuyInTable = nil
-                    session.enterTable(table)
+                errorMessage: buyInError,
+                onConfirm: { amount, autoTopUp in
+                    do {
+                        try session.joinCashTable(
+                            table,
+                            buyIn: amount,
+                            autoTopUp: autoTopUp,
+                            reduceMotion: reduceMotion
+                        )
+                        guard let coordinator = session.tableCoordinator else {
+                            return
+                        }
+                        let settings = session.freezeBotSettingsForNextHand()
+                        buyInError = nil
+                        pendingBuyInTable = nil
+                        Task {
+                            try await coordinator.startHand(settings: settings)
+                        }
+                    } catch {
+                        buyInError = "买入失败，请重试。"
+                    }
                 },
-                onCancel: { pendingBuyInTable = nil }
+                onCancel: closeBuyIn
             )
             .frame(maxWidth: 620, maxHeight: 360)
             .padding(.horizontal, 36)
@@ -117,7 +135,13 @@ struct AppRootView: View {
     private func openBuyInIfJoinable(_ table: PokerTableSummary) {
         guard JoinDisposition(table: table) == .buyIn else { return }
         tableReturnRoute = session.route
+        buyInError = nil
         pendingBuyInTable = table
+    }
+
+    private func closeBuyIn() {
+        buyInError = nil
+        pendingBuyInTable = nil
     }
 
     @MainActor

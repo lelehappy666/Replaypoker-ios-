@@ -22,6 +22,19 @@ public final class CashTableCoordinator {
     private nonisolated let countdownTask = CountdownTaskBox()
     private nonisolated let botTask = BotTaskBox()
 
+    @discardableResult
+    public static func validateSeatProfiles(
+        _ profiles: [TableSeatProfile],
+        matching seats: [SeatID],
+        humanSeat: SeatID
+    ) throws -> [SeatID: TableSeatProfile] {
+        try CashTableProjection.validatedProfiles(
+            profiles,
+            matching: seats,
+            humanSeat: humanSeat
+        )
+    }
+
     public convenience init(
         store: LocalPokerStore,
         humanSeat: SeatID,
@@ -47,7 +60,7 @@ public final class CashTableCoordinator {
         guard let session = store.cashSession else {
             throw PokerCoordinatorError.missingObservation
         }
-        let profileBySeat = try CashTableProjection.validatedProfiles(
+        let profileBySeat = try Self.validateSeatProfiles(
             seatProfiles,
             matching: session.seats.map(\.id),
             humanSeat: humanSeat
