@@ -188,31 +188,52 @@ public final class CashTableCoordinator {
         } catch {
             return
         }
-        let task = Task { @MainActor [weak self] in
-            guard let self else { return }
+        let sleep = dependencies.sleep
+        let task = Task { @MainActor [weak self, sleep] in
             for remaining in stride(from: 29, through: 0, by: -1) {
                 do {
-                    try await dependencies.sleep(.seconds(1))
+                    try await sleep(.seconds(1))
                     try Task.checkCancellation()
                 } catch {
                     return
                 }
-                guard currentHandID == handID,
-                      stateVersion == version,
-                      store.cashSession?.phase == .handInProgress,
-                      store.cashSession?.currentActor == humanSeat
-                else {
-                    cancelCountdown()
+                guard let tick = self?.handleCountdownTick(
+                    remaining: remaining,
+                    handID: handID,
+                    stateVersion: version
+                ) else { return }
+                switch tick {
+                case .continueCountdown:
+                    continue
+                case .performTimeout:
+                    await self?.performTimeout(handID: handID, stateVersion: version)
                     return
-                }
-                if remaining > 0 {
-                    try? refreshProjection(secondsRemaining: remaining)
-                } else {
-                    await performTimeout(handID: handID, stateVersion: version)
+                case .stop:
+                    return
                 }
             }
         }
         countdownTask.replace(with: task)
+    }
+
+    private func handleCountdownTick(
+        remaining: Int,
+        handID: HandID,
+        stateVersion version: Int
+    ) -> CountdownTickResult {
+        guard currentHandID == handID,
+              stateVersion == version,
+              store.cashSession?.phase == .handInProgress,
+              store.cashSession?.currentActor == humanSeat
+        else {
+            cancelCountdown()
+            return .stop
+        }
+        if remaining > 0 {
+            try? refreshProjection(secondsRemaining: remaining)
+            return .continueCountdown
+        }
+        return .performTimeout
     }
 
     private func performTimeout(handID: HandID, stateVersion version: Int) async {
@@ -240,20 +261,52 @@ public final class CashTableCoordinator {
         let transition = try store.apply(action, by: humanSeat)
         cancelCountdown()
         incrementStateVersion()
-        try await present(transition)
+        var operationVersion = stateVersion
+        guard try await present(transition, guardedBy: operationVersion) else { return }
+        guard isCurrentOperation(operationVersion) else { return }
         try refreshProjection()
-        try await advanceCompletedRounds()
+        guard try await advanceCompletedRounds(
+            operationVersion: &operationVersion
+        ) else { return }
+        guard isCurrentOperation(operationVersion) else { return }
         await scheduleCurrentActorIfReady()
     }
 
-    private func advanceCompletedRounds() async throws {
+    private func advanceCompletedRounds(
+        operationVersion: inout Int
+    ) async throws -> Bool {
         while store.cashSession?.phase == .handInProgress,
               store.cashSession?.currentActor == nil {
+            guard isCurrentOperation(operationVersion) else { return false }
             let transition = try store.advanceIfRoundComplete()
             incrementStateVersion()
-            try await present(transition)
+            operationVersion = stateVersion
+            guard try await present(
+                transition,
+                guardedBy: operationVersion
+            ) else { return false }
+            guard isCurrentOperation(operationVersion) else { return false }
             try refreshProjection()
         }
+        return true
+    }
+
+    private func present(
+        _ transition: GameTransition,
+        guardedBy operationVersion: Int
+    ) async throws -> Bool {
+        for event in transition.events {
+            guard isCurrentOperation(operationVersion) else { return false }
+            guard let animation = animation(for: event) else { continue }
+            try refreshProjection(animation: animation)
+            try await dependencies.sleep(.zero)
+            guard isCurrentOperation(operationVersion) else { return false }
+        }
+        return true
+    }
+
+    private func isCurrentOperation(_ operationVersion: Int) -> Bool {
+        stateVersion == operationVersion && state.phase != .suspended
     }
 
     private func cancelCountdown() {
@@ -288,6 +341,12 @@ public final class CashTableCoordinator {
         }
         return target
     }
+}
+
+private enum CountdownTickResult {
+    case continueCountdown
+    case performTimeout
+    case stop
 }
 
 private final class CountdownTaskBox: @unchecked Sendable {

@@ -225,6 +225,17 @@ actor ManualTableClock {
 
     private var now: Int64 = 0
     private var waiters: [UUID: Waiter] = [:]
+    private var cancellationVersion = 0
+    private let onWaiterRegistered: @Sendable (ManualTableClock) -> Void
+    private let advanceImmediatelyOnRegistration: Bool
+
+    init(
+        advanceImmediatelyOnRegistration: Bool = false,
+        onWaiterRegistered: @escaping @Sendable (ManualTableClock) -> Void = { _ in }
+    ) {
+        self.advanceImmediatelyOnRegistration = advanceImmediatelyOnRegistration
+        self.onWaiterRegistered = onWaiterRegistered
+    }
 
     func sleep(for duration: Duration) async throws {
         let seconds = duration.components.seconds
@@ -235,14 +246,29 @@ actor ManualTableClock {
             try Task.checkCancellation()
             try await withCheckedThrowingContinuation { continuation in
                 waiters[id] = Waiter(deadline: now + seconds, continuation: continuation)
+                onWaiterRegistered(self)
+                if Task.isCancelled {
+                    cancel(id)
+                    return
+                }
+                if advanceImmediatelyOnRegistration,
+                   let waiter = waiters.removeValue(forKey: id) {
+                    now += seconds
+                    waiter.continuation.resume()
+                }
             }
         } onCancel: {
             Task { await self.cancel(id) }
         }
+        try Task.checkCancellation()
     }
 
     func waitUntilScheduled() async {
         while waiters.isEmpty { await Task.yield() }
+    }
+
+    func waiterCount() -> Int {
+        waiters.count
     }
 
     func advance(by duration: Duration) async {
@@ -250,6 +276,7 @@ actor ManualTableClock {
         for _ in 0..<4 { await Task.yield() }
         for tick in 0..<seconds {
             let hadWaiter = !waiters.isEmpty
+            let cancellationBeforeTick = cancellationVersion
             now += 1
             let due = waiters.filter { $0.value.deadline <= now }
             for (id, waiter) in due {
@@ -257,14 +284,48 @@ actor ManualTableClock {
                 waiter.continuation.resume()
             }
             if hadWaiter, tick < seconds - 1 {
-                await waitUntilScheduled()
+                await waitUntilScheduledOrCancelled(after: cancellationBeforeTick)
             }
         }
         await Task.yield()
     }
 
     private func cancel(_ id: UUID) {
+        cancellationVersion += 1
         waiters.removeValue(forKey: id)?.continuation.resume(throwing: CancellationError())
+    }
+
+    private func waitUntilScheduledOrCancelled(after version: Int) async {
+        while waiters.isEmpty, cancellationVersion == version {
+            await Task.yield()
+        }
+    }
+}
+
+actor ManualAnimationGate {
+    private var isEnabled = false
+    private var isBlocked = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func enable() {
+        isEnabled = true
+    }
+
+    func sleepIfEnabled() async {
+        guard isEnabled else { return }
+        isBlocked = true
+        await withCheckedContinuation { continuation = $0 }
+        isBlocked = false
+    }
+
+    func waitUntilBlocked() async {
+        while !isBlocked { await Task.yield() }
+    }
+
+    func resume() {
+        isEnabled = false
+        continuation?.resume()
+        continuation = nil
     }
 }
 
@@ -372,15 +433,21 @@ final class CoordinatorScenario {
     }
 
     static func humanFacingBlind(
-        clock: ManualTableClock = ManualTableClock()
+        clock: ManualTableClock = ManualTableClock(),
+        animationGate: ManualAnimationGate? = nil
     ) async throws -> CoordinatorScenario {
-        try await make(clock: clock, dealer: SeatID(6)) { _, _ in }
+        try await make(
+            clock: clock,
+            dealer: SeatID(6),
+            animationGate: animationGate
+        ) { _, _ in }
     }
 
     private static func make(
         clock: ManualTableClock,
         dealer: SeatID,
         stackOverrides: [SeatID: Chips] = [:],
+        animationGate: ManualAnimationGate? = nil,
         prepare: @escaping @MainActor (LocalPokerStore, SeatID) throws -> Void
     ) async throws -> CoordinatorScenario {
         let directory = try makeTemporaryDirectory(named: "human-action")
@@ -401,6 +468,7 @@ final class CoordinatorScenario {
                 sleep: { duration in
                     if duration == .zero {
                         try await hook.run()
+                        await animationGate?.sleepIfEnabled()
                     } else {
                         try await clock.sleep(for: duration)
                     }
