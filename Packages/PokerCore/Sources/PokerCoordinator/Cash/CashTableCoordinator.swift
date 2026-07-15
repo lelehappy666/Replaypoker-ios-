@@ -739,7 +739,7 @@ public final class CashTableCoordinator {
     }
 
     private func cancelBotDecision() {
-        botTask.cancel()
+        let cancelledBotTask = botTask.cancel()
         guard let handID = currentHandID?.rawValue else { return }
         let service = botService
         let previousCancellation = botCancellationTask
@@ -747,6 +747,7 @@ public final class CashTableCoordinator {
         botCancellationTask = Task {
             await previousCancellation?.value
             await service.cancel(handID: handID)
+            await cancelledBotTask?.value
         }
     }
 
@@ -871,16 +872,19 @@ private final class BotTaskBox: @unchecked Sendable {
     private let lock = NSLock()
     private var task: Task<Void, Never>?
 
-    func replace(with newTask: Task<Void, Never>?) {
+    @discardableResult
+    func replace(with newTask: Task<Void, Never>?) -> Task<Void, Never>? {
         let oldTask = lock.withLock {
             let oldTask = task
             task = newTask
             return oldTask
         }
         oldTask?.cancel()
+        return oldTask
     }
 
-    func cancel() {
+    @discardableResult
+    func cancel() -> Task<Void, Never>? {
         replace(with: nil)
     }
 

@@ -611,11 +611,14 @@ final class CoordinatorScenario {
     }
 
     static func botThinking(
-        delayFirstCancellation: Bool = false
+        delayFirstCancellation: Bool = false,
+        delayFirstDecisionExitAfterCancellation: Bool = false
     ) async throws -> CoordinatorLifecycleFixture {
         let clock = ManualTableClock()
         let botService = LifecycleBotDecisionService(
-            delayFirstCancellation: delayFirstCancellation
+            delayFirstCancellation: delayFirstCancellation,
+            delayFirstDecisionExitAfterCancellation:
+                delayFirstDecisionExitAfterCancellation
         )
         let scenario = try await botOpeningAction(
             botService: botService,
@@ -1048,9 +1051,17 @@ actor LifecycleBotDecisionService: BotDecisionServing {
     private var shouldDelayNextCancellation: Bool
     private var cancellationStarted = false
     private var cancellationRelease: CheckedContinuation<Void, Never>?
+    private var shouldDelayNextDecisionExit: Bool
+    private var delayedDecisionExitIDs: Set<UUID> = []
+    private var decisionExitBlocked = false
+    private var decisionExitRelease: CheckedContinuation<Void, Never>?
 
-    init(delayFirstCancellation: Bool = false) {
+    init(
+        delayFirstCancellation: Bool = false,
+        delayFirstDecisionExitAfterCancellation: Bool = false
+    ) {
         shouldDelayNextCancellation = delayFirstCancellation
+        shouldDelayNextDecisionExit = delayFirstDecisionExitAfterCancellation
     }
 
     func decide(_ request: BotDecisionRequest) async -> BotDecision? {
@@ -1060,6 +1071,13 @@ actor LifecycleBotDecisionService: BotDecisionServing {
         maximumCalls = max(maximumCalls, activeCalls)
         let decision = await withCheckedContinuation { continuation in
             decisionContinuations[id] = continuation
+        }
+        if delayedDecisionExitIDs.remove(id) != nil {
+            decisionExitBlocked = true
+            await withCheckedContinuation { continuation in
+                decisionExitRelease = continuation
+            }
+            decisionExitBlocked = false
         }
         activeCalls -= 1
         return decision
@@ -1074,6 +1092,10 @@ actor LifecycleBotDecisionService: BotDecisionServing {
             await withCheckedContinuation { continuation in
                 cancellationRelease = continuation
             }
+        }
+        if shouldDelayNextDecisionExit {
+            shouldDelayNextDecisionExit = false
+            delayedDecisionExitIDs.formUnion(pendingIDs)
         }
         for id in pendingIDs {
             decisionContinuations.removeValue(forKey: id)?.resume(returning: nil)
@@ -1112,6 +1134,24 @@ actor LifecycleBotDecisionService: BotDecisionServing {
     func releaseCancellation() {
         cancellationRelease?.resume()
         cancellationRelease = nil
+    }
+
+    func waitUntilDecisionExitBlocked(timeout: Duration) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while !decisionExitBlocked, clock.now < deadline {
+            await Task.yield()
+        }
+        return decisionExitBlocked
+    }
+
+    func releaseDecisionExit() {
+        decisionExitRelease?.resume()
+        decisionExitRelease = nil
+    }
+
+    func currentRequestCount() -> Int {
+        requestCount
     }
 
     func finishAllDecisions() {

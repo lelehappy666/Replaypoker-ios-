@@ -50,3 +50,34 @@ func 暂停后立即恢复也不会与旧机器人请求重叠() async throws {
     fixture.coordinator.suspend()
     await fixture.botService.finishAllDecisions()
 }
+
+@Test @MainActor
+func 取消服务返回后仍等待旧机器人任务完整退出() async throws {
+    let fixture = try await CoordinatorScenario.botThinking(
+        delayFirstDecisionExitAfterCancellation: true
+    )
+    fixture.coordinator.suspend()
+    let resumeTask = Task { @MainActor in
+        try await fixture.coordinator.resume()
+    }
+
+    try #require(
+        await fixture.botService.waitUntilDecisionExitBlocked(timeout: .seconds(1))
+    )
+    let newRequestStarted = await fixture.botService.waitUntilRequestCount(
+        2,
+        timeout: .milliseconds(200)
+    )
+    #expect(newRequestStarted == false)
+    #expect(await fixture.botService.currentRequestCount() == 1)
+
+    await fixture.botService.releaseDecisionExit()
+    try await resumeTask.value
+    try #require(
+        await fixture.botService.waitUntilRequestCount(2, timeout: .seconds(1))
+    )
+    #expect(await fixture.botService.maximumConcurrentCalls() == 1)
+
+    fixture.coordinator.suspend()
+    await fixture.botService.finishAllDecisions()
+}
