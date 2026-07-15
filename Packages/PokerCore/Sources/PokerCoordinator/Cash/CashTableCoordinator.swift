@@ -22,6 +22,8 @@ public final class CashTableCoordinator {
     private var animationSequence = 0
     private nonisolated let countdownTask = CountdownTaskBox()
     private nonisolated let botTask = BotTaskBox()
+    private var botCancellationTask: Task<Void, Never>?
+    private var botCancellationGeneration: UInt = 0
 
     @discardableResult
     public static func validateSeatProfiles(
@@ -154,6 +156,7 @@ public final class CashTableCoordinator {
             throw PokerCoordinatorError.invalidPhase
         }
         cancelCountdown()
+        await finishPendingBotCancellation()
         guard let phase = store.cashSession?.phase else {
             throw PokerCoordinatorError.invalidPhase
         }
@@ -739,7 +742,22 @@ public final class CashTableCoordinator {
         botTask.cancel()
         guard let handID = currentHandID?.rawValue else { return }
         let service = botService
-        Task { await service.cancel(handID: handID) }
+        let previousCancellation = botCancellationTask
+        botCancellationGeneration &+= 1
+        botCancellationTask = Task {
+            await previousCancellation?.value
+            await service.cancel(handID: handID)
+        }
+    }
+
+    private func finishPendingBotCancellation() async {
+        while let cancellation = botCancellationTask {
+            let generation = botCancellationGeneration
+            await cancellation.value
+            guard generation == botCancellationGeneration else { continue }
+            botCancellationTask = nil
+            return
+        }
     }
 
     private func showBotError() {

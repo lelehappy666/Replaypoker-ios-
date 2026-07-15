@@ -312,6 +312,7 @@ actor ManualTableClock {
 
     private var now: Int64 = 0
     private var waiters: [UUID: Waiter] = [:]
+    private var sleepCalls = 0
     private let onWaiterRegistered: @Sendable (ManualTableClock) -> Void
     private let advanceImmediatelyOnRegistration: Bool
 
@@ -324,6 +325,7 @@ actor ManualTableClock {
     }
 
     func sleep(for duration: Duration) async throws {
+        sleepCalls += 1
         let seconds = duration.components.seconds
         guard seconds > 0 else { return }
         try Task.checkCancellation()
@@ -347,6 +349,10 @@ actor ManualTableClock {
             Task { await self.cancel(id) }
         }
         try Task.checkCancellation()
+    }
+
+    func sleepCallCount() -> Int {
+        sleepCalls
     }
 
     func waitUntilScheduled() async {
@@ -566,6 +572,7 @@ final class CoordinatorScenario {
 
     static func botOpeningAction(
         botService: any BotDecisionServing,
+        clock: ManualTableClock? = nil,
         seed: UInt64 = 31
     ) async throws -> CoordinatorScenario {
         let directory = try makeTemporaryDirectory(named: "bot-opening-action")
@@ -584,7 +591,9 @@ final class CoordinatorScenario {
                         try BusinessID("\(purpose)-bot-\(seed)")
                     },
                     nextSeed: { seed },
-                    sleep: { _ in },
+                    sleep: { duration in
+                        try await clock?.sleep(for: duration)
+                    },
                     reduceMotion: true
                 ),
                 botService: botService
@@ -601,11 +610,18 @@ final class CoordinatorScenario {
         }
     }
 
-    static func botThinking() async throws -> CoordinatorLifecycleFixture {
+    static func botThinking(
+        delayFirstCancellation: Bool = false
+    ) async throws -> CoordinatorLifecycleFixture {
         let clock = ManualTableClock()
-        let botService = LifecycleBotDecisionService()
-        let scenario = try await botOpeningAction(botService: botService)
-        await botService.waitUntilRequestCount(1)
+        let botService = LifecycleBotDecisionService(
+            delayFirstCancellation: delayFirstCancellation
+        )
+        let scenario = try await botOpeningAction(
+            botService: botService,
+            clock: clock
+        )
+        _ = await botService.waitUntilRequestCount(1)
         return CoordinatorLifecycleFixture(
             scenario: scenario,
             clock: clock,
@@ -1028,23 +1044,40 @@ actor LifecycleBotDecisionService: BotDecisionServing {
     private var requestCount = 0
     private var activeCalls = 0
     private var maximumCalls = 0
-    private var continuation: CheckedContinuation<BotDecision?, Never>?
+    private var decisionContinuations: [UUID: CheckedContinuation<BotDecision?, Never>] = [:]
+    private var shouldDelayNextCancellation: Bool
+    private var cancellationStarted = false
+    private var cancellationRelease: CheckedContinuation<Void, Never>?
+
+    init(delayFirstCancellation: Bool = false) {
+        shouldDelayNextCancellation = delayFirstCancellation
+    }
 
     func decide(_ request: BotDecisionRequest) async -> BotDecision? {
+        let id = UUID()
         requestCount += 1
         activeCalls += 1
         maximumCalls = max(maximumCalls, activeCalls)
         let decision = await withCheckedContinuation { continuation in
-            self.continuation = continuation
+            decisionContinuations[id] = continuation
         }
         activeCalls -= 1
         return decision
     }
 
     func cancel(handID: String) async {
+        let pendingIDs = Array(decisionContinuations.keys)
         cancelCount += 1
-        continuation?.resume(returning: nil)
-        continuation = nil
+        cancellationStarted = true
+        if shouldDelayNextCancellation {
+            shouldDelayNextCancellation = false
+            await withCheckedContinuation { continuation in
+                cancellationRelease = continuation
+            }
+        }
+        for id in pendingIDs {
+            decisionContinuations.removeValue(forKey: id)?.resume(returning: nil)
+        }
     }
 
     func waitUntilCancelled() async {
@@ -1055,8 +1088,38 @@ actor LifecycleBotDecisionService: BotDecisionServing {
         while activeCalls != 0 { await Task.yield() }
     }
 
-    func waitUntilRequestCount(_ expectedCount: Int) async {
-        while requestCount < expectedCount { await Task.yield() }
+    func waitUntilRequestCount(
+        _ expectedCount: Int,
+        timeout: Duration = .seconds(1)
+    ) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while requestCount < expectedCount, clock.now < deadline {
+            await Task.yield()
+        }
+        return requestCount >= expectedCount
+    }
+
+    func waitUntilCancellationStarted(timeout: Duration) async -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while !cancellationStarted, clock.now < deadline {
+            await Task.yield()
+        }
+        return cancellationStarted
+    }
+
+    func releaseCancellation() {
+        cancellationRelease?.resume()
+        cancellationRelease = nil
+    }
+
+    func finishAllDecisions() {
+        let continuations = decisionContinuations.values
+        decisionContinuations.removeAll()
+        for continuation in continuations {
+            continuation.resume(returning: nil)
+        }
     }
 
     func maximumConcurrentCalls() -> Int {

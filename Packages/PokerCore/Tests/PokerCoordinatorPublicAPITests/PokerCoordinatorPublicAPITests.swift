@@ -3,6 +3,7 @@ import PokerCoordinator
 import Testing
 
 @Test func 普通导入无法访问牌桌与协调器隐藏信息() throws {
+    try expectControlSourceTypechecks()
     for probe in HiddenInformationProbe.allCases {
         try expectTypecheckFailure(probe)
     }
@@ -16,14 +17,52 @@ private enum HiddenInformationProbe: String, CaseIterable {
     case arbitraryPlayerObservation =
         "_ = coordinator.playerObservation(for: SeatID(rawValue: 1)!)"
     case pendingShowdown = "_ = coordinator.pendingShowdownObservation"
+
+    var memberName: String {
+        switch self {
+        case .deck: "deck"
+        case .seed: "seed"
+        case .checkpoint: "checkpoint"
+        case .opponentHoleCards: "opponentHoleCards"
+        case .arbitraryPlayerObservation: "playerObservation"
+        case .pendingShowdown: "pendingShowdownObservation"
+        }
+    }
+}
+
+private func expectControlSourceTypechecks() throws {
+    let result = try typecheck(probe: nil)
+    #expect(result.status == 0, Comment(rawValue: result.diagnostics))
 }
 
 private func expectTypecheckFailure(_ probe: HiddenInformationProbe) throws {
+    let result = try typecheck(probe: probe)
+
+    #expect(result.status == 1, Comment(rawValue: result.diagnostics))
+    #expect(
+        result.diagnostics.contains("no such module") == false,
+        Comment(rawValue: result.diagnostics)
+    )
+    #expect(
+        result.diagnostics.contains(probe.memberName),
+        Comment(rawValue: result.diagnostics)
+    )
+    #expect(
+        result.diagnostics.contains("has no member")
+            || result.diagnostics.contains("is inaccessible due to"),
+        Comment(rawValue: result.diagnostics)
+    )
+}
+
+private func typecheck(
+    probe: HiddenInformationProbe?
+) throws -> (status: Int32, diagnostics: String) {
     let packageRoot = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
     let modules = try coordinatorModulesDirectory(in: packageRoot)
+    let probeSource = probe.map(\.rawValue) ?? ""
     let source = """
     import PokerCoordinator
 
@@ -35,7 +74,7 @@ private func expectTypecheckFailure(_ probe: HiddenInformationProbe) throws {
     func unavailableCoordinator() -> CashTableCoordinator { fatalError() }
     let tableState = unavailableTableState()
     let coordinator = unavailableCoordinator()
-    \(probe.rawValue)
+    \(probeSource)
     """
     let file = FileManager.default.temporaryDirectory
         .appendingPathComponent("poker-coordinator-boundary-\(UUID().uuidString).swift")
@@ -54,13 +93,7 @@ private func expectTypecheckFailure(_ probe: HiddenInformationProbe) throws {
         encoding: .utf8
     ) ?? ""
 
-    #expect(process.terminationStatus == 1, Comment(rawValue: diagnostics))
-    #expect(diagnostics.contains("no such module") == false, Comment(rawValue: diagnostics))
-    #expect(
-        diagnostics.contains("has no member")
-            || diagnostics.contains("is inaccessible due to"),
-        Comment(rawValue: diagnostics)
-    )
+    return (process.terminationStatus, diagnostics)
 }
 
 private func coordinatorModulesDirectory(in packageRoot: URL) throws -> URL {
