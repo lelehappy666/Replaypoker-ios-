@@ -27,7 +27,36 @@ final class PokerTableInteractionTests: XCTestCase {
         XCTAssertNil(model.retryIntent(for: .botThinking))
         XCTAssertEqual(model.retryIntent(for: .waitingForHuman), .fold)
         XCTAssertEqual(model.retryIntent(for: .saveFailed), .retrySave)
-        XCTAssertEqual(model.retryIntent(for: .awaitingNextHand), .nextHand)
+        XCTAssertNil(model.retryIntent(for: .awaitingNextHand))
+    }
+
+    func testOrdinaryFailureRetriesOriginalIntent() async throws {
+        let model = TableActionRequestModel()
+        await model.send(.fold) { _ in throw PokerCoordinatorError.illegalIntent }
+        var sent: [TableIntent] = []
+
+        await model.retry(
+            for: .waitingForHuman,
+            send: { intent in sent.append(intent) },
+            resume: { XCTFail("普通非法意图不应恢复牌局") }
+        )
+
+        XCTAssertEqual(sent, [.fold])
+        XCTAssertNil(model.errorMessage)
+    }
+
+    func testSuspendedRetryFailureKeepsIntentAndShowsRecoveryMessage() async throws {
+        let model = TableActionRequestModel()
+        await model.send(.nextHand) { _ in throw PokerCoordinatorError.suspended }
+
+        await model.retry(
+            for: .suspended,
+            send: { _ in XCTFail("暂停阶段不应重发下一手") },
+            resume: { throw PokerCoordinatorError.suspended }
+        )
+
+        XCTAssertEqual(model.errorMessage, "恢复牌局失败，请重试。")
+        XCTAssertTrue(model.canRetry(for: .suspended))
     }
 
     func testConsecutiveAnimationEventsReturnToBaseline() throws {
@@ -49,6 +78,18 @@ final class PokerTableInteractionTests: XCTestCase {
         XCTAssertEqual(presentation.holeCardScale(for: seat), 1)
         XCTAssertEqual(presentation.chipOffset, 0)
         XCTAssertNil(presentation.event)
+    }
+
+    func testSameAnimationWithDifferentSequencesIsConsumedTwice() throws {
+        let seat = try SeatID(1)
+        let event = TableAnimationEvent.dealHoleCard(seat: seat, card: .faceDown)
+        var presentation = TableAnimationPresentation()
+
+        presentation.begin(event, token: 1)
+        presentation.begin(event, token: 2)
+
+        XCTAssertEqual(presentation.activeToken, 2)
+        XCTAssertEqual(presentation.event, event)
     }
 
     func testWinnerEventProducesHighlightBeforeReturningToBaseline() throws {

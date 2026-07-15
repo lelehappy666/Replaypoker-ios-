@@ -10,7 +10,6 @@ struct PokerTableView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var actionRequest = TableActionRequestModel()
     @State private var animationPresentation = TableAnimationPresentation()
-    @State private var animationToken = 0
     @State private var animationResetTask: Task<Void, Never>?
 
     private var state: TableViewState { coordinator.state }
@@ -85,8 +84,8 @@ struct PokerTableView: View {
         .safeAreaPadding(.horizontal, 16)
         .safeAreaPadding(.vertical, 6)
         .background(RCTheme.background.ignoresSafeArea())
-        .onChange(of: state.stateVersion) { _, _ in
-            present(state.animation)
+        .onChange(of: state.animationSequence) { _, sequence in
+            present(state.animation, sequence: sequence)
         }
         .onDisappear {
             animationResetTask?.cancel()
@@ -234,10 +233,9 @@ struct PokerTableView: View {
             HStack {
                 Button("关闭") { actionRequest.dismissError() }
                     .accessibilityIdentifier("action.dismissError")
-                if let retry = actionRequest.retryIntent(for: state.phase) {
+                if actionRequest.canRetry(for: state.phase) {
                     Button("重试") {
-                        actionRequest.dismissError()
-                        send(retry)
+                        retryFailedAction()
                     }
                     .buttonStyle(.borderedProminent)
                     .accessibilityIdentifier("action.retryIntent")
@@ -272,25 +270,33 @@ struct PokerTableView: View {
         }
     }
 
-    private func present(_ event: TableAnimationEvent?) {
+    private func retryFailedAction() {
+        Task { @MainActor in
+            await actionRequest.retry(
+                for: state.phase,
+                send: { intent in try await coordinator.send(intent) },
+                resume: { try await coordinator.resume() }
+            )
+        }
+    }
+
+    private func present(_ event: TableAnimationEvent?, sequence: Int) {
         animationResetTask?.cancel()
-        animationToken += 1
-        let token = animationToken
 
         guard let event, !reduceMotion else {
             animationPresentation = TableAnimationPresentation()
             return
         }
 
-        animationPresentation.begin(event, token: token)
+        animationPresentation.begin(event, token: sequence)
         withAnimation(.easeOut(duration: 0.22)) {
-            animationPresentation.advance(token: token)
+            animationPresentation.advance(token: sequence)
         }
         animationResetTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(220))
             guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.12)) {
-                animationPresentation.reset(token: token)
+                animationPresentation.reset(token: sequence)
             }
         }
     }

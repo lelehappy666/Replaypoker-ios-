@@ -40,9 +40,41 @@ final class TableActionRequestModel {
         case .saveFailed:
             return .retrySave
         case .awaitingNextHand:
-            return .nextHand
+            return failedIntent == .nextHand ? .nextHand : nil
         default:
             return nil
+        }
+    }
+
+    func canRetry(for phase: TableFlowPhase) -> Bool {
+        if phase == .suspended { return failedIntent != nil }
+        return retryIntent(for: phase) != nil
+    }
+
+    func retry(
+        for phase: TableFlowPhase,
+        send: (TableIntent) async throws -> Void,
+        resume: () async throws -> Void
+    ) async {
+        guard !isSending else { return }
+        let intent = retryIntent(for: phase)
+        guard phase == .suspended ? failedIntent != nil : intent != nil else { return }
+
+        isSending = true
+        errorMessage = nil
+        defer { isSending = false }
+
+        do {
+            if phase == .suspended {
+                try await resume()
+            } else if let intent {
+                try await send(intent)
+            }
+            failedIntent = nil
+        } catch {
+            errorMessage = phase == .suspended
+                ? "恢复牌局失败，请重试。"
+                : "操作失败，请重试。"
         }
     }
 
@@ -54,22 +86,22 @@ final class TableActionRequestModel {
 
 struct TableAnimationPresentation: Equatable {
     private(set) var event: TableAnimationEvent?
-    private var token = 0
+    private(set) var activeToken = 0
     private var progress: CGFloat = 0
 
     mutating func begin(_ event: TableAnimationEvent, token: Int) {
         self.event = event
-        self.token = token
+        activeToken = token
         progress = 0
     }
 
     mutating func advance(token: Int) {
-        guard self.token == token, event != nil else { return }
+        guard activeToken == token, event != nil else { return }
         progress = 1
     }
 
     mutating func reset(token: Int) {
-        guard self.token == token else { return }
+        guard activeToken == token else { return }
         event = nil
         progress = 0
     }

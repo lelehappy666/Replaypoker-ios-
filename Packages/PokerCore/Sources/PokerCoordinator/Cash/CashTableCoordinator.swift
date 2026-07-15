@@ -19,6 +19,7 @@ public final class CashTableCoordinator {
     private var settlementPipelineRunning = false
     private var winnerSeats: Set<SeatID> = []
     private var stateVersion = 0
+    private var animationSequence = 0
     private nonisolated let countdownTask = CountdownTaskBox()
     private nonisolated let botTask = BotTaskBox()
 
@@ -89,6 +90,7 @@ public final class CashTableCoordinator {
         let initialState = TableViewState(
             handID: nil,
             stateVersion: 0,
+            animationSequence: 0,
             phase: .awaitingNextHand,
             seats: initialSeats,
             communityCards: [],
@@ -286,6 +288,7 @@ public final class CashTableCoordinator {
         state = TableViewState(
             handID: state.handID,
             stateVersion: stateVersion,
+            animationSequence: animationSequence,
             phase: .settling,
             seats: revealedSeats,
             communityCards: state.communityCards,
@@ -349,15 +352,28 @@ public final class CashTableCoordinator {
         guard let currentHandID else {
             throw PokerCoordinatorError.missingObservation
         }
-        state = try CashTableProjection.make(
+        let publishedSequence: Int
+        if animation != nil {
+            let (next, overflow) = animationSequence.addingReportingOverflow(1)
+            guard !overflow else {
+                throw PokerCoordinatorError.animationSequenceOverflow
+            }
+            publishedSequence = next
+        } else {
+            publishedSequence = animationSequence
+        }
+        let projection = try CashTableProjection.make(
             store: store,
             handID: currentHandID,
             stateVersion: stateVersion,
+            animationSequence: publishedSequence,
             humanSeat: humanSeat,
             seatProfiles: seatProfiles,
             animation: animation,
             secondsRemaining: secondsRemaining
         )
+        state = projection
+        animationSequence = publishedSequence
     }
 
     private func scheduleCurrentActorIfReady() async {
@@ -698,6 +714,7 @@ public final class CashTableCoordinator {
         state = TableViewState(
             handID: state.handID,
             stateVersion: stateVersion,
+            animationSequence: animationSequence,
             phase: .awaitingNextHand,
             seats: seats,
             communityCards: state.communityCards,
@@ -730,6 +747,7 @@ public final class CashTableCoordinator {
         state = TableViewState(
             handID: state.handID,
             stateVersion: stateVersion,
+            animationSequence: animationSequence,
             phase: state.phase,
             seats: state.seats,
             communityCards: state.communityCards,
@@ -749,6 +767,7 @@ public final class CashTableCoordinator {
         TableViewState(
             handID: state.handID,
             stateVersion: stateVersion,
+            animationSequence: animationSequence,
             phase: phase ?? state.phase,
             seats: state.seats,
             communityCards: state.communityCards,
@@ -769,6 +788,7 @@ public final class CashTableCoordinator {
         TableViewState(
             handID: state.handID,
             stateVersion: stateVersion,
+            animationSequence: animationSequence,
             phase: phase ?? state.phase,
             seats: state.seats,
             communityCards: state.communityCards,

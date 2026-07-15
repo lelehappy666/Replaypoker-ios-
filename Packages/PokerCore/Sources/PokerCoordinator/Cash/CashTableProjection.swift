@@ -6,6 +6,7 @@ enum CashTableProjection {
         store: LocalPokerStore,
         handID: HandID,
         stateVersion: Int,
+        animationSequence: Int,
         humanSeat: SeatID,
         seatProfiles: [TableSeatProfile],
         animation: TableAnimationEvent? = nil,
@@ -74,6 +75,7 @@ enum CashTableProjection {
         return TableViewState(
             handID: handID.rawValue,
             stateVersion: stateVersion,
+            animationSequence: animationSequence,
             phase: spectator.currentActor == humanSeat ? .waitingForHuman : .botThinking,
             seats: seats,
             communityCards: spectator.communityCards,

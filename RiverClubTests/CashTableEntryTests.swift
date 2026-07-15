@@ -281,6 +281,58 @@ final class CashTableEntryTests: XCTestCase {
         XCTAssertEqual(ids.sessionIDCalls, 1)
         XCTAssertEqual(ids.businessIDCalls, 1)
     }
+
+    @MainActor
+    func testLocalNextHandFailureRetriesByResumingSameHand() async throws {
+        let ids = JoinAttemptIDSpy()
+        let dependencies = makeDependencies(
+            ids: ids,
+            sleep: { _ in throw CashTableEntryTestError.animationSleep }
+        )
+        let fixture = try AppSessionFixture(dependencies: dependencies)
+        fixture.session.continueAsGuest()
+        try fixture.session.joinCashTable(
+            fixture.table,
+            buyIn: 16_000,
+            autoTopUp: false,
+            reduceMotion: true
+        )
+        let coordinator = try XCTUnwrap(fixture.session.tableCoordinator)
+        let model = TableActionRequestModel()
+        let balanceAfterBuyIn = fixture.session.chipBalance
+
+        await model.send(.nextHand) { _ in
+            try await coordinator.startHand(settings: .recommended)
+        }
+
+        XCTAssertEqual(fixture.store.cashSession?.phase, .handInProgress)
+        XCTAssertEqual(coordinator.state.phase, .suspended)
+        XCTAssertEqual(model.errorMessage, "操作失败，请重试。")
+        XCTAssertNil(fixture.session.tableStartupError)
+        let handID = coordinator.state.handID
+        var sendCalls = 0
+        var resumeCalls = 0
+
+        await model.retry(
+            for: coordinator.state.phase,
+            send: { intent in
+                sendCalls += 1
+                try await coordinator.send(intent)
+            },
+            resume: {
+                resumeCalls += 1
+                try await coordinator.resume()
+            }
+        )
+
+        XCTAssertEqual(sendCalls, 0)
+        XCTAssertEqual(resumeCalls, 1)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertNotEqual(coordinator.state.phase, .suspended)
+        XCTAssertEqual(coordinator.state.handID, handID)
+        XCTAssertEqual(fixture.session.chipBalance, balanceAfterBuyIn)
+        XCTAssertNil(fixture.session.tableStartupError)
+    }
 }
 
 @MainActor

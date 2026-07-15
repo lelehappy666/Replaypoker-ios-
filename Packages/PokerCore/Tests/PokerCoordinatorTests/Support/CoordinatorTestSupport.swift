@@ -28,6 +28,7 @@ func makeSafeTableViewState() throws -> TableViewState {
     return TableViewState(
         handID: "safe-hand",
         stateVersion: 1,
+        animationSequence: 1,
         phase: .waitingForHuman,
         seats: [
             TableSeatState(
@@ -229,6 +230,31 @@ actor AnimationSleepRecorder {
 
     func animationDurations() -> [Duration] {
         durations.filter { $0 < .seconds(1) }
+    }
+}
+
+struct AnimationPublication: Equatable {
+    let sequence: Int
+    let event: TableAnimationEvent
+    let stateVersion: Int
+}
+
+@MainActor
+final class AnimationPublicationRecorder {
+    weak var coordinator: CashTableCoordinator?
+    private(set) var publications: [AnimationPublication] = []
+
+    func capture() {
+        guard let state = coordinator?.state,
+              let event = state.animation
+        else { return }
+        publications.append(
+            AnimationPublication(
+                sequence: state.animationSequence,
+                event: event,
+                stateVersion: state.stateVersion
+            )
+        )
     }
 }
 

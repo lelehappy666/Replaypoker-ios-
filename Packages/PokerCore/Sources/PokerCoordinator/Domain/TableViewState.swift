@@ -83,6 +83,7 @@ public struct TableActionControls: Codable, Equatable, Sendable {
 public struct TableViewState: Codable, Equatable, Sendable {
     public let handID: String?
     public let stateVersion: Int
+    public let animationSequence: Int
     public let phase: TableFlowPhase
     public let seats: [TableSeatState]
     public let communityCards: [Card]
@@ -99,6 +100,7 @@ public enum PokerCoordinatorError: Error, Equatable, Sendable {
     case illegalIntent
     case missingObservation
     case chipArithmeticOverflow
+    case animationSequenceOverflow
     case saveFailed
     case suspended
 }

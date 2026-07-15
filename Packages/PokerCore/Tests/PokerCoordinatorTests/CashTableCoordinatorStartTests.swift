@@ -58,6 +58,41 @@ import Testing
     )
 }
 
+@Test @MainActor func 动画发布序号逐事件递增且不改写业务版本() async throws {
+    let fixture = try CoordinatorStoreFixture.readyWithBustedBot()
+    let recorder = AnimationPublicationRecorder()
+    let coordinator = try CashTableCoordinator(
+        store: fixture.store,
+        humanSeat: fixture.humanSeat,
+        seatProfiles: fixture.seatProfiles,
+        dependencies: TableRuntimeDependencies(
+            nextHandID: { try HandID("animation-sequence-hand") },
+            nextBusinessID: { purpose in try BusinessID("\(purpose)-animation-sequence") },
+            nextSeed: { 7 },
+            sleep: { _ in await recorder.capture() },
+            reduceMotion: true
+        )
+    )
+    recorder.coordinator = coordinator
+
+    try await coordinator.startHand(settings: .recommended)
+
+    let publications = recorder.publications
+    #expect(publications.count >= 2)
+    #expect(publications.map(\.sequence) == Array(1...publications.count))
+    #expect(Set(publications.map(\.stateVersion)).count == 1)
+    #expect(hasRepeatedEvent(in: publications.map(\.event)))
+}
+
+private func hasRepeatedEvent(in events: [TableAnimationEvent]) -> Bool {
+    for first in events.indices {
+        for second in events.indices where second > first {
+            if events[first] == events[second] { return true }
+        }
+    }
+    return false
+}
+
 @Test @MainActor func 开局展示失败后暂停且恢复不重复开局() async throws {
     let fixture = try CoordinatorStoreFixture.readyWithBustedBot()
     let balanceBefore = fixture.store.accountBalance
