@@ -8,11 +8,13 @@ import PokerCore
     let observation = try BotObservation(
         handID: "hand-1",
         stateVersion: 7,
+        config: makeConfig(),
         observation: source
     )
 
     #expect(observation.handID == "hand-1")
     #expect(observation.stateVersion == 7)
+    #expect(observation.config == makeConfig())
     #expect(observation.viewer == source.viewer)
     #expect(observation.ownHoleCards == source.ownHoleCards)
     #expect(observation.communityCards == source.communityCards)
@@ -26,14 +28,31 @@ import PokerCore
     let waiting = try makePlayerObservation(hasLegalActions: false)
 
     #expect(throws: BotError.invalidObservation) {
-        try BotObservation(handID: " ", stateVersion: 0, observation: acting)
+        try BotObservation(
+            handID: " ", stateVersion: 0,
+            config: makeConfig(), observation: acting
+        )
     }
     #expect(throws: BotError.invalidObservation) {
-        try BotObservation(handID: "hand-1", stateVersion: -1, observation: acting)
+        try BotObservation(
+            handID: "hand-1", stateVersion: -1,
+            config: makeConfig(), observation: acting
+        )
     }
     #expect(throws: BotError.invalidObservation) {
-        try BotObservation(handID: "hand-1", stateVersion: 0, observation: waiting)
+        try BotObservation(
+            handID: "hand-1", stateVersion: 0,
+            config: makeConfig(), observation: waiting
+        )
     }
+}
+
+private func makeConfig() -> HandConfig {
+    try! HandConfig(
+        smallBlind: Chips(rawValue: 50)!,
+        bigBlind: Chips(rawValue: 100)!,
+        dealer: SeatID(rawValue: 1)!
+    )
 }
 
 private func makePlayerObservation(hasLegalActions: Bool) throws -> PlayerObservation {

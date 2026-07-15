@@ -4,6 +4,7 @@ import PokerCore
 public struct BotObservation: Codable, Equatable, Sendable {
     public let handID: String
     public let stateVersion: Int
+    public let config: HandConfig
     public let viewer: SeatID
     public let ownHoleCards: [Card]
     public let communityCards: [Card]
@@ -18,6 +19,7 @@ public struct BotObservation: Codable, Equatable, Sendable {
     public init(
         handID: String,
         stateVersion: Int,
+        config: HandConfig,
         observation: PlayerObservation
     ) throws {
         guard !handID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -43,6 +45,7 @@ public struct BotObservation: Codable, Equatable, Sendable {
 
         self.handID = handID
         self.stateVersion = stateVersion
+        self.config = config
         viewer = observation.viewer
         ownHoleCards = observation.ownHoleCards
         communityCards = observation.communityCards

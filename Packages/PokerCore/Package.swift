@@ -22,5 +22,6 @@ let package = Package(
         .testTarget(name: "PokerSessionTests", dependencies: ["PokerSession", "PokerCore"]),
         .testTarget(name: "PokerSessionPublicAPITests", dependencies: ["PokerSession", "PokerCore"]),
         .testTarget(name: "PokerBotTests", dependencies: ["PokerBot", "PokerCore"]),
+        .testTarget(name: "PokerBotPublicAPITests", dependencies: ["PokerBot", "PokerCore"]),
     ]
 )
