@@ -264,9 +264,18 @@ public final class CashTableCoordinator {
               let settings = frozenSettings,
               session.phase == .handInProgress,
               session.currentActor == actor,
-              actor != humanSeat,
-              let player = try? store.playerObservation(for: actor)
+              actor != humanSeat
         else { return }
+
+        let player: PlayerObservation
+        do {
+            player = try Self.requireBotPlayerObservation(
+                store.playerObservation(for: actor)
+            )
+        } catch {
+            showBotError()
+            return
+        }
 
         let version = stateVersion
         let observation: BotObservation
@@ -319,7 +328,10 @@ public final class CashTableCoordinator {
         if let decision {
             guard decision.handID == handID.rawValue,
                   decision.stateVersion == version
-            else { return }
+            else {
+                showBotError()
+                return
+            }
             action = decision.action
         } else {
             let latest = try? store.playerObservation(for: actor)
@@ -516,6 +528,15 @@ public final class CashTableCoordinator {
             throw PokerCoordinatorError.chipArithmeticOverflow
         }
         return target
+    }
+
+    nonisolated package static func requireBotPlayerObservation(
+        _ observation: PlayerObservation?
+    ) throws -> PlayerObservation {
+        guard let observation else {
+            throw PokerCoordinatorError.missingObservation
+        }
+        return observation
     }
 }
 

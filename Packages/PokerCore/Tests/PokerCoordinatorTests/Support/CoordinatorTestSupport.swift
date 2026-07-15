@@ -642,8 +642,10 @@ actor SuspendedBotDecisionService: BotDecisionServing {
     private var request: BotDecisionRequest?
     private var continuation: CheckedContinuation<BotDecision?, Never>?
     private var cancelledHands: [String] = []
+    private var receivedRequests = 0
 
     func decide(_ request: BotDecisionRequest) async -> BotDecision? {
+        receivedRequests += 1
         self.request = request
         return await withCheckedContinuation { continuation = $0 }
     }
@@ -658,6 +660,10 @@ actor SuspendedBotDecisionService: BotDecisionServing {
 
     func waitUntilCancelled() async {
         while cancelledHands.isEmpty { await Task.yield() }
+    }
+
+    func requestCount() -> Int {
+        receivedRequests
     }
 
     func resume(
