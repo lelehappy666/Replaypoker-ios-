@@ -36,7 +36,8 @@ import Testing
 
     for seed in 0..<1_000 {
         let observation = try makeSimulationObservation(
-            legalActions: legalActionVariants[seed % legalActionVariants.count]
+            legalActions: legalActionVariants[seed % legalActionVariants.count],
+            stateVersion: seed
         )
         let value = seed % 101
         let settings = try decisionSettings(

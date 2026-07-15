@@ -34,6 +34,16 @@ final class BotSettingsRepositoryTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: repository.fileURL), damaged)
     }
 
+    func test损坏文件只有显式恢复后才会写入推荐设置() throws {
+        let directory = try SettingsTemporaryDirectory()
+        let repository = BotSettingsRepository(directory: directory.url)
+        try Data("损坏".utf8).write(to: repository.fileURL)
+        XCTAssertThrowsError(try repository.load())
+
+        XCTAssertEqual(try repository.restoreRecommended(), .recommended)
+        XCTAssertEqual(try repository.load(), .recommended)
+    }
+
     func test失败写入保留旧设置() throws {
         let directory = try SettingsTemporaryDirectory()
         let initial = BotSettingsRepository(directory: directory.url)

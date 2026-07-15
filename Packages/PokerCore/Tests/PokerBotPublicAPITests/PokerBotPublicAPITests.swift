@@ -24,6 +24,7 @@ private enum HiddenInformationProbe: String, CaseIterable {
     case opponentCards = "_ = botObservation.opponentHoleCards"
     case checkpoint = "let _: HoldemCheckpoint.Type = HoldemCheckpoint.self"
     case explicitSeed = "_ = try BotObservation(handID: \"hand\", stateVersion: 0, config: config, observation: playerObservation, seed: 7)"
+    case historyHoleCards = "_ = historySummary.holeCards"
 }
 
 private func expectTypecheckFailure(_ probe: HiddenInformationProbe) throws {
@@ -40,6 +41,11 @@ private func expectTypecheckFailure(_ probe: HiddenInformationProbe) throws {
     func unavailablePlayerObservation() -> PlayerObservation { fatalError() }
     let botObservation = unavailableObservation()
     let playerObservation = unavailablePlayerObservation()
+    let historySummary = BotHistorySummary(
+        sampleCount: 1,
+        opponentFoldBasisPoints: 0,
+        opponentAggressionBasisPoints: 0
+    )
     let config = try HandConfig(
         smallBlind: try Chips(10),
         bigBlind: try Chips(20),
