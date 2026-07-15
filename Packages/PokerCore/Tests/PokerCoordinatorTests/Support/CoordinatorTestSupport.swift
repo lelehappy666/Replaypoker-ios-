@@ -225,7 +225,6 @@ actor ManualTableClock {
 
     private var now: Int64 = 0
     private var waiters: [UUID: Waiter] = [:]
-    private var cancellationVersion = 0
     private let onWaiterRegistered: @Sendable (ManualTableClock) -> Void
     private let advanceImmediatelyOnRegistration: Bool
 
@@ -271,34 +270,28 @@ actor ManualTableClock {
         waiters.count
     }
 
+    func waitUntilIdle() async {
+        while !waiters.isEmpty { await Task.yield() }
+    }
+
     func advance(by duration: Duration) async {
         let seconds = max(0, duration.components.seconds)
-        for _ in 0..<4 { await Task.yield() }
-        for tick in 0..<seconds {
-            let hadWaiter = !waiters.isEmpty
-            let cancellationBeforeTick = cancellationVersion
-            now += 1
-            let due = waiters.filter { $0.value.deadline <= now }
-            for (id, waiter) in due {
-                waiters.removeValue(forKey: id)
-                waiter.continuation.resume()
-            }
-            if hadWaiter, tick < seconds - 1 {
-                await waitUntilScheduledOrCancelled(after: cancellationBeforeTick)
-            }
+        for _ in 0..<seconds {
+            advanceOneSecond()
         }
-        await Task.yield()
+    }
+
+    func advanceOneSecond() {
+        now += 1
+        let due = waiters.filter { $0.value.deadline <= now }
+        for (id, waiter) in due {
+            waiters.removeValue(forKey: id)
+            waiter.continuation.resume()
+        }
     }
 
     private func cancel(_ id: UUID) {
-        cancellationVersion += 1
         waiters.removeValue(forKey: id)?.continuation.resume(throwing: CancellationError())
-    }
-
-    private func waitUntilScheduledOrCancelled(after version: Int) async {
-        while waiters.isEmpty, cancellationVersion == version {
-            await Task.yield()
-        }
     }
 }
 
@@ -348,6 +341,46 @@ final class CoordinatorScenario {
 
     deinit {
         try? FileManager.default.removeItem(at: directory)
+    }
+
+    static func readyToStartWithHumanFirst(
+        clock: ManualTableClock,
+        animationGate: ManualAnimationGate
+    ) throws -> CoordinatorScenario {
+        let directory = try makeTemporaryDirectory(named: "human-start-gate")
+        do {
+            let store = try makeSeatedStore(
+                directory: directory,
+                dealer: SeatID(6)
+            )
+            let humanSeat = try SeatID(0)
+            let dependencies = TableRuntimeDependencies(
+                nextHandID: { try HandID("human-start-gate-hand") },
+                nextBusinessID: { purpose in try BusinessID("\(purpose)-human-start-gate") },
+                nextSeed: { 23 },
+                sleep: { duration in
+                    if duration == .zero {
+                        await animationGate.sleepIfEnabled()
+                    } else {
+                        try await clock.sleep(for: duration)
+                    }
+                }
+            )
+            let coordinator = try CashTableCoordinator(
+                store: store,
+                humanSeat: humanSeat,
+                seatProfiles: try makeSeatProfiles(),
+                dependencies: dependencies
+            )
+            return CoordinatorScenario(
+                coordinator: coordinator,
+                store: store,
+                directory: directory
+            )
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            throw error
+        }
     }
 
     static func humanFacingRaise(

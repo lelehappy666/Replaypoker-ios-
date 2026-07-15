@@ -90,8 +90,14 @@ public final class CashTableCoordinator {
         )
         currentHandID = handID
         incrementStateVersion()
-        try await present(transition)
+        let operationVersion = stateVersion
+        guard try await present(
+            transition,
+            guardedBy: operationVersion
+        ) else { return }
+        guard isCurrentOperation(operationVersion) else { return }
         try refreshProjection()
+        guard isCurrentOperation(operationVersion) else { return }
         await scheduleCurrentActorIfReady()
     }
 
@@ -178,6 +184,7 @@ public final class CashTableCoordinator {
     private func scheduleCurrentActorIfReady() async {
         cancelCountdown()
         guard let handID = currentHandID,
+              state.phase != .suspended,
               store.cashSession?.phase == .handInProgress,
               store.cashSession?.currentActor == humanSeat
         else { return }
