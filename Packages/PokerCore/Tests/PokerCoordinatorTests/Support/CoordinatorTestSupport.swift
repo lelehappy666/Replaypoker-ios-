@@ -601,6 +601,19 @@ final class CoordinatorScenario {
         }
     }
 
+    static func botThinking() async throws -> CoordinatorLifecycleFixture {
+        let clock = ManualTableClock()
+        let botService = LifecycleBotDecisionService()
+        let scenario = try await botOpeningAction(botService: botService)
+        await botService.waitUntilRequestCount(1)
+        return CoordinatorLifecycleFixture(
+            scenario: scenario,
+            clock: clock,
+            botService: botService,
+            versionBeforeSuspend: scenario.coordinator.state.stateVersion
+        )
+    }
+
     static func pendingSettlement(
         repository: FailOnceSessionRepository,
         businessIDs: BusinessIDSequence = BusinessIDSequence(),
@@ -808,6 +821,34 @@ final class CoordinatorScenario {
     }
 }
 
+@MainActor
+final class CoordinatorLifecycleFixture {
+    let scenario: CoordinatorScenario
+    let clock: ManualTableClock
+    let botService: LifecycleBotDecisionService
+    let versionBeforeSuspend: Int
+
+    var coordinator: CashTableCoordinator {
+        scenario.coordinator
+    }
+
+    init(
+        scenario: CoordinatorScenario,
+        clock: ManualTableClock,
+        botService: LifecycleBotDecisionService,
+        versionBeforeSuspend: Int
+    ) {
+        self.scenario = scenario
+        self.clock = clock
+        self.botService = botService
+        self.versionBeforeSuspend = versionBeforeSuspend
+    }
+
+    func actionCount() throws -> Int {
+        try scenario.actionCount()
+    }
+}
+
 private func makeSeatedStore(
     repository: any SessionRepository
 ) throws -> LocalPokerStore {
@@ -979,6 +1020,47 @@ actor SuspendedBotDecisionService: BotDecisionServing {
             simulationIterations: 0
         ))
         continuation = nil
+    }
+}
+
+actor LifecycleBotDecisionService: BotDecisionServing {
+    private(set) var cancelCount = 0
+    private var requestCount = 0
+    private var activeCalls = 0
+    private var maximumCalls = 0
+    private var continuation: CheckedContinuation<BotDecision?, Never>?
+
+    func decide(_ request: BotDecisionRequest) async -> BotDecision? {
+        requestCount += 1
+        activeCalls += 1
+        maximumCalls = max(maximumCalls, activeCalls)
+        let decision = await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+        activeCalls -= 1
+        return decision
+    }
+
+    func cancel(handID: String) async {
+        cancelCount += 1
+        continuation?.resume(returning: nil)
+        continuation = nil
+    }
+
+    func waitUntilCancelled() async {
+        while cancelCount == 0 { await Task.yield() }
+    }
+
+    func waitUntilIdle() async {
+        while activeCalls != 0 { await Task.yield() }
+    }
+
+    func waitUntilRequestCount(_ expectedCount: Int) async {
+        while requestCount < expectedCount { await Task.yield() }
+    }
+
+    func maximumConcurrentCalls() -> Int {
+        maximumCalls
     }
 }
 
