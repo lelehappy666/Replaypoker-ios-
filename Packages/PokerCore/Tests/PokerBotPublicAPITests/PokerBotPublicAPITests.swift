@@ -5,6 +5,13 @@ import Testing
 
 @Test func 普通导入只能使用安全机器人接口() throws {
     #expect(BotSettings.recommended.model == .balanced)
+    _ = BotDecisionEngine()
+    _ = BotDecisionService()
+    _ = BotHistorySummary(
+        sampleCount: 0,
+        opponentFoldBasisPoints: 0,
+        opponentAggressionBasisPoints: 0
+    )
 
     for probe in HiddenInformationProbe.allCases {
         try expectTypecheckFailure(probe)

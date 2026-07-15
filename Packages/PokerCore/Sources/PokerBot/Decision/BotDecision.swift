@@ -4,6 +4,8 @@ public enum BotDecisionReason: String, Codable, Equatable, Sendable {
     case ruleEvaluation
     case simulatedEquity
     case adaptiveHistory
+    case fallbackTimeout
+    case fallbackError
 }
 
 public struct BotDecision: Codable, Equatable, Sendable {
