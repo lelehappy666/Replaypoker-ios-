@@ -1,4 +1,5 @@
 import Foundation
+import PokerBot
 import PokerCore
 import PokerSession
 import Testing
@@ -476,6 +477,68 @@ final class CoordinatorScenario {
         ) { _, _ in }
     }
 
+    static func botOpeningAction(
+        botService: any BotDecisionServing,
+        seed: UInt64 = 31
+    ) async throws -> CoordinatorScenario {
+        let directory = try makeTemporaryDirectory(named: "bot-opening-action")
+        do {
+            let store = try makeSeatedStore(
+                directory: directory,
+                dealer: SeatID(0)
+            )
+            let coordinator = try CashTableCoordinator(
+                store: store,
+                humanSeat: SeatID(0),
+                seatProfiles: try makeSeatProfiles(),
+                dependencies: TableRuntimeDependencies(
+                    nextHandID: { try HandID("bot-hand-\(seed)") },
+                    nextBusinessID: { purpose in
+                        try BusinessID("\(purpose)-bot-\(seed)")
+                    },
+                    nextSeed: { seed },
+                    sleep: { _ in }
+                ),
+                botService: botService
+            )
+            try await coordinator.startHand(settings: .recommended)
+            return CoordinatorScenario(
+                coordinator: coordinator,
+                store: store,
+                directory: directory
+            )
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            throw error
+        }
+    }
+
+    func actionCount() throws -> Int {
+        try #require(try store.humanObservation()).actions.count
+    }
+
+    func playDeterministicallyToSettlement() async throws {
+        var remainingSteps = 300
+        while store.cashSession?.phase == .handInProgress, remainingSteps > 0 {
+            remainingSteps -= 1
+            try await coordinator.runUntilHumanOrSettlement()
+            guard store.cashSession?.phase == .handInProgress else { break }
+            let observation = try #require(try store.humanObservation())
+            guard observation.currentActor == observation.viewer,
+                  let legal = observation.legalActions
+            else {
+                await Task.yield()
+                continue
+            }
+            if legal.canCheck || legal.callAmount != nil {
+                try await coordinator.send(.middle)
+            } else {
+                try await coordinator.send(.fold)
+            }
+        }
+        #expect(remainingSteps > 0)
+    }
+
     private static func make(
         clock: ManualTableClock,
         dealer: SeatID,
@@ -524,6 +587,108 @@ final class CoordinatorScenario {
             try? FileManager.default.removeItem(at: directory)
             throw error
         }
+    }
+}
+
+actor RecordingBotDecisionService: BotDecisionServing {
+    private var recordedRequests: [BotDecisionRequest] = []
+    private var returnedActions: [PlayerAction] = []
+    private var activeCalls = 0
+    private var maximumCalls = 0
+
+    func decide(_ request: BotDecisionRequest) async -> BotDecision? {
+        activeCalls += 1
+        maximumCalls = max(maximumCalls, activeCalls)
+        recordedRequests.append(request)
+        defer { activeCalls -= 1 }
+        await Task.yield()
+        let legal = request.observation.legalActions
+        let action: PlayerAction
+        if legal.canCheck {
+            action = .check
+        } else if legal.callAmount != nil {
+            action = .call
+        } else if legal.canFold {
+            action = .fold
+        } else {
+            return nil
+        }
+        returnedActions.append(action)
+        return BotDecision(
+            action: action,
+            handID: request.observation.handID,
+            stateVersion: request.observation.stateVersion,
+            reason: .ruleEvaluation,
+            simulationIterations: 0
+        )
+    }
+
+    func cancel(handID: String) async {}
+
+    func requests() -> [BotDecisionRequest] {
+        recordedRequests
+    }
+
+    func maximumConcurrentCalls() -> Int {
+        maximumCalls
+    }
+
+    func actions() -> [PlayerAction] {
+        returnedActions
+    }
+}
+
+actor SuspendedBotDecisionService: BotDecisionServing {
+    private var request: BotDecisionRequest?
+    private var continuation: CheckedContinuation<BotDecision?, Never>?
+    private var cancelledHands: [String] = []
+
+    func decide(_ request: BotDecisionRequest) async -> BotDecision? {
+        self.request = request
+        return await withCheckedContinuation { continuation = $0 }
+    }
+
+    func cancel(handID: String) async {
+        cancelledHands.append(handID)
+    }
+
+    func waitUntilRequested() async {
+        while request == nil { await Task.yield() }
+    }
+
+    func waitUntilCancelled() async {
+        while cancelledHands.isEmpty { await Task.yield() }
+    }
+
+    func resume(
+        with action: PlayerAction,
+        stateVersion: Int,
+        handID: String? = nil
+    ) {
+        guard let request else { return }
+        continuation?.resume(returning: BotDecision(
+            action: action,
+            handID: handID ?? request.observation.handID,
+            stateVersion: stateVersion,
+            reason: .ruleEvaluation,
+            simulationIterations: 0
+        ))
+        continuation = nil
+    }
+}
+
+actor NilBotDecisionService: BotDecisionServing {
+    private var recordedRequests: [BotDecisionRequest] = []
+
+    func decide(_ request: BotDecisionRequest) async -> BotDecision? {
+        recordedRequests.append(request)
+        return nil
+    }
+
+    func cancel(handID: String) async {}
+
+    func requests() -> [BotDecisionRequest] {
+        recordedRequests
     }
 }
 

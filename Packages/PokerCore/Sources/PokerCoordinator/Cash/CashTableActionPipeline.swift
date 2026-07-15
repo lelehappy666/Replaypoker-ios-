@@ -1,6 +1,12 @@
 import PokerCore
 
 enum CashTableActionPipeline {
+    static func fallbackAction(for legal: LegalActionSet) -> PlayerAction? {
+        if legal.canCheck { return .check }
+        if legal.canFold { return .fold }
+        return nil
+    }
+
     static func action(
         for intent: TableIntent,
         legalActions legal: LegalActionSet

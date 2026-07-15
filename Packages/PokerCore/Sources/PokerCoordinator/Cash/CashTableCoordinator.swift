@@ -13,15 +13,33 @@ public final class CashTableCoordinator {
     private let humanSeat: SeatID
     private let seatProfiles: [TableSeatProfile]
     private let dependencies: TableRuntimeDependencies
+    private let botService: any BotDecisionServing
     private var currentHandID: HandID?
     private var stateVersion = 0
     private nonisolated let countdownTask = CountdownTaskBox()
+    private nonisolated let botTask = BotTaskBox()
 
-    public init(
+    public convenience init(
         store: LocalPokerStore,
         humanSeat: SeatID,
         seatProfiles: [TableSeatProfile],
         dependencies: TableRuntimeDependencies
+    ) throws {
+        try self.init(
+            store: store,
+            humanSeat: humanSeat,
+            seatProfiles: seatProfiles,
+            dependencies: dependencies,
+            botService: BotDecisionService()
+        )
+    }
+
+    package init(
+        store: LocalPokerStore,
+        humanSeat: SeatID,
+        seatProfiles: [TableSeatProfile],
+        dependencies: TableRuntimeDependencies,
+        botService: any BotDecisionServing
     ) throws {
         guard let session = store.cashSession else {
             throw PokerCoordinatorError.missingObservation
@@ -69,11 +87,13 @@ public final class CashTableCoordinator {
         self.humanSeat = humanSeat
         self.seatProfiles = seatProfiles
         self.dependencies = dependencies
+        self.botService = botService
         state = initialState
     }
 
     deinit {
         countdownTask.cancel()
+        botTask.cancel()
     }
 
     public func startHand(settings: BotSettings) async throws {
@@ -120,8 +140,18 @@ public final class CashTableCoordinator {
 
     public func suspend() {
         cancelCountdown()
+        cancelBotDecision()
         incrementStateVersion()
         state = replacingState(phase: .suspended, secondsRemaining: nil)
+    }
+
+    package func runUntilHumanOrSettlement() async throws {
+        while store.cashSession?.phase == .handInProgress,
+              store.cashSession?.currentActor != humanSeat,
+              state.phase != .suspended,
+              state.errorMessage == nil {
+            await Task.yield()
+        }
     }
 
     private func refillBustedBotsToOneHundredBigBlinds() throws {
@@ -186,8 +216,13 @@ public final class CashTableCoordinator {
         guard let handID = currentHandID,
               state.phase != .suspended,
               store.cashSession?.phase == .handInProgress,
-              store.cashSession?.currentActor == humanSeat
+              let actor = store.cashSession?.currentActor
         else { return }
+
+        if actor != humanSeat {
+            scheduleBotDecision(for: actor, handID: handID)
+            return
+        }
 
         let version = stateVersion
         do {
@@ -221,6 +256,116 @@ public final class CashTableCoordinator {
             }
         }
         countdownTask.replace(with: task)
+    }
+
+    private func scheduleBotDecision(for actor: SeatID, handID: HandID) {
+        guard let session = store.cashSession,
+              let config = store.activeCashConfig,
+              let settings = frozenSettings,
+              session.phase == .handInProgress,
+              session.currentActor == actor,
+              actor != humanSeat,
+              let player = try? store.playerObservation(for: actor)
+        else { return }
+
+        let version = stateVersion
+        let observation: BotObservation
+        do {
+            observation = try BotObservation(
+                handID: handID.rawValue,
+                stateVersion: version,
+                config: config,
+                observation: player
+            )
+        } catch {
+            showBotError()
+            return
+        }
+        let request = BotDecisionRequest(
+            observation: observation,
+            settings: settings,
+            stableIdentity: "cash:\(session.id.rawValue):seat:\(actor.rawValue)",
+            seed: dependencies.nextSeed(),
+            history: nil
+        )
+        let service = botService
+        let task = Task { @MainActor [weak self, service] in
+            let decision = await service.decide(request)
+            guard !Task.isCancelled else { return }
+            await self?.handleBotDecision(
+                decision,
+                actor: actor,
+                handID: handID,
+                stateVersion: version
+            )
+        }
+        botTask.replace(with: task)
+    }
+
+    private func handleBotDecision(
+        _ decision: BotDecision?,
+        actor: SeatID,
+        handID: HandID,
+        stateVersion version: Int
+    ) async {
+        guard currentHandID == handID,
+              stateVersion == version,
+              state.phase != .suspended,
+              store.cashSession?.phase == .handInProgress,
+              store.cashSession?.currentActor == actor
+        else { return }
+
+        let action: PlayerAction?
+        if let decision {
+            guard decision.handID == handID.rawValue,
+                  decision.stateVersion == version
+            else { return }
+            action = decision.action
+        } else {
+            let latest = try? store.playerObservation(for: actor)
+            action = latest?.legalActions.flatMap(
+                CashTableActionPipeline.fallbackAction
+            )
+        }
+        guard let action else {
+            showBotError()
+            return
+        }
+
+        do {
+            try await applyBotAction(
+                action,
+                actor: actor,
+                handID: handID,
+                stateVersion: version
+            )
+        } catch {
+            showBotError()
+        }
+    }
+
+    private func applyBotAction(
+        _ action: PlayerAction,
+        actor: SeatID,
+        handID: HandID,
+        stateVersion version: Int
+    ) async throws {
+        guard currentHandID == handID,
+              stateVersion == version,
+              store.cashSession?.currentActor == actor
+        else { return }
+        let transition = try store.apply(action, by: actor)
+        botTask.clear()
+        incrementStateVersion()
+        var operationVersion = stateVersion
+        guard try await present(transition, guardedBy: operationVersion) else { return }
+        guard isCurrentOperation(operationVersion) else { return }
+        try refreshProjection()
+        guard try await advanceCompletedRounds(
+            operationVersion: &operationVersion
+        ) else { return }
+        guard isCurrentOperation(operationVersion) else { return }
+        await scheduleCurrentActorIfReady()
     }
 
     private func handleCountdownTick(
@@ -320,6 +465,30 @@ public final class CashTableCoordinator {
         countdownTask.cancel()
     }
 
+    private func cancelBotDecision() {
+        botTask.cancel()
+        guard let handID = currentHandID?.rawValue else { return }
+        let service = botService
+        Task { await service.cancel(handID: handID) }
+    }
+
+    private func showBotError() {
+        botTask.clear()
+        state = TableViewState(
+            handID: state.handID,
+            stateVersion: stateVersion,
+            phase: state.phase,
+            seats: state.seats,
+            communityCards: state.communityCards,
+            pot: state.pot,
+            controls: nil,
+            secondsRemaining: nil,
+            winners: state.winners,
+            errorMessage: "机器人行动失败，请重试。",
+            animation: state.animation
+        )
+    }
+
     private func replacingState(
         phase: TableFlowPhase? = nil,
         secondsRemaining: Int?
@@ -357,6 +526,28 @@ private enum CountdownTickResult {
 }
 
 private final class CountdownTaskBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: Task<Void, Never>?
+
+    func replace(with newTask: Task<Void, Never>?) {
+        let oldTask = lock.withLock {
+            let oldTask = task
+            task = newTask
+            return oldTask
+        }
+        oldTask?.cancel()
+    }
+
+    func cancel() {
+        replace(with: nil)
+    }
+
+    func clear() {
+        lock.withLock { task = nil }
+    }
+}
+
+private final class BotTaskBox: @unchecked Sendable {
     private let lock = NSLock()
     private var task: Task<Void, Never>?
 
