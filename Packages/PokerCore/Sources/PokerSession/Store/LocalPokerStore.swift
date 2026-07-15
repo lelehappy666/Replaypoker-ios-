@@ -58,6 +58,33 @@ public final class LocalPokerStore {
         try committed.activeCashSession?.playerObservation(for: seat)
     }
 
+    package func refillBotSeat(_ seat: SeatID, to target: Chips) throws {
+        try transact { state in
+            guard var session = state.activeCashSession,
+                  seat != session.humanSeat,
+                  let current = session.stacks[seat],
+                  current.rawValue == 0,
+                  target.rawValue > 0 else {
+                throw PokerSessionError.invalidTable
+            }
+            try session.addChips(
+                try Chips(target.rawValue - current.rawValue),
+                to: seat
+            )
+            state.activeCashSession = session
+        }
+    }
+
+    package var pendingShowdownObservation: CashShowdownObservation? {
+        committed.activeCashSession?.pendingHand.map {
+            CashShowdownObservation(record: $0.record)
+        }
+    }
+
+    package var activeCashConfig: HandConfig? {
+        committed.activeCashSession?.config
+    }
+
     public func humanObservation() throws -> PlayerObservation? {
         guard let session = committed.activeCashSession else { return nil }
         return try session.playerObservation(for: session.humanSeat)
