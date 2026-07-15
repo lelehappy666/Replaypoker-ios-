@@ -97,7 +97,8 @@ func makeSimulationObservation(
     ownCards: String = #"[{"rank":14,"suit":3},{"rank":13,"suit":2}]"#,
     communityCards: String = #"[{"rank":2,"suit":0},{"rank":7,"suit":1},{"rank":10,"suit":2}]"#,
     street: Int = 1,
-    seatTwoID: Int = 2
+    seatTwoID: Int = 2,
+    legalActions: String = #"{"canFold":true,"canCheck":false,"callAmount":100,"minimumBet":null,"minimumRaiseTo":400,"maximumRaiseTo":1000,"canAllIn":true}"#
 ) throws -> BotObservation {
     let json = """
     {
@@ -112,7 +113,7 @@ func makeSimulationObservation(
         "currentActor":0,
         "street":\(street),
         "currentBet":200,
-        "legalActions":{"canFold":true,"canCheck":false,"callAmount":100,"minimumBet":null,"minimumRaiseTo":400,"maximumRaiseTo":1000,"canAllIn":true},
+        "legalActions":\(legalActions),
         "actions":[]
     }
     """
