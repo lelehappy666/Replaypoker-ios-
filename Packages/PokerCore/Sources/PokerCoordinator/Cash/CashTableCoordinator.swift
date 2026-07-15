@@ -95,11 +95,7 @@ public final class CashTableCoordinator {
         else {
             throw PokerCoordinatorError.chipArithmeticOverflow
         }
-        let (rawTarget, overflow) = config.bigBlind.rawValue
-            .multipliedReportingOverflow(by: 100)
-        guard !overflow, let target = Chips(rawValue: rawTarget) else {
-            throw PokerCoordinatorError.chipArithmeticOverflow
-        }
+        let target = try Self.oneHundredBigBlindBotTarget(for: config.bigBlind)
 
         for seat in session.seats where seat.id != humanSeat && seat.stack.rawValue == 0 {
             try store.refillBotSeat(seat.id, to: target)
@@ -145,4 +141,14 @@ public final class CashTableCoordinator {
     }
 
     private func scheduleCurrentActorIfReady() async {}
+
+    nonisolated package static func oneHundredBigBlindBotTarget(
+        for bigBlind: Chips
+    ) throws -> Chips {
+        let (rawTarget, overflow) = bigBlind.rawValue.multipliedReportingOverflow(by: 100)
+        guard !overflow, let target = Chips(rawValue: rawTarget) else {
+            throw PokerCoordinatorError.chipArithmeticOverflow
+        }
+        return target
+    }
 }

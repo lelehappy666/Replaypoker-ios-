@@ -96,13 +96,18 @@ final class CoordinatorStoreFixture {
         try? FileManager.default.removeItem(at: directory)
     }
 
-    static func finishedHandWithBustedBot() throws -> CoordinatorStoreFixture {
+    static func finishedHandWithBustedBot(
+        smallBlind: Int = 50,
+        bigBlind: Int = 100
+    ) throws -> CoordinatorStoreFixture {
         let directory = try makeTemporaryDirectory(named: "finished-busted-bot")
         do {
             let lowStackBot = try SeatID(1)
             let store = try makeSeatedStore(
                 directory: directory,
-                botStackOverrides: [lowStackBot: try Chips(1)]
+                botStackOverrides: [lowStackBot: try Chips(1)],
+                smallBlind: smallBlind,
+                bigBlind: bigBlind
             )
             try playToShowdown(in: store, foldedSeat: nil, seed: 7)
             let record = try pendingRecord(in: directory)
@@ -158,8 +163,11 @@ final class CoordinatorStoreFixture {
         }
     }
 
-    static func readyWithBustedBot() throws -> CoordinatorStoreFixture {
-        try finishedHandWithBustedBot()
+    static func readyWithBustedBot(
+        smallBlind: Int = 50,
+        bigBlind: Int = 100
+    ) throws -> CoordinatorStoreFixture {
+        try finishedHandWithBustedBot(smallBlind: smallBlind, bigBlind: bigBlind)
     }
 }
 
@@ -179,7 +187,9 @@ private func makeTemporaryDirectory(named name: String) throws -> URL {
 
 private func makeSeatedStore(
     directory: URL,
-    botStackOverrides: [SeatID: Chips] = [:]
+    botStackOverrides: [SeatID: Chips] = [:],
+    smallBlind: Int = 50,
+    bigBlind: Int = 100
 ) throws -> LocalPokerStore {
     let humanSeat = try SeatID(0)
     let stacks = try Dictionary(uniqueKeysWithValues: (0..<9).map { rawSeat in
@@ -191,8 +201,8 @@ private func makeSeatedStore(
         sessionID: try SessionID("coordinator-session"),
         table: try TableID("coordinator-table"),
         config: try HandConfig(
-            smallBlind: try Chips(50),
-            bigBlind: try Chips(100),
+            smallBlind: try Chips(smallBlind),
+            bigBlind: try Chips(bigBlind),
             dealer: humanSeat
         ),
         humanSeat: humanSeat,
