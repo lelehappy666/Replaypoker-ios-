@@ -63,6 +63,8 @@ func makeSafeTableViewState() throws -> TableViewState {
 
 final class CoordinatorStoreFixture {
     let store: LocalPokerStore
+    let humanSeat: SeatID
+    let seatProfiles: [TableSeatProfile]
     let bustedBot: SeatID
     let showdownSeat: SeatID
     let foldedSeat: SeatID
@@ -72,6 +74,8 @@ final class CoordinatorStoreFixture {
 
     private init(
         store: LocalPokerStore,
+        humanSeat: SeatID,
+        seatProfiles: [TableSeatProfile],
         bustedBot: SeatID,
         showdownSeat: SeatID,
         foldedSeat: SeatID,
@@ -79,6 +83,8 @@ final class CoordinatorStoreFixture {
         directory: URL
     ) {
         self.store = store
+        self.humanSeat = humanSeat
+        self.seatProfiles = seatProfiles
         self.bustedBot = bustedBot
         self.showdownSeat = showdownSeat
         self.foldedSeat = foldedSeat
@@ -112,6 +118,8 @@ final class CoordinatorStoreFixture {
             )
             return CoordinatorStoreFixture(
                 store: store,
+                humanSeat: humanSeat,
+                seatProfiles: try makeSeatProfiles(),
                 bustedBot: bustedBot,
                 showdownSeat: showdownSeat,
                 foldedSeat: try SeatID(3),
@@ -136,6 +144,8 @@ final class CoordinatorStoreFixture {
             )
             return CoordinatorStoreFixture(
                 store: store,
+                humanSeat: try SeatID(0),
+                seatProfiles: try makeSeatProfiles(),
                 bustedBot: try SeatID(1),
                 showdownSeat: showdownSeat,
                 foldedSeat: foldedSeat,
@@ -146,6 +156,10 @@ final class CoordinatorStoreFixture {
             try? FileManager.default.removeItem(at: directory)
             throw error
         }
+    }
+
+    static func readyWithBustedBot() throws -> CoordinatorStoreFixture {
+        try finishedHandWithBustedBot()
     }
 }
 
@@ -190,6 +204,15 @@ private func makeSeatedStore(
         businessID: try BusinessID("coordinator-buy-in")
     )
     return store
+}
+
+private func makeSeatProfiles() throws -> [TableSeatProfile] {
+    try (0..<9).map { rawSeat in
+        try TableSeatProfile(
+            id: SeatID(rawSeat),
+            displayName: rawSeat == 0 ? "玩家" : "机器人 \(rawSeat)"
+        )
+    }
 }
 
 private func playToShowdown(
