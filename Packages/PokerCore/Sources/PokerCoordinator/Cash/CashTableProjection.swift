@@ -8,7 +8,8 @@ enum CashTableProjection {
         stateVersion: Int,
         humanSeat: SeatID,
         seatProfiles: [TableSeatProfile],
-        animation: TableAnimationEvent? = nil
+        animation: TableAnimationEvent? = nil,
+        secondsRemaining: Int? = nil
     ) throws -> TableViewState {
         guard let session = store.cashSession,
               let config = store.activeCashConfig,
@@ -77,7 +78,7 @@ enum CashTableProjection {
             communityCards: spectator.communityCards,
             pot: pot,
             controls: controls,
-            secondsRemaining: nil,
+            secondsRemaining: secondsRemaining,
             winners: [],
             errorMessage: nil,
             animation: animation
