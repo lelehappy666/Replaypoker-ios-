@@ -24,6 +24,25 @@ final class AppSessionTests: XCTestCase {
     }
 
     @MainActor
+    func testUITestStoreIDsAreIsolatedAndRejectUnsafePaths() throws {
+        let first = try AppSession.uiTestingStoreDirectory(storeID: "history-flow")
+        let second = try AppSession.uiTestingStoreDirectory(storeID: "core-flow")
+
+        XCTAssertNotEqual(first, second)
+        XCTAssertEqual(first.lastPathComponent, "history-flow")
+        XCTAssertEqual(second.lastPathComponent, "core-flow")
+        XCTAssertThrowsError(
+            try AppSession.uiTestingStoreDirectory(storeID: "../escape")
+        )
+        XCTAssertThrowsError(
+            try AppSession.uiTestingStoreDirectory(storeID: "含空格")
+        )
+        XCTAssertThrowsError(
+            try AppSession.uiTestingStoreDirectory(storeID: "-openHistory")
+        )
+    }
+
+    @MainActor
     func testGuestLoginOpensLobbyAndLogoutReturnsToLogin() throws {
         let session = try AppSessionFixture().session
         XCTAssertEqual(session.route, .login)

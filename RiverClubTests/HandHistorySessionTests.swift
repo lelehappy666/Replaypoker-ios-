@@ -71,6 +71,114 @@ final class HandHistorySessionTests: XCTestCase {
     }
 
     @MainActor
+    func testUserSelectedCustomDateKeepsTheCurrentTableFilter() throws {
+        let fixture = try HandHistoryAppFixture.withThreeRecords()
+        let table = try TableID("table-a")
+        fixture.session.updateHandHistoryFilters(
+            HandHistoryFilters(table: table, dateSelection: .all)
+        )
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(
+            TimeZone(secondsFromGMT: 8 * 60 * 60)
+        )
+        let selectedDate = try XCTUnwrap(
+            calendar.date(
+                from: DateComponents(year: 2027, month: 1, day: 12, hour: 12)
+            )
+        )
+
+        try fixture.session.selectCustomHandHistoryDate(
+            selectedDate,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(
+            fixture.session.handHistoryState.filters,
+            HandHistoryFilters(
+                table: table,
+                dateSelection: .custom(try LocalDay("2027-01-12"))
+            )
+        )
+        XCTAssertEqual(fixture.session.handHistoryState.items.map(\.handNumber), [2])
+    }
+
+    @MainActor
+    func testClosingDetailRestoresTheSameListScrollTarget() throws {
+        let fixture = try HandHistoryAppFixture.withThreeRecords()
+        fixture.session.loadHandHistory()
+        let target = try XCTUnwrap(
+            fixture.session.handHistoryState.items.last?.id
+        )
+        fixture.session.updateHandHistoryScrollTarget(target)
+
+        fixture.session.selectHandHistory(id: target)
+        fixture.session.closeHandHistoryDetail()
+
+        XCTAssertNil(fixture.session.handHistoryState.selection)
+        XCTAssertEqual(
+            fixture.session.handHistoryState.listScrollTarget,
+            target
+        )
+    }
+
+    @MainActor
+    func testChangingFiltersResetsTheSavedListScrollTarget() throws {
+        let fixture = try HandHistoryAppFixture.withThreeRecords()
+        fixture.session.loadHandHistory()
+        let target = try XCTUnwrap(
+            fixture.session.handHistoryState.items.last?.id
+        )
+        fixture.session.updateHandHistoryScrollTarget(target)
+
+        fixture.session.updateHandHistoryFilters(
+            HandHistoryFilters(
+                table: try TableID("table-a"),
+                dateSelection: .all
+            )
+        )
+
+        XCTAssertNil(fixture.session.handHistoryState.listScrollTarget)
+    }
+
+    @MainActor
+    func testDeleteAllAvailabilityUsesSuccessfulGlobalLoadNotFilteredItems() throws {
+        let fixture = try HandHistoryAppFixture.withThreeRecords()
+        fixture.session.updateHandHistoryFilters(
+            HandHistoryFilters(
+                dateSelection: .custom(try LocalDay("2030-01-01"))
+            )
+        )
+
+        XCTAssertTrue(fixture.session.handHistoryState.items.isEmpty)
+        XCTAssertTrue(fixture.session.handHistoryState.canDeleteAll)
+    }
+
+    @MainActor
+    func testDeleteAllIsDisabledForLoadingFailureAndNoGlobalRecords() throws {
+        let fixture = try HandHistoryAppFixture.withThreeRecords()
+        fixture.session.loadHandHistory()
+        XCTAssertTrue(fixture.session.handHistoryState.canDeleteAll)
+
+        var dependencies = AppSessionDependencies.live
+        dependencies.loadHandRecords = { _, _ in
+            throw PokerSessionError.persistenceFailed
+        }
+        let failing = AppSession(
+            pokerStore: fixture.store,
+            botSettingsRepository: MemoryBotSettingsRepository(
+                initial: .recommended
+            ),
+            dependencies: dependencies
+        )
+        failing.loadHandHistory()
+        XCTAssertFalse(failing.handHistoryState.canDeleteAll)
+
+        try fixture.store.deleteAllHands(confirmation: .confirmed)
+        fixture.session.loadHandHistory()
+        XCTAssertFalse(fixture.session.handHistoryState.canDeleteAll)
+    }
+
+    @MainActor
     func testSingleDeleteRequiresConfirmationAndPreservesEconomyState() throws {
         let fixture = try HandHistoryAppFixture.withThreeRecords()
         fixture.session.loadHandHistory()

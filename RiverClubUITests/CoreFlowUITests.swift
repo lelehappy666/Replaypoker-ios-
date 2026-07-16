@@ -10,6 +10,8 @@ final class CoreFlowUITests: XCTestCase {
             "-uiTesting",
             "-uiTestingImmediatePoker",
             "-resetHistoryStore",
+            "-uiTestingStoreID",
+            "core-flow-complete-next",
         ]
         app.launch()
 

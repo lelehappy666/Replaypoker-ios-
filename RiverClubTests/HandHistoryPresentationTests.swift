@@ -90,6 +90,84 @@ final class HandHistoryPresentationTests: XCTestCase {
         XCTAssertEqual(item.humanChipDelta, record.record.chipDeltas[metadata.humanSeat])
     }
 
+    func testListItemExposesBlindsExactCompletionTimeAndAllocatedPotTotal() throws {
+        let record = try makeHistoryRecord(
+            archiveMetadata: try makePresentationArchiveMetadata()
+        )
+        let timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 8 * 60 * 60))
+
+        let item = try HandHistoryPresentation.listItem(
+            from: record,
+            timeZone: timeZone
+        )
+
+        XCTAssertEqual(item.blindsText, "小盲 50 · 大盲 100")
+        XCTAssertEqual(item.completedAtText, "1970-01-01 08:17:40")
+        XCTAssertEqual(
+            item.allocatedPotTotal,
+            try Chips(record.record.awards.values.reduce(0) { $0 + $1.rawValue })
+        )
+        XCTAssertEqual(
+            item.allocatedPotTotalText,
+            "已分配底池 \(item.allocatedPotTotal.rawValue.formatted())"
+        )
+    }
+
+    func testDetailExposesBlindsExactCompletionTimeAndFormattedSeatStacks() throws {
+        let record = try makeHistoryRecord(
+            archiveMetadata: try makePresentationArchiveMetadata()
+        )
+        let timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 8 * 60 * 60))
+
+        let detail = try HandHistoryPresentation.detail(
+            from: record,
+            timeZone: timeZone
+        )
+        let seat = try XCTUnwrap(detail.seats.first)
+
+        XCTAssertEqual(detail.blindsText, "小盲 50 · 大盲 100")
+        XCTAssertEqual(detail.completedAtText, "1970-01-01 08:17:40")
+        XCTAssertEqual(
+            seat.stackSummaryText,
+            "起始 \(seat.startingStack.rawValue.formatted()) · 最终 \(seat.finalStack.rawValue.formatted()) · 净变化 \(seat.chipDeltaText)"
+        )
+    }
+
+    func testPotWinnersAndUncalledReturnsUseFrozenPlayerNames() throws {
+        let record = try makeHistoryRecord(
+            archiveMetadata: try makePresentationArchiveMetadata()
+        )
+        let returnRecord = try makeUncalledReturnHistoryRecord()
+
+        let detail = try HandHistoryPresentation.detail(from: record)
+        let returnDetail = try HandHistoryPresentation.detail(from: returnRecord)
+
+        XCTAssertTrue(
+            detail.pots
+                .flatMap(\.winnerAmounts)
+                .allSatisfy { $0.displayName.hasPrefix("玩家") }
+        )
+        XCTAssertFalse(returnDetail.uncalledReturns.isEmpty)
+        XCTAssertTrue(
+            returnDetail.uncalledReturns.allSatisfy {
+                $0.displayName.hasPrefix("玩家")
+            }
+        )
+    }
+
+    func testLegacyListDeltaIsUnknownEvenWhenSeatEightHasNonzeroDelta() throws {
+        let record = try makeHistoryRecord(
+            humanSeat: SeatID(rawValue: 8)!,
+            archiveMetadata: nil
+        )
+        XCTAssertNotEqual(record.record.chipDeltas[SeatID(rawValue: 8)!], 0)
+
+        let item = try HandHistoryPresentation.listItem(from: record)
+
+        XCTAssertNil(item.humanChipDelta)
+        XCTAssertEqual(item.humanChipDeltaText, "未知（旧记录不可用）")
+    }
+
     func testListAndDetailExposeOnlyCompletedPublicCardsAndReturns() throws {
         let record = try makeHistoryRecord(
             archiveMetadata: makePresentationArchiveMetadata()
@@ -99,7 +177,14 @@ final class HandHistoryPresentationTests: XCTestCase {
         let detail = try HandHistoryPresentation.detail(from: record)
 
         XCTAssertEqual(item.communityCards, record.record.communityCards)
-        XCTAssertEqual(detail.uncalledReturns, record.record.uncalledReturns)
+        XCTAssertEqual(
+            Dictionary(
+                uniqueKeysWithValues: detail.uncalledReturns.map {
+                    ($0.seatID, $0.amount)
+                }
+            ),
+            record.record.uncalledReturns
+        )
     }
 
     func testDateSelectionsMapToExactStoredLocalDays() throws {
@@ -144,5 +229,55 @@ final class HandHistoryPresentationTests: XCTestCase {
         XCTAssertEqual(filter.dateRange?.first, try LocalDay("2026-02-25"))
         XCTAssertEqual(filter.dateRange?.last, today)
         XCTAssertNil(filter.localDay)
+    }
+
+    func testCustomDatePolicyConvertsUserDateUsingTheCalendarTimeZone() throws {
+        let instant = Date(timeIntervalSince1970: 1_768_498_200)
+        var eastCalendar = Calendar(identifier: .gregorian)
+        eastCalendar.timeZone = try XCTUnwrap(
+            TimeZone(secondsFromGMT: 8 * 60 * 60)
+        )
+        var westCalendar = Calendar(identifier: .gregorian)
+        westCalendar.timeZone = try XCTUnwrap(
+            TimeZone(secondsFromGMT: -11 * 60 * 60)
+        )
+
+        XCTAssertEqual(
+            try HandHistoryCustomDatePolicy.localDay(
+                from: instant,
+                calendar: eastCalendar
+            ),
+            try LocalDay("2026-01-16")
+        )
+        XCTAssertEqual(
+            try HandHistoryCustomDatePolicy.localDay(
+                from: instant,
+                calendar: westCalendar
+            ),
+            try LocalDay("2026-01-15")
+        )
+    }
+
+    func testStoredCustomLocalDayRoundTripsWithoutChangingItsNaturalDay() throws {
+        let storedDay = try LocalDay("2026-07-16")
+        for seconds in [-11 * 60 * 60, 14 * 60 * 60] {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = try XCTUnwrap(
+                TimeZone(secondsFromGMT: seconds)
+            )
+
+            let pickerDate = try HandHistoryCustomDatePolicy.date(
+                for: storedDay,
+                calendar: calendar
+            )
+
+            XCTAssertEqual(
+                try HandHistoryCustomDatePolicy.localDay(
+                    from: pickerDate,
+                    calendar: calendar
+                ),
+                storedDay
+            )
+        }
     }
 }

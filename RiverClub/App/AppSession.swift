@@ -15,6 +15,7 @@ extension AppRoute {
 
 enum AppSessionError: Error, Equatable {
     case conflictingCashTableAttempt
+    case invalidUITestStoreID
 }
 
 @MainActor
@@ -179,12 +180,32 @@ final class AppSession {
         )
     }
 
-    static func uiTestingImmediate(resetHistoryStore: Bool) throws -> AppSession {
+    static func uiTestingStoreDirectory(storeID: String) throws -> URL {
         let fileManager = FileManager.default
-        let directory = fileManager.temporaryDirectory.appendingPathComponent(
+        let allowed = CharacterSet(
+            charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+        )
+        guard !storeID.isEmpty,
+              !storeID.hasPrefix("-"),
+              storeID.count <= 64,
+              storeID.unicodeScalars.allSatisfy(allowed.contains)
+        else {
+            throw AppSessionError.invalidUITestStoreID
+        }
+        return fileManager.temporaryDirectory
+            .appendingPathComponent(
             "RiverClub-Immediate-UITests",
             isDirectory: true
         )
+            .appendingPathComponent(storeID, isDirectory: true)
+    }
+
+    static func uiTestingImmediate(
+        resetHistoryStore: Bool,
+        storeID: String
+    ) throws -> AppSession {
+        let fileManager = FileManager.default
+        let directory = try uiTestingStoreDirectory(storeID: storeID)
         if resetHistoryStore, fileManager.fileExists(atPath: directory.path) {
             try fileManager.removeItem(at: directory)
         }
@@ -242,12 +263,41 @@ final class AppSession {
     }
 
     func updateHandHistoryFilters(_ filters: HandHistoryFilters) {
+        if filters != handHistoryState.filters {
+            handHistoryState.listScrollTarget = nil
+        }
         handHistoryState.filters = filters
         loadHandHistory()
     }
 
+    func beginCustomHandHistoryDateSelection() {
+        updateHandHistoryFilters(
+            HandHistoryFilters(
+                table: handHistoryState.filters.table,
+                dateSelection: .custom(dependencies.currentLocalDay())
+            )
+        )
+    }
+
+    func selectCustomHandHistoryDate(
+        _ date: Date,
+        calendar: Calendar
+    ) throws {
+        let day = try HandHistoryCustomDatePolicy.localDay(
+            from: date,
+            calendar: calendar
+        )
+        updateHandHistoryFilters(
+            HandHistoryFilters(
+                table: handHistoryState.filters.table,
+                dateSelection: .custom(day)
+            )
+        )
+    }
+
     func loadHandHistory() {
         handHistoryState.loadState = .loading
+        handHistoryState.globalRecordCount = nil
         do {
             var calendar = Calendar(identifier: .gregorian)
             calendar.timeZone = .autoupdatingCurrent
@@ -258,14 +308,22 @@ final class AppSession {
             )
             let directoryItems = try dependencies
                 .loadHandRecords(pokerStore, HandRecordFilter())
-                .map(HandHistoryPresentation.listItem(from:))
+                .map { try HandHistoryPresentation.listItem(from: $0) }
             let records = try dependencies.loadHandRecords(pokerStore, filter)
-            let items = try records.map(HandHistoryPresentation.listItem(from:))
+            let items = try records.map {
+                try HandHistoryPresentation.listItem(from: $0)
+            }
             handHistoryState.availableTables = Self.historyTableOptions(
                 from: directoryItems
             )
+            handHistoryState.globalRecordCount = directoryItems.count
+            if let target = handHistoryState.listScrollTarget,
+               !items.contains(where: { $0.id == target }) {
+                handHistoryState.listScrollTarget = nil
+            }
             handHistoryState.loadState = .loaded(items)
         } catch {
+            handHistoryState.globalRecordCount = nil
             handHistoryState.loadState = .failed("牌局存档读取失败，请重试。")
         }
     }
@@ -276,6 +334,7 @@ final class AppSession {
                 handHistoryState.selection = nil
                 return
             }
+            handHistoryState.listScrollTarget = id
             handHistoryState.selection = try HandHistoryPresentation.detail(from: record)
         } catch {
             handHistoryState.selection = nil
@@ -286,12 +345,17 @@ final class AppSession {
         handHistoryState.selection = nil
     }
 
+    func updateHandHistoryScrollTarget(_ id: HandID?) {
+        handHistoryState.listScrollTarget = id
+    }
+
     func requestDeleteHand(id: HandID) {
         handHistoryState.pendingDeletion = .hand(id)
         handHistoryState.deletionError = nil
     }
 
     func requestDeleteAllHistory() {
+        guard handHistoryState.canDeleteAll else { return }
         handHistoryState.pendingDeletion = .all
         handHistoryState.deletionError = nil
     }

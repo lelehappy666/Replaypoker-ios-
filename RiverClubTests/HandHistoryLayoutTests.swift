@@ -6,6 +6,17 @@ import XCTest
 @testable import RiverClub
 
 final class HandHistoryLayoutTests: XCTestCase {
+    func testHistoryEmptyCopyMatchesTheProductContract() {
+        XCTAssertEqual(
+            HandHistoryEmptyPresentation.noRecordsMessage,
+            "完成一局后会在这里保存牌局记录"
+        )
+        XCTAssertEqual(
+            HandHistoryEmptyPresentation.filteredMessage,
+            "当前筛选条件下没有牌局"
+        )
+    }
+
     func testLandscapeHistoryKeepsFiltersAndRowsInsideSafeCanvas() {
         let layout = HandHistoryLayout.safeCanvas(width: 932, height: 424)
 

@@ -11,8 +11,16 @@ import SwiftUI
             let initialSession: AppSession
             if arguments.contains("-uiTesting"),
                arguments.contains("-uiTestingImmediatePoker") {
+                guard let storeFlag = arguments.firstIndex(
+                    of: "-uiTestingStoreID"
+                ),
+                    arguments.indices.contains(storeFlag + 1)
+                else {
+                    throw AppSessionError.invalidUITestStoreID
+                }
                 initialSession = try AppSession.uiTestingImmediate(
-                    resetHistoryStore: arguments.contains("-resetHistoryStore")
+                    resetHistoryStore: arguments.contains("-resetHistoryStore"),
+                    storeID: arguments[storeFlag + 1]
                 )
                 if arguments.contains("-openHistory") {
                     initialSession.continueAsGuest()

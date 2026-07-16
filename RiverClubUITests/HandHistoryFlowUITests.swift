@@ -15,6 +15,8 @@ final class HandHistoryFlowUITests: XCTestCase {
             "-uiTesting",
             "-uiTestingImmediatePoker",
             "-resetHistoryStore",
+            "-uiTestingStoreID",
+            "history-fold-delete",
         ]
         app.launch()
 
@@ -45,6 +47,8 @@ final class HandHistoryFlowUITests: XCTestCase {
             "-uiTesting",
             "-uiTestingImmediatePoker",
             "-openHistory",
+            "-uiTestingStoreID",
+            "history-fold-delete",
         ]
         app.launch()
 
@@ -55,9 +59,19 @@ final class HandHistoryFlowUITests: XCTestCase {
             NSPredicate(format: "identifier BEGINSWITH 'history.row.'")
         ).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 5))
+        XCTAssertTrue(row.label.contains("小盲"))
+        XCTAssertTrue(row.label.contains("大盲"))
+        XCTAssertTrue(row.label.contains("完成时间"))
+        XCTAssertTrue(row.label.contains("已分配底池"))
         row.tap()
 
         XCTAssertTrue(app.scrollViews["history.detail"].waitForExistence(timeout: 5))
+        let detailHeader = app.descendants(matching: .any)[
+            "history.detail.header"
+        ]
+        XCTAssertTrue(detailHeader.waitForExistence(timeout: 3))
+        XCTAssertTrue(detailHeader.label.contains("小盲"))
+        XCTAssertTrue(detailHeader.label.contains("完成于"))
         XCTAssertEqual(
             app.otherElements.matching(
                 NSPredicate(format: "identifier BEGINSWITH 'history.seat.'")
@@ -75,6 +89,12 @@ final class HandHistoryFlowUITests: XCTestCase {
         XCTAssertTrue(
             app.otherElements["history.seat.8"].label.contains("已弃牌")
         )
+        XCTAssertTrue(
+            app.otherElements["history.seat.8"].label.contains("起始")
+        )
+        XCTAssertTrue(
+            app.otherElements["history.seat.8"].label.contains("最终")
+        )
 
         app.buttons["history.deleteOne"].tap()
         let confirmDelete = app.buttons["history.confirmDeleteOne"]
@@ -82,5 +102,30 @@ final class HandHistoryFlowUITests: XCTestCase {
         confirmDelete.tap()
         XCTAssertTrue(app.otherElements["history.empty"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["history.balance"].label, balanceBefore)
+    }
+
+    func testCustomDatePickerCanBeOpenedFromHistoryFilters() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-uiTesting",
+            "-uiTestingImmediatePoker",
+            "-resetHistoryStore",
+            "-openHistory",
+            "-uiTestingStoreID",
+            "history-custom-date",
+        ]
+        app.launch()
+
+        let dateMenu = app.buttons["history.filter.date"]
+        XCTAssertTrue(dateMenu.waitForExistence(timeout: 5))
+        dateMenu.tap()
+        let customDate = app.buttons["自定义日期…"]
+        XCTAssertTrue(customDate.waitForExistence(timeout: 3))
+        customDate.tap()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["history.filter.customDate"]
+                .waitForExistence(timeout: 3)
+        )
     }
 }

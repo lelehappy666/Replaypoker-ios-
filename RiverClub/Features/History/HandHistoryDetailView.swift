@@ -105,7 +105,7 @@ private struct HandHistoryDetailHeader: View {
                 Text("\(detail.tableName) · 第 \(detail.handNumber) 手")
                     .font(.title3.weight(.bold))
                     .foregroundStyle(RCTheme.primaryText)
-                Text("\(detail.localDay.rawValue) · 最终结果")
+                Text("\(detail.blindsText) · 完成于 \(detail.completedAtText)")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(RCTheme.secondaryText)
             }
@@ -116,6 +116,8 @@ private struct HandHistoryDetailHeader: View {
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("history.deleteOne")
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("history.detail.header")
     }
 }
 
@@ -183,9 +185,10 @@ private struct HandHistorySeatResultView: View {
                 Text(statusText)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(statusColor)
-                Text(deltaText)
-                    .font(.caption.monospacedDigit().weight(.bold))
+                Text(seat.stackSummaryText)
+                    .font(.caption2.monospacedDigit().weight(.semibold))
                     .foregroundStyle(RCTheme.secondaryText)
+                    .lineLimit(2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -225,7 +228,9 @@ private struct HandHistorySeatResultView: View {
                 )
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(seat.displayName)，\(statusText)，\(deltaText)")
+        .accessibilityLabel(
+            "\(seat.displayName)，\(statusText)，\(seat.stackSummaryText)"
+        )
         .accessibilityIdentifier("history.seat.\(seat.id.rawValue)")
     }
 
@@ -246,16 +251,11 @@ private struct HandHistorySeatResultView: View {
         }
     }
 
-    private var deltaText: String {
-        if seat.chipDelta > 0 { return "+\(seat.chipDelta.formatted())" }
-        if seat.chipDelta < 0 { return "−\((-seat.chipDelta).formatted())" }
-        return "0"
-    }
 }
 
 private struct HandHistoryPotList: View {
     let pots: [HandHistoryPotResult]
-    let returns: [SeatID: Chips]
+    let returns: [HandHistoryNamedAmount]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -277,28 +277,26 @@ private struct HandHistoryPotList: View {
                 }
             }
 
-            ForEach(returns.keys.sorted(), id: \.self) { seat in
-                if let amount = returns[seat] {
-                    HStack {
-                        Text("座位 \(seat.rawValue + 1) 未跟注返还")
-                            .foregroundStyle(RCTheme.secondaryText)
-                        Spacer()
-                        Text(amount.rawValue.formatted())
-                            .font(.subheadline.monospacedDigit().weight(.bold))
-                            .foregroundStyle(RCTheme.primaryText)
-                    }
+            ForEach(returns) { returned in
+                HStack {
+                    Text("\(returned.displayName) 未跟注返还")
+                        .foregroundStyle(RCTheme.secondaryText)
+                    Spacer()
+                    Text(returned.amount.rawValue.formatted())
+                        .font(.subheadline.monospacedDigit().weight(.bold))
+                        .foregroundStyle(RCTheme.primaryText)
                 }
             }
         }
         .padding(14)
         .background(RCTheme.surface, in: RoundedRectangle(cornerRadius: RCTheme.corner))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("history.pots")
     }
 
     private func winnerText(for pot: HandHistoryPotResult) -> String {
-        pot.amounts.keys.sorted().compactMap { seat in
-            pot.amounts[seat].map {
-                "座位 \(seat.rawValue + 1) +\($0.rawValue.formatted())"
-            }
+        pot.winnerAmounts.map {
+            "\($0.displayName) +\($0.amount.rawValue.formatted())"
         }.joined(separator: " · ")
     }
 }

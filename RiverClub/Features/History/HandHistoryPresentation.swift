@@ -9,8 +9,13 @@ struct HandHistoryListItem: Identifiable, Equatable, Sendable {
     let endedAt: Date
     let localDay: LocalDay
     let handNumber: Int
+    let blindsText: String
+    let completedAtText: String
+    let allocatedPotTotal: Chips
+    let allocatedPotTotalText: String
     let communityCards: [Card]
     let humanChipDelta: Int?
+    let humanChipDeltaText: String
 }
 
 struct HandHistoryTableOption: Identifiable, Equatable, Sendable {
@@ -25,10 +30,12 @@ struct HandHistoryDetail: Identifiable, Equatable, Sendable {
     let endedAt: Date
     let localDay: LocalDay
     let handNumber: Int
+    let blindsText: String
+    let completedAtText: String
     let communityCards: [Card]
     let seats: [HandHistorySeatResult]
     let pots: [HandHistoryPotResult]
-    let uncalledReturns: [SeatID: Chips]
+    let uncalledReturns: [HandHistoryNamedAmount]
 }
 
 struct HandHistorySeatResult: Identifiable, Equatable, Sendable {
@@ -39,12 +46,23 @@ struct HandHistorySeatResult: Identifiable, Equatable, Sendable {
     let startingStack: Chips
     let finalStack: Chips
     let chipDelta: Int
+    let chipDeltaText: String
+    let stackSummaryText: String
 }
 
 struct HandHistoryPotResult: Identifiable, Equatable, Sendable {
     let id: Int
     let amount: Chips
     let amounts: [SeatID: Chips]
+    let winnerAmounts: [HandHistoryNamedAmount]
+}
+
+struct HandHistoryNamedAmount: Identifiable, Equatable, Sendable {
+    let seatID: SeatID
+    let displayName: String
+    let amount: Chips
+
+    var id: SeatID { seatID }
 }
 
 enum HandHistorySeatStatus: Equatable, Sendable {
@@ -55,8 +73,18 @@ enum HandHistorySeatStatus: Equatable, Sendable {
 }
 
 enum HandHistoryPresentation {
-    static func listItem(from record: StoredHandRecord) throws -> HandHistoryListItem {
+    static func listItem(
+        from record: StoredHandRecord,
+        timeZone: TimeZone = .autoupdatingCurrent
+    ) throws -> HandHistoryListItem {
         let humanSeat = record.archiveMetadata?.humanSeat
+        let humanChipDelta = humanSeat.flatMap { record.record.chipDeltas[$0] }
+        let allocatedPotTotalRaw = try checkedSum(
+            record.record.awards.values.map(\.rawValue)
+        )
+        guard let allocatedPotTotal = Chips(rawValue: allocatedPotTotalRaw) else {
+            throw PokerRuleError.invalidState("invalid allocated pot total")
+        }
         return HandHistoryListItem(
             id: record.id,
             tableID: record.table,
@@ -64,12 +92,24 @@ enum HandHistoryPresentation {
             endedAt: record.endedAt,
             localDay: record.localDay,
             handNumber: record.handNumber,
+            blindsText: blindsText(for: record),
+            completedAtText: completedAtText(
+                record.endedAt,
+                timeZone: timeZone
+            ),
+            allocatedPotTotal: allocatedPotTotal,
+            allocatedPotTotalText: "已分配底池 \(allocatedPotTotalRaw.formatted())",
             communityCards: record.record.communityCards,
-            humanChipDelta: humanSeat.flatMap { record.record.chipDeltas[$0] }
+            humanChipDelta: humanChipDelta,
+            humanChipDeltaText: humanChipDelta.map(chipDeltaText)
+                ?? "未知（旧记录不可用）"
         )
     }
 
-    static func detail(from record: StoredHandRecord) throws -> HandHistoryDetail {
+    static func detail(
+        from record: StoredHandRecord,
+        timeZone: TimeZone = .autoupdatingCurrent
+    ) throws -> HandHistoryDetail {
         let foldedSeats = Set(
             record.record.actions.compactMap { action in
                 action.action == .fold ? action.seat : nil
@@ -95,6 +135,7 @@ enum HandHistoryPresentation {
                 status = .notDealt
             }
 
+            let deltaText = chipDeltaText(chipDelta)
             return HandHistorySeatResult(
                 id: seat,
                 displayName: displayName(for: seat, in: record),
@@ -102,7 +143,9 @@ enum HandHistoryPresentation {
                 status: status,
                 startingStack: startingStack,
                 finalStack: finalStack,
-                chipDelta: chipDelta
+                chipDelta: chipDelta,
+                chipDeltaText: deltaText,
+                stackSummaryText: "起始 \(startingStack.rawValue.formatted()) · 最终 \(finalStack.rawValue.formatted()) · 净变化 \(deltaText)"
             )
         }
 
@@ -120,7 +163,21 @@ enum HandHistoryPresentation {
                     dealer: record.record.config.dealer
                 )
             }
-            return HandHistoryPotResult(id: index, amount: pot.amount, amounts: amounts)
+            let winnerAmounts = amounts.keys.sorted().compactMap { seat in
+                amounts[seat].map {
+                    HandHistoryNamedAmount(
+                        seatID: seat,
+                        displayName: displayName(for: seat, in: record),
+                        amount: $0
+                    )
+                }
+            }
+            return HandHistoryPotResult(
+                id: index,
+                amount: pot.amount,
+                amounts: amounts,
+                winnerAmounts: winnerAmounts
+            )
         }
 
         let rebuiltTotal = try checkedSum(
@@ -138,10 +195,24 @@ enum HandHistoryPresentation {
             endedAt: record.endedAt,
             localDay: record.localDay,
             handNumber: record.handNumber,
+            blindsText: blindsText(for: record),
+            completedAtText: completedAtText(
+                record.endedAt,
+                timeZone: timeZone
+            ),
             communityCards: record.record.communityCards,
             seats: seats,
             pots: pots,
-            uncalledReturns: record.record.uncalledReturns
+            uncalledReturns: record.record.uncalledReturns.keys.sorted().compactMap {
+                seat in
+                record.record.uncalledReturns[seat].map {
+                    HandHistoryNamedAmount(
+                        seatID: seat,
+                        displayName: displayName(for: seat, in: record),
+                        amount: $0
+                    )
+                }
+            }
         )
     }
 
@@ -172,6 +243,31 @@ enum HandHistoryPresentation {
 
     private static func displayName(for seat: SeatID, in record: StoredHandRecord) -> String {
         record.archiveMetadata?.seatDisplayNames[seat] ?? "座位 \(seat.rawValue + 1)"
+    }
+
+    private static func blindsText(for record: StoredHandRecord) -> String {
+        "小盲 \(record.record.config.smallBlind.rawValue.formatted()) · 大盲 \(record.record.config.bigBlind.rawValue.formatted())"
+    }
+
+    private static func completedAtText(
+        _ date: Date,
+        timeZone: TimeZone
+    ) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter.string(from: date)
+    }
+
+    private static func chipDeltaText(_ delta: Int) -> String {
+        if delta > 0 { return "+\(delta.formatted())" }
+        if delta < 0 {
+            let magnitude = delta == Int.min ? "\(UInt(Int.max) + 1)" : (-delta).formatted()
+            return "−\(magnitude)"
+        }
+        return "0"
     }
 
     private static func offset(

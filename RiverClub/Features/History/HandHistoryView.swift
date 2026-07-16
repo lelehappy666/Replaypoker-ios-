@@ -2,6 +2,11 @@ import PokerCore
 import PokerSession
 import SwiftUI
 
+enum HandHistoryEmptyPresentation {
+    static let noRecordsMessage = "完成一局后会在这里保存牌局记录"
+    static let filteredMessage = "当前筛选条件下没有牌局"
+}
+
 struct HandHistoryLayout: Equatable {
     let filterWidth: CGFloat
     let contentWidth: CGFloat
@@ -21,21 +26,21 @@ struct HandHistoryLayout: Equatable {
     static func rowMetrics(contentWidth: CGFloat) -> HandHistoryRowLayout {
         if contentWidth < 520 {
             return HandHistoryRowLayout(
-                titleWidth: 128,
+                titleWidth: 120,
                 cardSize: CGSize(width: 28, height: 40),
-                horizontalSpacing: 8,
-                horizontalPadding: 12,
+                horizontalSpacing: 6,
+                horizontalPadding: 10,
                 minimumSpacerWidth: 4,
-                deltaWidth: 72
+                deltaWidth: 118
             )
         }
         return HandHistoryRowLayout(
-            titleWidth: 150,
+            titleWidth: 145,
             cardSize: CGSize(width: 30, height: 41),
-            horizontalSpacing: 14,
+            horizontalSpacing: 12,
             horizontalPadding: 16,
             minimumSpacerWidth: 8,
-            deltaWidth: 76
+            deltaWidth: 130
         )
     }
 }
@@ -113,7 +118,15 @@ struct HandHistoryView: View {
                 balance: session.chipBalance,
                 filters: session.handHistoryState.filters,
                 availableTables: session.handHistoryState.availableTables,
+                canDeleteAll: session.handHistoryState.canDeleteAll,
                 onChange: session.updateHandHistoryFilters,
+                onBeginCustomDate: session.beginCustomHandHistoryDateSelection,
+                onChangeCustomDate: { date, calendar in
+                    try? session.selectCustomHandHistoryDate(
+                        date,
+                        calendar: calendar
+                    )
+                },
                 onDeleteAll: session.requestDeleteAllHistory
             )
             .frame(width: 220)
@@ -121,6 +134,7 @@ struct HandHistoryView: View {
             HandHistoryContent(
                 state: session.handHistoryState,
                 onSelect: session.selectHandHistory,
+                onScrollTargetChange: session.updateHandHistoryScrollTarget,
                 onRetry: session.loadHandHistory,
                 onResetFilters: {
                     session.updateHandHistoryFilters(HandHistoryFilters())
@@ -271,9 +285,13 @@ private struct HandHistoryFilterPanel: View {
     let balance: Int
     let filters: HandHistoryFilters
     let availableTables: [HandHistoryTableOption]
+    let canDeleteAll: Bool
     let onChange: (HandHistoryFilters) -> Void
+    let onBeginCustomDate: () -> Void
+    let onChangeCustomDate: (Date, Calendar) -> Void
     let onDeleteAll: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.calendar) private var calendar
 
     var body: some View {
         GeometryReader { proxy in
@@ -319,6 +337,7 @@ private struct HandHistoryFilterPanel: View {
                 Button("全部日期") { changeDate(.all) }
                 Button("今天") { changeDate(.today) }
                 Button("最近 7 天") { changeDate(.lastSevenDays) }
+                Button("自定义日期…", action: onBeginCustomDate)
             } label: {
                 filterControl(
                     title: dateTitle,
@@ -327,6 +346,17 @@ private struct HandHistoryFilterPanel: View {
                 )
             }
             .accessibilityIdentifier("history.filter.date")
+
+            if case let .custom(day) = filters.dateSelection {
+                DatePicker(
+                    "自定义日期",
+                    selection: customDateBinding(for: day),
+                    displayedComponents: .date
+                )
+                .datePickerStyle(.compact)
+                .frame(minHeight: minimumControlHeight)
+                .accessibilityIdentifier("history.filter.customDate")
+            }
 
             filterLabel("牌桌")
             Menu {
@@ -348,6 +378,7 @@ private struct HandHistoryFilterPanel: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
+            .disabled(!canDeleteAll)
             .accessibilityIdentifier("history.deleteAll")
         }
     }
@@ -402,11 +433,24 @@ private struct HandHistoryFilterPanel: View {
             HandHistoryFilters(table: table, dateSelection: filters.dateSelection)
         )
     }
+
+    private func customDateBinding(for day: LocalDay) -> Binding<Date> {
+        Binding(
+            get: {
+                (try? HandHistoryCustomDatePolicy.date(
+                    for: day,
+                    calendar: calendar
+                )) ?? Date()
+            },
+            set: { onChangeCustomDate($0, calendar) }
+        )
+    }
 }
 
 private struct HandHistoryContent: View {
     let state: HandHistoryViewState
     let onSelect: (HandID) -> Void
+    let onScrollTargetChange: (HandID?) -> Void
     let onRetry: () -> Void
     let onResetFilters: () -> Void
 
@@ -458,13 +502,19 @@ private struct HandHistoryContent: View {
     @ViewBuilder
     private var emptyState: some View {
         if state.filters == HandHistoryFilters() {
-            statusPanel(title: "还没有完成的牌局存档", systemImage: "tray") {
+            statusPanel(
+                title: HandHistoryEmptyPresentation.noRecordsMessage,
+                systemImage: "tray"
+            ) {
                 EmptyView()
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("history.empty")
         } else {
-            statusPanel(title: "当前筛选没有结果", systemImage: "line.3.horizontal.decrease.circle") {
+            statusPanel(
+                title: HandHistoryEmptyPresentation.filteredMessage,
+                systemImage: "line.3.horizontal.decrease.circle"
+            ) {
                 Button("清除筛选", action: onResetFilters)
                     .buttonStyle(.bordered)
             }
@@ -484,9 +534,18 @@ private struct HandHistoryContent: View {
                         HandHistoryRow(item: item, layout: rowLayout) {
                             onSelect(item.id)
                         }
+                        .id(item.id)
                     }
                 }
+                .scrollTargetLayout()
             }
+            .scrollPosition(
+                id: Binding(
+                    get: { state.listScrollTarget },
+                    set: { onScrollTargetChange($0) }
+                ),
+                anchor: .top
+            )
             .scrollIndicators(.visible)
         }
     }
@@ -522,7 +581,10 @@ private struct HandHistoryRow: View {
                     Text("\(item.tableName) · 第 \(item.handNumber) 手")
                         .font(.headline)
                         .foregroundStyle(RCTheme.primaryText)
-                    Text(item.localDay.rawValue)
+                    Text(item.completedAtText)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(RCTheme.secondaryText)
+                    Text(item.blindsText)
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(RCTheme.secondaryText)
                 }
@@ -540,10 +602,15 @@ private struct HandHistoryRow: View {
 
                 Spacer(minLength: layout.minimumSpacerWidth)
 
-                Text(deltaText)
-                    .font(.title3.monospacedDigit().weight(.bold))
-                    .foregroundStyle(deltaColor)
-                    .frame(width: layout.deltaWidth, alignment: .trailing)
+                VStack(alignment: .trailing, spacing: 5) {
+                    Text(item.humanChipDeltaText)
+                        .font(.subheadline.monospacedDigit().weight(.bold))
+                        .foregroundStyle(deltaColor)
+                    Text(item.allocatedPotTotalText)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(RCTheme.secondaryText)
+                }
+                .frame(width: layout.deltaWidth, alignment: .trailing)
             }
             .padding(.horizontal, layout.horizontalPadding)
             .frame(maxWidth: .infinity, minHeight: 88)
@@ -556,14 +623,9 @@ private struct HandHistoryRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("history.row.\(item.id.rawValue)")
-        .accessibilityLabel("\(item.tableName)，第 \(item.handNumber) 手，净变化 \(deltaText)")
-    }
-
-    private var deltaText: String {
-        guard let delta = item.humanChipDelta else { return "0" }
-        if delta > 0 { return "+\(delta.formatted())" }
-        if delta < 0 { return "−\((-delta).formatted())" }
-        return "0"
+        .accessibilityLabel(
+            "\(item.tableName)，第 \(item.handNumber) 手，\(item.blindsText)，完成时间 \(item.completedAtText)，净变化 \(item.humanChipDeltaText)，\(item.allocatedPotTotalText)"
+        )
     }
 
     private var deltaColor: Color {

@@ -12,7 +12,7 @@ func makeHistoryRecord(
         config: try HandConfig(
             smallBlind: try Chips(50),
             bigBlind: try Chips(100),
-            dealer: SeatID(rawValue: 8)!
+            dealer: SeatID(rawValue: 6)!
         ),
         stacks: Dictionary(uniqueKeysWithValues: seats.map { ($0, Chips(rawValue: 4_000)!) }),
         seed: 7
@@ -76,6 +76,41 @@ func makeMultiPotHistoryRecord() throws -> StoredHandRecord {
         localDay: try LocalDay("2026-07-15"),
         handNumber: 43,
         record: try game.completedRecord(),
+        archiveMetadata: try makePresentationArchiveMetadata()
+    )
+}
+
+func makeUncalledReturnHistoryRecord() throws -> StoredHandRecord {
+    let seat0 = SeatID(rawValue: 0)!
+    let seat1 = SeatID(rawValue: 1)!
+    let game = try HoldemGame.start(
+        config: try HandConfig(
+            smallBlind: try Chips(50),
+            bigBlind: try Chips(100),
+            dealer: seat0
+        ),
+        stacks: [
+            seat0: try Chips(1_000),
+            seat1: try Chips(30),
+        ],
+        seed: 20
+    )
+    try game.apply(.fold, by: seat0)
+    try game.advanceIfRoundComplete()
+    let completed = try game.completedRecord()
+    guard !completed.uncalledReturns.isEmpty else {
+        throw PokerRuleError.invalidState("uncalled return fixture is empty")
+    }
+
+    return StoredHandRecord(
+        id: try HandID("history-uncalled-return"),
+        sessionID: try SessionID("history-session"),
+        table: try TableID("jade"),
+        startedAt: Date(timeIntervalSince1970: 3_000),
+        endedAt: Date(timeIntervalSince1970: 3_060),
+        localDay: try LocalDay("2026-07-16"),
+        handNumber: 44,
+        record: completed,
         archiveMetadata: try makePresentationArchiveMetadata()
     )
 }

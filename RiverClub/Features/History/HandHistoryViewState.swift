@@ -1,3 +1,4 @@
+import Foundation
 import PokerCore
 import PokerSession
 
@@ -6,6 +7,47 @@ enum HandHistoryDateSelection: Equatable, Sendable {
     case today
     case lastSevenDays
     case custom(LocalDay)
+}
+
+enum HandHistoryCustomDatePolicy {
+    static func localDay(
+        from date: Date,
+        calendar: Calendar
+    ) throws -> LocalDay {
+        let components = calendar.dateComponents(
+            [.year, .month, .day],
+            from: date
+        )
+        guard let year = components.year,
+              let month = components.month,
+              let day = components.day
+        else {
+            throw PokerSessionError.invalidIdentifier
+        }
+        return try LocalDay(
+            String(format: "%04d-%02d-%02d", year, month, day)
+        )
+    }
+
+    static func date(
+        for day: LocalDay,
+        calendar: Calendar
+    ) throws -> Date {
+        let values = day.rawValue.split(separator: "-").compactMap { Int($0) }
+        guard values.count == 3,
+              let date = calendar.date(
+                  from: DateComponents(
+                      year: values[0],
+                      month: values[1],
+                      day: values[2],
+                      hour: 12
+                  )
+              )
+        else {
+            throw PokerSessionError.invalidIdentifier
+        }
+        return date
+    }
 }
 
 struct HandHistoryFilters: Equatable, Sendable {
@@ -106,6 +148,8 @@ struct HandHistoryViewState: Equatable, Sendable {
     var filters: HandHistoryFilters
     var loadState: HandHistoryLoadState
     var availableTables: [HandHistoryTableOption]
+    var globalRecordCount: Int?
+    var listScrollTarget: HandID?
     var selection: HandHistoryDetail?
     var pendingDeletion: HandHistoryPendingDeletion?
     var deletionError: String?
@@ -114,6 +158,8 @@ struct HandHistoryViewState: Equatable, Sendable {
         filters: HandHistoryFilters = HandHistoryFilters(),
         loadState: HandHistoryLoadState = .idle,
         availableTables: [HandHistoryTableOption] = [],
+        globalRecordCount: Int? = nil,
+        listScrollTarget: HandID? = nil,
         selection: HandHistoryDetail? = nil,
         pendingDeletion: HandHistoryPendingDeletion? = nil,
         deletionError: String? = nil
@@ -121,6 +167,8 @@ struct HandHistoryViewState: Equatable, Sendable {
         self.filters = filters
         self.loadState = loadState
         self.availableTables = availableTables
+        self.globalRecordCount = globalRecordCount
+        self.listScrollTarget = listScrollTarget
         self.selection = selection
         self.pendingDeletion = pendingDeletion
         self.deletionError = deletionError
@@ -129,5 +177,10 @@ struct HandHistoryViewState: Equatable, Sendable {
     var items: [HandHistoryListItem] {
         guard case let .loaded(items) = loadState else { return [] }
         return items
+    }
+
+    var canDeleteAll: Bool {
+        guard case .loaded = loadState else { return false }
+        return (globalRecordCount ?? 0) > 0
     }
 }
