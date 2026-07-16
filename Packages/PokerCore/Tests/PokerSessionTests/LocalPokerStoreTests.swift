@@ -111,8 +111,15 @@ import Testing
     let store = try completedPendingStore(repository: repository, handID: "hand-1")
     let transactionID = try BusinessID("settle-hand-1")
 
-    let first = try store.commitPendingHand(transactionID: transactionID)
-    let second = try store.commitPendingHand(transactionID: transactionID)
+    let metadata = try makeArchiveMetadata()
+    let first = try store.commitPendingHand(
+        transactionID: transactionID,
+        archiveMetadata: metadata
+    )
+    let second = try store.commitPendingHand(
+        transactionID: transactionID,
+        archiveMetadata: metadata
+    )
 
     #expect(first == second)
     #expect(first.transactionID == transactionID)
@@ -122,15 +129,62 @@ import Testing
     #expect(store.cashSession?.phase == .readyForHand)
 }
 
+@Test func 新结算要求九座位安全显示元数据且幂等重试参数一致() throws {
+    let fixture = try completedPendingStore(
+        repository: InMemorySessionRepository(),
+        handID: "history-metadata-hand"
+    )
+    let metadata = try makeArchiveMetadata(tableName: "星河湾")
+    let transactionID = try BusinessID("history-metadata")
+
+    let first = try fixture.commitPendingHand(
+        transactionID: transactionID,
+        archiveMetadata: metadata
+    )
+    let retry = try fixture.commitPendingHand(
+        transactionID: transactionID,
+        archiveMetadata: metadata
+    )
+
+    #expect(first == retry)
+    #expect(first.archiveMetadata == metadata)
+}
+
+@Test func 相同结算编号使用不同显示元数据会被拒绝() throws {
+    let store = try completedPendingStore(
+        repository: InMemorySessionRepository(),
+        handID: "history-conflict-hand"
+    )
+    let transactionID = try BusinessID("history-conflict")
+    _ = try store.commitPendingHand(
+        transactionID: transactionID,
+        archiveMetadata: makeArchiveMetadata(tableName: "星河湾")
+    )
+
+    #expect(throws: PokerSessionError.businessIDConflict) {
+        try store.commitPendingHand(
+            transactionID: transactionID,
+            archiveMetadata: makeArchiveMetadata(tableName: "另一张桌")
+        )
+    }
+}
+
 @Test func settlementRetrySurvivesReopenAfterPendingWasCleared() throws {
     let directory = try StoreTemporaryDirectory()
     let firstStore = try LocalPokerStore.open(directory: directory.url, clock: storeClock)
     try sitAndCompleteHand(in: firstStore, handID: "hand-reopen")
     let transactionID = try BusinessID("settle-reopen")
-    let first = try firstStore.commitPendingHand(transactionID: transactionID)
+    let metadata = try makeArchiveMetadata()
+    let first = try firstStore.commitPendingHand(
+        transactionID: transactionID,
+        archiveMetadata: metadata
+    )
 
     let reopened = try LocalPokerStore.open(directory: directory.url, clock: storeClock)
-    let retried = try reopened.commitPendingHand(transactionID: transactionID)
+    let retried = try reopened.commitPendingHand(
+        transactionID: transactionID,
+        archiveMetadata: metadata
+    )
 
     #expect(retried == first)
     #expect(reopened.handRecords() == [first])
@@ -142,12 +196,19 @@ import Testing
     let repository = InMemorySessionRepository()
     let store = try completedPendingStore(repository: repository, handID: "hand-first")
     let transactionID = try BusinessID("settle-shared")
-    _ = try store.commitPendingHand(transactionID: transactionID)
+    let metadata = try makeArchiveMetadata()
+    _ = try store.commitPendingHand(
+        transactionID: transactionID,
+        archiveMetadata: metadata
+    )
     try completeAnotherHand(in: store, handID: "hand-second", seed: 7)
     let before = store.cashSession
 
     #expect(throws: PokerSessionError.businessIDConflict) {
-        try store.commitPendingHand(transactionID: transactionID)
+        try store.commitPendingHand(
+            transactionID: transactionID,
+            archiveMetadata: metadata
+        )
     }
 
     #expect(store.cashSession == before)
@@ -159,7 +220,10 @@ import Testing
     let repository = InMemorySessionRepository()
     let store = try completedPendingStore(repository: repository, handID: "hand-reused")
     let transactionID = try BusinessID("settle-reused")
-    _ = try store.commitPendingHand(transactionID: transactionID)
+    _ = try store.commitPendingHand(
+        transactionID: transactionID,
+        archiveMetadata: makeArchiveMetadata()
+    )
     let before = store.cashSession
 
     #expect(throws: PokerSessionError.businessIDConflict) {
@@ -176,11 +240,17 @@ import Testing
     let store = try completedPendingStore(repository: repository, handID: "hand-cross-domain")
 
     #expect(throws: PokerSessionError.businessIDConflict) {
-        try store.commitPendingHand(transactionID: BusinessID("buy-4000"))
+        try store.commitPendingHand(
+            transactionID: BusinessID("buy-4000"),
+            archiveMetadata: makeArchiveMetadata()
+        )
     }
 
     let settlementID = try BusinessID("settle-cross-domain")
-    _ = try store.commitPendingHand(transactionID: settlementID)
+    _ = try store.commitPendingHand(
+        transactionID: settlementID,
+        archiveMetadata: makeArchiveMetadata()
+    )
     #expect(throws: PokerSessionError.businessIDConflict) {
         try store.claimDailyGift(businessID: settlementID)
     }
@@ -189,7 +259,10 @@ import Testing
 @Test func commandLedgerIdentityIsAuditableAndSettlementDomainIsDisjoint() throws {
     let repository = InMemorySessionRepository()
     let store = try completedPendingStore(repository: repository, handID: "domain-hand")
-    _ = try store.commitPendingHand(transactionID: BusinessID("domain-settlement"))
+    _ = try store.commitPendingHand(
+        transactionID: BusinessID("domain-settlement"),
+        archiveMetadata: makeArchiveMetadata()
+    )
     let state = try repository.load()
     let ledgerIDs = Set(state.ledger.entries.map(\.businessID))
     let commandIDs = Set(state.commandReceipts.keys)
@@ -556,7 +629,10 @@ import Testing
     repository.failSavesFrom = repository.saveCount + 1
 
     #expect(throws: PokerSessionError.persistenceFailed) {
-        try store.commitPendingHand(transactionID: BusinessID("settle-failed"))
+        try store.commitPendingHand(
+            transactionID: BusinessID("settle-failed"),
+            archiveMetadata: makeArchiveMetadata()
+        )
     }
 
     #expect(store.cashSession == beforeSession)
@@ -573,7 +649,10 @@ import Testing
     let expectedDelta = try #require(pending.record.chipDeltas[human])
     let expectedWonHands = pending.record.awards[human] == nil ? 0 : 1
 
-    _ = try store.commitPendingHand(transactionID: BusinessID("settle-statistics"))
+    _ = try store.commitPendingHand(
+        transactionID: BusinessID("settle-statistics"),
+        archiveMetadata: makeArchiveMetadata()
+    )
 
     #expect(store.statistics.completedHands == 1)
     #expect(store.statistics.wonHands == expectedWonHands)
@@ -620,7 +699,10 @@ import Testing
     let repository = InMemorySessionRepository()
     let store = try seatedStore(repository: repository, human: 4_000)
     try completeHand(in: store, handID: "hand-bust", seed: 12)
-    _ = try store.commitPendingHand(transactionID: BusinessID("settle-bust"))
+    _ = try store.commitPendingHand(
+        transactionID: BusinessID("settle-bust"),
+        archiveMetadata: makeArchiveMetadata()
+    )
     let current = try #require(store.cashSession?.seats.first { $0.id == (try? SeatID(0)) })
     let amount = try Chips(8_000 - current.stack.rawValue)
     let id = try BusinessID("rebuy-jade-1")

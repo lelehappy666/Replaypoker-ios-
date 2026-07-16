@@ -178,9 +178,16 @@ private func runPropertySequence(seed: UInt64) throws -> PropertySummary {
     #expect(!store.handRecords().contains { $0.id == handID })
 
     let settleID = try BusinessID("settle-\(seed)")
-    let record = try store.commitPendingHand(transactionID: settleID)
+    let archiveMetadata = try makeArchiveMetadata(humanSeat: human)
+    let record = try store.commitPendingHand(
+        transactionID: settleID,
+        archiveMetadata: archiveMetadata
+    )
     try model.settled(record: record, human: human)
-    #expect(try store.commitPendingHand(transactionID: settleID) == record)
+    #expect(try store.commitPendingHand(
+        transactionID: settleID,
+        archiveMetadata: archiveMetadata
+    ) == record)
     try auditProperty(store, model: model, human: human)
 
     let humanStack = try #require(model.expectedHumanTable)
@@ -219,8 +226,8 @@ private func runPropertySequence(seed: UInt64) throws -> PropertySummary {
 private func canonicalPropertyJSON(_ data: Data) throws -> Data {
     let dictionaryArrayKeys: Set<String> = [
         "awards", "chipDeltas", "finalStacks", "handRanksBySeat", "holeCardsBySeat",
-        "settledCommitments", "settledContributions", "stacks", "startingStacks",
-        "uncalledReturns",
+        "seatDisplayNames", "settledCommitments", "settledContributions", "stacks",
+        "startingStacks", "uncalledReturns",
     ]
     let setArrayKeys: Set<String> = ["eligible", "usedHandIDs", "usedSessionIDs"]
 

@@ -12,6 +12,7 @@ public final class CashTableCoordinator {
     private let store: LocalPokerStore
     private let humanSeat: SeatID
     private let seatProfiles: [TableSeatProfile]
+    private let archiveMetadata: HandArchiveMetadata
     private let dependencies: TableRuntimeDependencies
     private let botService: any BotDecisionServing
     private var currentHandID: HandID?
@@ -43,12 +44,14 @@ public final class CashTableCoordinator {
         store: LocalPokerStore,
         humanSeat: SeatID,
         seatProfiles: [TableSeatProfile],
+        archiveMetadata: HandArchiveMetadata,
         dependencies: TableRuntimeDependencies
     ) throws {
         try self.init(
             store: store,
             humanSeat: humanSeat,
             seatProfiles: seatProfiles,
+            archiveMetadata: archiveMetadata,
             dependencies: dependencies,
             botService: BotDecisionService()
         )
@@ -58,6 +61,7 @@ public final class CashTableCoordinator {
         store: LocalPokerStore,
         humanSeat: SeatID,
         seatProfiles: [TableSeatProfile],
+        archiveMetadata: HandArchiveMetadata,
         dependencies: TableRuntimeDependencies,
         botService: any BotDecisionServing
     ) throws {
@@ -69,7 +73,14 @@ public final class CashTableCoordinator {
             matching: session.seats.map(\.id),
             humanSeat: humanSeat
         )
-        guard session.humanSeat == humanSeat else {
+        guard session.humanSeat == humanSeat,
+              Set(archiveMetadata.seatDisplayNames.keys)
+                == Set(session.seats.map(\.id)),
+              archiveMetadata.humanSeat == humanSeat,
+              archiveMetadata.seatDisplayNames == Dictionary(
+                uniqueKeysWithValues: seatProfiles.map { ($0.id, $0.displayName) }
+              )
+        else {
             throw PokerCoordinatorError.missingObservation
         }
 
@@ -108,6 +119,7 @@ public final class CashTableCoordinator {
         self.store = store
         self.humanSeat = humanSeat
         self.seatProfiles = seatProfiles
+        self.archiveMetadata = archiveMetadata
         self.dependencies = dependencies
         self.botService = botService
         state = initialState
@@ -303,7 +315,10 @@ public final class CashTableCoordinator {
         )
         do {
             state = stateReplacing(phase: .savingResult, errorMessage: nil)
-            _ = try store.commitPendingHand(transactionID: transactionID)
+            _ = try store.commitPendingHand(
+                transactionID: transactionID,
+                archiveMetadata: archiveMetadata
+            )
             applyCommittedSettlementState()
         } catch {
             state = stateReplacing(

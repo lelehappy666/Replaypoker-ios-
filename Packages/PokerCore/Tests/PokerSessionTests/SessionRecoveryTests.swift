@@ -108,13 +108,20 @@ import Testing
     #expect(reopenedPending.handRecords().isEmpty)
 
     let transactionID = try BusinessID("settle-pending")
-    let committed = try reopenedPending.commitPendingHand(transactionID: transactionID)
+    let metadata = try makeArchiveMetadata()
+    let committed = try reopenedPending.commitPendingHand(
+        transactionID: transactionID,
+        archiveMetadata: metadata
+    )
     let reopenedCommitted = try LocalPokerStore.open(
         directory: pendingDirectory.url,
         clock: recoveryClock
     )
     #expect(reopenedCommitted.handRecords() == [committed])
-    #expect(try reopenedCommitted.commitPendingHand(transactionID: transactionID) == committed)
+    #expect(try reopenedCommitted.commitPendingHand(
+        transactionID: transactionID,
+        archiveMetadata: metadata
+    ) == committed)
     #expect(reopenedCommitted.statistics.completedHands == 1)
 }
 
@@ -172,7 +179,10 @@ import Testing
     try store.deleteHand(id: record.id)
 
     #expect(throws: PokerSessionError.recordNotFound) {
-        try store.commitPendingHand(transactionID: record.transactionID!)
+        try store.commitPendingHand(
+            transactionID: record.transactionID!,
+            archiveMetadata: try #require(record.archiveMetadata)
+        )
     }
     #expect(throws: PokerSessionError.businessIDConflict) {
         try store.claimDailyGift(businessID: record.transactionID!)
@@ -183,7 +193,10 @@ import Testing
 
     let reopened = try LocalPokerStore(repository: repository, clock: recoveryClock)
     #expect(throws: PokerSessionError.recordNotFound) {
-        try reopened.commitPendingHand(transactionID: record.transactionID!)
+        try reopened.commitPendingHand(
+            transactionID: record.transactionID!,
+            archiveMetadata: try #require(record.archiveMetadata)
+        )
     }
 }
 
@@ -470,5 +483,8 @@ private func completeAndCommitRecoveryHand(
     seed: UInt64
 ) throws -> StoredHandRecord {
     try finishRecoveryHand(in: store, id: id, seed: seed)
-    return try store.commitPendingHand(transactionID: BusinessID("settle-\(id)"))
+    return try store.commitPendingHand(
+        transactionID: BusinessID("settle-\(id)"),
+        archiveMetadata: makeArchiveMetadata()
+    )
 }

@@ -104,7 +104,8 @@ struct HistoryQueryFixture {
             _ = try store.advanceIfRoundComplete()
         }
         _ = try store.commitPendingHand(
-            transactionID: try BusinessID("history-settle-\(hand)")
+            transactionID: try BusinessID("history-settle-\(hand)"),
+            archiveMetadata: makeArchiveMetadata()
         )
     }
 }

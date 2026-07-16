@@ -8,6 +8,26 @@ import XCTest
 
 final class CashTableEntryTests: XCTestCase {
     @MainActor
+    func testJoinBuildsArchiveMetadataFromSelectedTableAndFrozenProfiles() throws {
+        let fixture = try AppSessionFixture()
+        let profiles = try TableSeatProfileFactory.make(humanSeat: SeatID(rawValue: 0)!)
+
+        try fixture.session.joinCashTable(
+            fixture.table,
+            buyIn: 16_000,
+            autoTopUp: false,
+            reduceMotion: true,
+            seatProfiles: profiles
+        )
+
+        XCTAssertEqual(fixture.capturedArchiveMetadata?.tableDisplayName, fixture.table.name)
+        XCTAssertEqual(
+            fixture.capturedArchiveMetadata?.seatDisplayNames,
+            Dictionary(uniqueKeysWithValues: profiles.map { ($0.id, $0.displayName) })
+        )
+    }
+
+    @MainActor
     func testFailedSitDownKeepsBalanceAndRoute() throws {
         let fixture = try AppSessionFixture(failingSave: true)
         fixture.session.continueAsGuest()
@@ -142,7 +162,7 @@ final class CashTableEntryTests: XCTestCase {
         var coordinatorCalls = 0
         let dependencies = makeDependencies(
             ids: ids,
-            makeCoordinator: { store, humanSeat, profiles, runtime in
+            makeCoordinator: { store, humanSeat, profiles, archiveMetadata, runtime in
                 coordinatorCalls += 1
                 if coordinatorCalls == 1 {
                     throw CashTableEntryTestError.coordinatorCreation
@@ -151,6 +171,7 @@ final class CashTableEntryTests: XCTestCase {
                     store: store,
                     humanSeat: humanSeat,
                     seatProfiles: profiles,
+                    archiveMetadata: archiveMetadata,
                     dependencies: runtime
                 )
             }
@@ -424,6 +445,7 @@ private func makeDependencies(
         LocalPokerStore,
         SeatID,
         [TableSeatProfile],
+        HandArchiveMetadata,
         TableRuntimeDependencies
     ) throws -> CashTableCoordinator)? = nil
 ) -> AppSessionDependencies {
@@ -439,11 +461,13 @@ private func makeDependencies(
                 reduceMotion: true
             )
         },
-        makeCoordinator: makeCoordinator ?? { store, humanSeat, profiles, runtime in
+        makeCoordinator: makeCoordinator ?? {
+            store, humanSeat, profiles, archiveMetadata, runtime in
             try CashTableCoordinator(
                 store: store,
                 humanSeat: humanSeat,
                 seatProfiles: profiles,
+                archiveMetadata: archiveMetadata,
                 dependencies: runtime
             )
         }

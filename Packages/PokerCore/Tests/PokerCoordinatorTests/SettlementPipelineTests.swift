@@ -25,6 +25,25 @@ import Testing
     #expect(businessIDs.values() == [firstID])
 }
 
+@Test @MainActor func 结算保存冻结牌桌与九座位名称且重试复用同一元数据() async throws {
+    let repository = FailOnceSessionRepository()
+    let fixture = try await CoordinatorScenario.pendingSettlement(
+        repository: repository,
+        archiveMetadata: makeCoordinatorArchiveMetadata(tableName: "星河湾")
+    )
+
+    await fixture.coordinator.finishSettlement()
+    #expect(fixture.coordinator.state.phase == .saveFailed)
+    try await fixture.coordinator.retrySave()
+
+    let stored = try #require(fixture.store.handRecords().first)
+    #expect(stored.archiveMetadata?.tableDisplayName == "星河湾")
+    #expect(stored.archiveMetadata?.seatDisplayNames.count == 9)
+    #expect(stored.transactionID != nil)
+    #expect(fixture.store.handRecords().count == 1)
+    #expect(repository.attemptedBusinessIDs().count == 2)
+}
+
 @Test @MainActor func 真实行动链结束后自动摊牌并保存() async throws {
     let repository = FailOnceSessionRepository(failSettlementOnce: false)
     let scenario = try await CoordinatorScenario.automaticSettlement(

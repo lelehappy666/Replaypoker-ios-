@@ -247,7 +247,8 @@ public final class LocalPokerStore {
     }
 
     public func commitPendingHand(
-        transactionID: BusinessID
+        transactionID: BusinessID,
+        archiveMetadata: HandArchiveMetadata
     ) throws -> StoredHandRecord {
         if let receipt = committed.settlementReceipts[transactionID] {
             guard let record = committed.records[receipt.handID] else {
@@ -255,6 +256,7 @@ public final class LocalPokerStore {
             }
             guard record.sessionID == receipt.sessionID,
                   record.transactionID == transactionID,
+                  record.archiveMetadata == archiveMetadata,
                   committed.activeCashSession?.pendingHand == nil
             else {
                 throw PokerSessionError.businessIDConflict
@@ -273,8 +275,16 @@ public final class LocalPokerStore {
             else {
                 throw PokerSessionError.handNotComplete
             }
+            guard Set(archiveMetadata.seatDisplayNames.keys)
+                    == Set(session.stacks.keys),
+                  archiveMetadata.humanSeat == session.humanSeat
+            else {
+                throw PokerSessionError.invalidTable
+            }
             if let existing = state.records[pending.id] {
-                guard existing.transactionID == transactionID else {
+                guard existing.transactionID == transactionID,
+                      existing.archiveMetadata == archiveMetadata
+                else {
                     throw PokerSessionError.businessIDConflict
                 }
                 return existing
@@ -295,7 +305,7 @@ public final class LocalPokerStore {
                 localDay: clock.currentDay,
                 handNumber: handNumber,
                 record: pending.record,
-                archiveMetadata: nil
+                archiveMetadata: archiveMetadata
             )
             try updateStatistics(
                 &state.statistics,

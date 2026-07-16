@@ -1,5 +1,6 @@
 import Foundation
 import PokerBot
+import PokerCoordinator
 import PokerSession
 import XCTest
 @testable import RiverClub
@@ -79,19 +80,35 @@ final class AppSessionTests: XCTestCase {
 }
 
 @MainActor
+final class ArchiveMetadataCapture {
+    private(set) var value: HandArchiveMetadata?
+
+    func record(_ metadata: HandArchiveMetadata) {
+        value = metadata
+    }
+}
+
+@MainActor
 final class AppSessionFixture {
     let directory: URL
     let store: LocalPokerStore
     let session: AppSession
     let table: PokerTableSummary
+    private let archiveMetadataCapture: ArchiveMetadataCapture
+
+    var capturedArchiveMetadata: HandArchiveMetadata? {
+        archiveMetadataCapture.value
+    }
 
     init(
         failingSave: Bool = false,
         botSettingsRepository: any BotSettingsPersisting = MemoryBotSettingsRepository(
             initial: .recommended
         ),
-        dependencies: AppSessionDependencies = .live
+        dependencies: AppSessionDependencies? = nil,
+        archiveMetadataCapture: ArchiveMetadataCapture = ArchiveMetadataCapture()
     ) throws {
+        self.archiveMetadataCapture = archiveMetadataCapture
         directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("river-club-app-session-\(UUID().uuidString)")
         try FileManager.default.createDirectory(
@@ -108,10 +125,26 @@ final class AppSessionFixture {
         if failingSave {
             try FileManager.default.removeItem(at: directory)
         }
+        let liveDependencies = AppSessionDependencies.live
+        let resolvedDependencies = dependencies ?? AppSessionDependencies(
+            nextSessionID: liveDependencies.nextSessionID,
+            nextBusinessID: liveDependencies.nextBusinessID,
+            makeRuntimeDependencies: liveDependencies.makeRuntimeDependencies,
+            makeCoordinator: { store, humanSeat, profiles, archiveMetadata, runtime in
+                archiveMetadataCapture.record(archiveMetadata)
+                return try CashTableCoordinator(
+                    store: store,
+                    humanSeat: humanSeat,
+                    seatProfiles: profiles,
+                    archiveMetadata: archiveMetadata,
+                    dependencies: runtime
+                )
+            }
+        )
         session = AppSession(
             pokerStore: store,
             botSettingsRepository: botSettingsRepository,
-            dependencies: dependencies
+            dependencies: resolvedDependencies
         )
         table = Self.makeTable()
     }

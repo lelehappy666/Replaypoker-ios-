@@ -22,6 +22,7 @@ import Testing
         store: fixture.store,
         humanSeat: fixture.humanSeat,
         seatProfiles: fixture.seatProfiles,
+        archiveMetadata: makeCoordinatorArchiveMetadata(),
         dependencies: .immediate(seed: 7)
     )
 
@@ -65,6 +66,7 @@ import Testing
         store: fixture.store,
         humanSeat: fixture.humanSeat,
         seatProfiles: fixture.seatProfiles,
+        archiveMetadata: makeCoordinatorArchiveMetadata(),
         dependencies: TableRuntimeDependencies(
             nextHandID: { try HandID("animation-sequence-hand") },
             nextBusinessID: { purpose in try BusinessID("\(purpose)-animation-sequence") },
@@ -100,6 +102,7 @@ private func hasRepeatedEvent(in events: [TableAnimationEvent]) -> Bool {
         store: fixture.store,
         humanSeat: fixture.humanSeat,
         seatProfiles: fixture.seatProfiles,
+        archiveMetadata: makeCoordinatorArchiveMetadata(),
         dependencies: TableRuntimeDependencies(
             nextHandID: { try HandID("resume-hand") },
             nextBusinessID: { purpose in try BusinessID("\(purpose)-resume") },
@@ -132,6 +135,7 @@ private func hasRepeatedEvent(in events: [TableAnimationEvent]) -> Bool {
             store: fixture.store,
             humanSeat: fixture.humanSeat,
             seatProfiles: profiles,
+            archiveMetadata: makeCoordinatorArchiveMetadata(),
             dependencies: .immediate(seed: 7)
         )
     }
@@ -147,6 +151,7 @@ private func hasRepeatedEvent(in events: [TableAnimationEvent]) -> Bool {
             store: fixture.store,
             humanSeat: fixture.humanSeat,
             seatProfiles: profiles,
+            archiveMetadata: makeCoordinatorArchiveMetadata(),
             dependencies: .immediate(seed: 7)
         )
     }
@@ -161,6 +166,7 @@ private func hasRepeatedEvent(in events: [TableAnimationEvent]) -> Bool {
             store: fixture.store,
             humanSeat: fixture.humanSeat,
             seatProfiles: profiles,
+            archiveMetadata: makeCoordinatorArchiveMetadata(),
             dependencies: .immediate(seed: 7)
         )
     }

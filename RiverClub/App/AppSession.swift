@@ -24,6 +24,7 @@ struct AppSessionDependencies {
         _ store: LocalPokerStore,
         _ humanSeat: SeatID,
         _ profiles: [TableSeatProfile],
+        _ archiveMetadata: HandArchiveMetadata,
         _ runtime: TableRuntimeDependencies
     ) throws -> CashTableCoordinator
 
@@ -34,11 +35,12 @@ struct AppSessionDependencies {
                 try BusinessID("\(purpose):\(UUID().uuidString)")
             },
             makeRuntimeDependencies: TableRuntimeDependencies.live,
-            makeCoordinator: { store, humanSeat, profiles, runtime in
+            makeCoordinator: { store, humanSeat, profiles, archiveMetadata, runtime in
                 try CashTableCoordinator(
                     store: store,
                     humanSeat: humanSeat,
                     seatProfiles: profiles,
+                    archiveMetadata: archiveMetadata,
                     dependencies: runtime
                 )
             }
@@ -168,11 +170,12 @@ final class AppSession {
                         reduceMotion: true
                     )
                 },
-                makeCoordinator: { store, humanSeat, profiles, runtime in
+                makeCoordinator: { store, humanSeat, profiles, archiveMetadata, runtime in
                     try CashTableCoordinator(
                         store: store,
                         humanSeat: humanSeat,
                         seatProfiles: profiles,
+                        archiveMetadata: archiveMetadata,
                         dependencies: runtime
                     )
                 }
@@ -237,10 +240,18 @@ final class AppSession {
             request: attempt.request,
             businessID: attempt.businessID
         )
+        let archiveMetadata = try HandArchiveMetadata(
+            tableDisplayName: attempt.table.name,
+            humanSeat: attempt.request.humanSeat,
+            seatDisplayNames: Dictionary(
+                uniqueKeysWithValues: attempt.profiles.map { ($0.id, $0.displayName) }
+            )
+        )
         let coordinator = try dependencies.makeCoordinator(
             pokerStore,
             attempt.request.humanSeat,
             attempt.profiles,
+            archiveMetadata,
             dependencies.makeRuntimeDependencies(reduceMotion)
         )
         tableCoordinator = coordinator

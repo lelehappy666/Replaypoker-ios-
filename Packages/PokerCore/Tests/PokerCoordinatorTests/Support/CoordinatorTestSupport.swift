@@ -5,6 +5,19 @@ import PokerSession
 import Testing
 @testable import PokerCoordinator
 
+func makeCoordinatorArchiveMetadata(
+    tableName: String = "测试牌桌"
+) throws -> HandArchiveMetadata {
+    let profiles = try makeSeatProfiles()
+    return try HandArchiveMetadata(
+        tableDisplayName: tableName,
+        humanSeat: SeatID(0),
+        seatDisplayNames: Dictionary(
+            uniqueKeysWithValues: profiles.map { ($0.id, $0.displayName) }
+        )
+    )
+}
+
 func decodeLegalActions(_ json: String) throws -> LegalActionSet {
     try JSONDecoder().decode(LegalActionSet.self, from: Data(json.utf8))
 }
@@ -125,7 +138,10 @@ final class CoordinatorStoreFixture {
                     $0 != humanSeat && record.finalStacks[$0]?.rawValue == 0
                 }
             )
-            _ = try store.commitPendingHand(transactionID: try BusinessID("settle-busted-bot"))
+            _ = try store.commitPendingHand(
+                transactionID: try BusinessID("settle-busted-bot"),
+                archiveMetadata: makeCoordinatorArchiveMetadata()
+            )
             let showdownSeat = try #require(
                 record.handRanksBySeat.keys.sorted().first { $0 != bustedBot }
             )
@@ -508,6 +524,7 @@ final class CoordinatorScenario {
                 store: store,
                 humanSeat: humanSeat,
                 seatProfiles: try makeSeatProfiles(),
+                archiveMetadata: makeCoordinatorArchiveMetadata(),
                 dependencies: dependencies
             )
             return CoordinatorScenario(
@@ -630,6 +647,7 @@ final class CoordinatorScenario {
                 store: store,
                 humanSeat: SeatID(0),
                 seatProfiles: try makeSeatProfiles(),
+                archiveMetadata: makeCoordinatorArchiveMetadata(),
                 dependencies: TableRuntimeDependencies(
                     nextHandID: { try HandID("bot-hand-\(seed)") },
                     nextBusinessID: { purpose in
@@ -682,7 +700,8 @@ final class CoordinatorScenario {
     static func pendingSettlement(
         repository: FailOnceSessionRepository,
         businessIDs: BusinessIDSequence = BusinessIDSequence(),
-        failBusinessIDGeneration: Bool = false
+        failBusinessIDGeneration: Bool = false,
+        archiveMetadata: HandArchiveMetadata? = nil
     ) async throws -> CoordinatorScenario {
         let directory = try makeTemporaryDirectory(named: "pending-settlement")
         do {
@@ -692,6 +711,7 @@ final class CoordinatorScenario {
                 store: store,
                 humanSeat: humanSeat,
                 seatProfiles: try makeSeatProfiles(),
+                archiveMetadata: archiveMetadata ?? makeCoordinatorArchiveMetadata(),
                 dependencies: TableRuntimeDependencies(
                     nextHandID: { try HandID("pending-settlement-\(UUID().uuidString)") },
                     nextBusinessID: { purpose in
@@ -736,6 +756,7 @@ final class CoordinatorScenario {
                 store: store,
                 humanSeat: humanSeat,
                 seatProfiles: try makeSeatProfiles(),
+                archiveMetadata: makeCoordinatorArchiveMetadata(),
                 dependencies: TableRuntimeDependencies(
                     nextHandID: {
                         try HandID("automatic-settlement-\(UUID().uuidString)")
@@ -780,6 +801,7 @@ final class CoordinatorScenario {
                 store: store,
                 humanSeat: humanSeat,
                 seatProfiles: try makeSeatProfiles(),
+                archiveMetadata: makeCoordinatorArchiveMetadata(),
                 dependencies: TableRuntimeDependencies(
                     nextHandID: { try HandID("pending-without-ranks") },
                     nextBusinessID: { purpose in
@@ -876,6 +898,7 @@ final class CoordinatorScenario {
                 store: store,
                 humanSeat: humanSeat,
                 seatProfiles: try makeSeatProfiles(),
+                archiveMetadata: makeCoordinatorArchiveMetadata(),
                 dependencies: dependencies
             )
             try await coordinator.startHand(settings: .recommended)
