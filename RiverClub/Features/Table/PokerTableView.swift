@@ -118,7 +118,7 @@ struct PokerTableView: View {
     }
 
     private var centerBoard: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 2) {
             HStack(spacing: 5) {
                 ForEach(Array(state.communityCards.enumerated()), id: \.offset) { index, card in
                     TableCardView(card: card)
@@ -135,8 +135,17 @@ struct PokerTableView: View {
                 }
             }
 
+            if let currentHandText {
+                Text(currentHandText)
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(RCTheme.gold)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.76)
+                    .accessibilityIdentifier("table.currentHand")
+            }
+
             Text("底池 \(state.pot.rawValue.formatted())")
-                .font(.caption.monospacedDigit().weight(.bold))
+                .font(.caption2.monospacedDigit().weight(.bold))
                 .foregroundStyle(RCTheme.primaryText)
                 .accessibilityIdentifier("table.pot")
 
@@ -144,7 +153,7 @@ struct PokerTableView: View {
                 ForEach(0..<chipCount, id: \.self) { _ in
                     Circle()
                         .fill(RCTheme.gold)
-                        .frame(width: 14, height: 14)
+                        .frame(width: 10, height: 10)
                         .overlay { Circle().stroke(RCTheme.background, lineWidth: 1) }
                 }
             }
@@ -155,6 +164,20 @@ struct PokerTableView: View {
 
     private var chipCount: Int {
         state.pot.rawValue == 0 ? 0 : min(6, max(1, state.pot.rawValue / 200))
+    }
+
+    private var currentHandText: String? {
+        guard let human = state.seats.first(where: \.isHuman) else {
+            return nil
+        }
+        let holeCards = human.cards.compactMap { cardState -> Card? in
+            guard case let .faceUp(card) = cardState else { return nil }
+            return card
+        }
+        return CurrentHandPresentation.text(
+            holeCards: holeCards,
+            communityCards: state.communityCards
+        )
     }
 
     private var topBar: some View {

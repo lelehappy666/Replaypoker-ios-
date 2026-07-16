@@ -35,7 +35,7 @@ struct TableCardView: View {
                     Text(rankText(card.rank))
                     Text(suitText(card.suit))
                 }
-                .font(.caption.weight(.bold))
+                .font(.system(size: 15, weight: .bold, design: .rounded))
                 .foregroundStyle(isRed(card.suit) ? .red : .black)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(.white, in: RoundedRectangle(cornerRadius: 5))
