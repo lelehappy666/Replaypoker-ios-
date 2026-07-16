@@ -109,7 +109,10 @@ final class HandHistorySessionTests: XCTestCase {
 
     @MainActor
     func testDeleteFailureKeepsListSelectionAndOffersSameRetry() throws {
-        let fixture = try HandHistoryAppFixture.withFailingDelete()
+        var attemptedIDs: [HandID] = []
+        let fixture = try HandHistoryAppFixture.withFailingDelete {
+            attemptedIDs.append($0)
+        }
         fixture.session.loadHandHistory()
         let before = fixture.session.handHistoryState.items
         let id = try XCTUnwrap(before.first?.id)
@@ -130,6 +133,24 @@ final class HandHistorySessionTests: XCTestCase {
 
         XCTAssertThrowsError(try fixture.session.confirmHistoryDeletion())
         XCTAssertEqual(fixture.session.handHistoryState.pendingDeletion, .hand(id))
+        XCTAssertEqual(attemptedIDs, [id, id])
+    }
+
+    @MainActor
+    func testCancellingDeletionClearsPendingAndOverlayState() throws {
+        let fixture = try HandHistoryAppFixture.withThreeRecords()
+        fixture.session.loadHandHistory()
+        let id = try XCTUnwrap(fixture.session.handHistoryState.items.first?.id)
+        fixture.session.requestDeleteHand(id: id)
+
+        fixture.session.cancelHistoryDeletion()
+
+        XCTAssertNil(fixture.session.handHistoryState.pendingDeletion)
+        XCTAssertNil(
+            HandHistoryDeletionPresentation.overlay(
+                for: fixture.session.handHistoryState
+            )
+        )
     }
 
     @MainActor

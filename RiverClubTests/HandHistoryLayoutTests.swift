@@ -82,4 +82,54 @@ final class HandHistoryLayoutTests: XCTestCase {
             "history.cancelDelete"
         )
     }
+
+    func testDeletionErrorKeepsTheSameOverlayAndConfirmationAction() throws {
+        let record = try makeHistoryRecord(
+            archiveMetadata: try makePresentationArchiveMetadata()
+        )
+        let detail = try HandHistoryPresentation.detail(from: record)
+        let item = try HandHistoryPresentation.listItem(from: record)
+        var state = HandHistoryViewState(
+            loadState: .loaded([item]),
+            selection: detail,
+            pendingDeletion: .hand(record.id)
+        )
+        let before = try XCTUnwrap(
+            HandHistoryDeletionPresentation.overlay(for: state)
+        )
+
+        state.deletionError = "牌局存档删除失败，请重试。"
+        let retry = try XCTUnwrap(
+            HandHistoryDeletionPresentation.overlay(for: state)
+        )
+
+        XCTAssertEqual(retry.pendingDeletion, before.pendingDeletion)
+        XCTAssertEqual(
+            retry.confirmationIdentifier,
+            HandHistoryDeletionPresentation.confirmDeleteOneIdentifier
+        )
+        XCTAssertTrue(retry.message.contains("牌局存档删除失败，请重试。"))
+    }
+
+    func testSingleDeletionOverlayStaysVisibleWhenSelectionDisappears() throws {
+        let record = try makeHistoryRecord(
+            archiveMetadata: try makePresentationArchiveMetadata()
+        )
+        let item = try HandHistoryPresentation.listItem(from: record)
+        let state = HandHistoryViewState(
+            loadState: .loaded([item]),
+            selection: nil,
+            pendingDeletion: .hand(record.id)
+        )
+
+        let overlay = try XCTUnwrap(
+            HandHistoryDeletionPresentation.overlay(for: state)
+        )
+
+        XCTAssertEqual(overlay.pendingDeletion, .hand(record.id))
+        XCTAssertEqual(
+            overlay.message,
+            "\(item.tableName) · \(item.localDay.rawValue) · 第 \(item.handNumber) 手"
+        )
+    }
 }

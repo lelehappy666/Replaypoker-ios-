@@ -88,24 +88,36 @@ struct HandHistoryView: View {
     @Bindable var session: AppSession
 
     var body: some View {
-        Group {
-            if let detail = session.handHistoryState.selection {
-                HandHistoryDetailView(
-                    detail: detail,
-                    onBack: session.closeHandHistoryDetail,
-                    onDelete: {
-                        session.requestDeleteHand(id: detail.id)
-                    },
-                    isDeleteConfirmationPresented: singleDeleteIsPresented,
-                    deletionError: session.handHistoryState.deletionError,
-                    onConfirmDelete: confirmDeletion,
-                    onCancelDelete: session.cancelHistoryDeletion
+        ZStack {
+            historyContent
+                .allowsHitTesting(deletionOverlay == nil)
+                .accessibilityHidden(deletionOverlay != nil)
+
+            if let deletionOverlay {
+                HandHistoryDeletionConfirmationView(
+                    presentation: deletionOverlay,
+                    onConfirm: confirmDeletion,
+                    onCancel: session.cancelHistoryDeletion
                 )
-            } else {
-                historyList
+                .zIndex(1)
             }
         }
         .background(RCTheme.background.ignoresSafeArea())
+    }
+
+    @ViewBuilder
+    private var historyContent: some View {
+        if let detail = session.handHistoryState.selection {
+            HandHistoryDetailView(
+                detail: detail,
+                onBack: session.closeHandHistoryDetail,
+                onDelete: {
+                    session.requestDeleteHand(id: detail.id)
+                }
+            )
+        } else {
+            historyList
+        }
     }
 
     private var historyList: some View {
@@ -131,39 +143,11 @@ struct HandHistoryView: View {
         .padding(20)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("history.list")
-        .alert(
-            "清空全部牌局存档？",
-            isPresented: deleteAllIsPresented
-        ) {
-            Button("取消", role: .cancel, action: session.cancelHistoryDeletion)
-                .accessibilityIdentifier(
-                    HandHistoryDeletionPresentation.cancelDeleteIdentifier
-                )
-            Button("清空全部", role: .destructive, action: confirmDeletion)
-                .accessibilityIdentifier(
-                    HandHistoryDeletionPresentation.confirmDeleteAllIdentifier
-                )
-        } message: {
-            Text(deletionMessage(HandHistoryDeletionPresentation.deleteAllMessage))
-        }
     }
 
-    private var singleDeleteIsPresented: Binding<Bool> {
-        Binding(
-            get: {
-                guard case .hand = session.handHistoryState.pendingDeletion else {
-                    return false
-                }
-                return true
-            },
-            set: { _ in }
-        )
-    }
-
-    private var deleteAllIsPresented: Binding<Bool> {
-        Binding(
-            get: { session.handHistoryState.pendingDeletion == .all },
-            set: { _ in }
+    private var deletionOverlay: HandHistoryDeletionOverlay? {
+        HandHistoryDeletionPresentation.overlay(
+            for: session.handHistoryState
         )
     }
 
@@ -174,12 +158,62 @@ struct HandHistoryView: View {
             // AppSession 保留 pending、列表、详情和可重试的中文错误。
         }
     }
+}
 
-    private func deletionMessage(_ message: String) -> String {
-        guard let error = session.handHistoryState.deletionError else {
-            return message
+private struct HandHistoryDeletionConfirmationView: View {
+    let presentation: HandHistoryDeletionOverlay
+    let onConfirm: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.68)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(presentation.title)
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(RCTheme.primaryText)
+                    Text(presentation.message)
+                        .font(.body)
+                        .foregroundStyle(RCTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                HStack(spacing: 12) {
+                    Button("取消", role: .cancel, action: onCancel)
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier(
+                            HandHistoryDeletionPresentation.cancelDeleteIdentifier
+                        )
+                    Spacer(minLength: 0)
+                    Button(
+                        presentation.confirmationTitle,
+                        role: .destructive,
+                        action: onConfirm
+                    )
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .accessibilityIdentifier(presentation.confirmationIdentifier)
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: 440)
+            .background(
+                RCTheme.surfaceRaised,
+                in: RoundedRectangle(cornerRadius: RCTheme.corner)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: RCTheme.corner)
+                    .stroke(RCTheme.gold.opacity(0.28), lineWidth: 1)
+            }
+            .padding(24)
         }
-        return "\(message)\n\(error)"
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("history.deletionConfirmation")
     }
 }
 

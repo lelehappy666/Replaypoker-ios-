@@ -107,3 +107,64 @@ xcodebuild build -project RiverClub.xcodeproj -scheme RiverClub \
 ## 顾虑
 
 无已知功能阻塞。按任务边界未执行任务 7 的 UI E2E；弹窗交互由状态机单元测试、确认展示契约测试和 SwiftUI generic build 覆盖。
+
+---
+
+## 正式评审修复：根层确认弹层
+
+### 问题与根因
+
+正式评审指出两个系统 `alert` 的 `isPresented` 绑定忽略 setter。原实现以 pending 推导 `true`，但丢弃 SwiftUI 写回的 `false`：确认失败后 pending 不变，无法可靠产生下一次系统弹窗所需的重现跃迁；系统关闭也无法明确取消。此外，单局弹窗挂在详情视图上，详情 selection 消失时可能留下不可见 pending。
+
+根因是把业务 pending 状态和系统 alert 的双向呈现生命周期拼接在一起，却没有定义 `false` 写回语义。
+
+### 修复 RED
+
+先补充以下测试：
+
+- 删除失败且保持同一 pending 时，纯展示策略仍返回同一弹层和确认动作标识，并展示中文错误。
+- 显式取消后清除 pending，纯展示策略不再返回弹层。
+- selection 消失但列表项仍存在时，单局弹层继续可见，文案仍为“牌桌名 · 日期 · 第 N 手”。
+- 删除失败后二次确认的依赖调用计数为两次，且两次均为同一 `HandID`。
+
+随后运行目标测试命令，结果为预期 RED：编译失败，明确报告 `HandHistoryDeletionPresentation` 缺少 `overlay(for:)`，退出码 65。
+
+### 最小修复
+
+- 删除两个系统 `alert` 及忽略 setter 的 `Binding<Bool>`。
+- 新增可比较、可发送的 `HandHistoryDeletionOverlay` 纯展示模型，携带原 pending、标题、文案、确认标题和确认标识。
+- `HandHistoryDeletionPresentation.overlay(for:)` 直接由 `HandHistoryViewState` 派生：
+  - pending 不存在时不呈现；
+  - 单局 pending 优先使用详情快照，selection 消失时回退到已加载列表项；
+  - 全部 pending 使用固定不变量文案；
+  - 删除错误只追加到同一展示模型，不改变 pending 和确认动作。
+- 在根 `HandHistoryView` 使用条件 `ZStack` overlay 统一承载单局与全部确认。
+- 弹层出现时，底层内容同时使用 `allowsHitTesting(false)` 和 `accessibilityHidden(true)`，遮罩覆盖整个历史视图，背景无法交互。
+- 取消按钮明确调用 `cancelHistoryDeletion()`；确认按钮继续使用 `role: .destructive`，并调用 `confirmHistoryDeletion()`。
+- 确认失败不清 pending，因此根层 overlay 持续存在并展示错误；同一确认按钮可直接再次调用相同删除依赖，不依赖系统 false→true 重现。
+
+### 修复 GREEN 与最终验证
+
+- 目标 `HandHistorySessionTests` + `HandHistoryLayoutTests`：15 个测试通过，0 失败，`** TEST SUCCEEDED **`。
+- 全量 `RiverClubTests`：91 个测试通过，0 失败，`** TEST SUCCEEDED **`。
+- `deletingHistoryIsAtomicAndPreservesLedgerSessionStatisticsAndReceipts`：1/1 通过。
+- `deletedHistoryKeepsHandAndSettlementIdentitiesPermanentlyReserved`：1/1 通过。
+- generic iOS Simulator build：`** BUILD SUCCEEDED **`。
+- `git diff --check`：无空白错误。
+
+### 修复自审
+
+- `RiverClub/Features/History` 中已不存在系统 `.alert(`、`Binding<Bool>` 或忽略 setter 的实现。
+- 单局和全部确认均由根层同一个 pending 派生路径承载。
+- 单局 selection 消失边界有列表项回退测试，不会留下不可见 pending。
+- 删除失败二次确认计数明确为同一 `HandID` 两次，证明重试命中相同依赖。
+- `history.confirmDeleteOne`、`history.confirmDeleteAll`、`history.cancelDelete` 保持不变；两个确认按钮保持 destructive role。
+- 未新增任务 7 UI E2E，也未注入测试专用伪记录。
+
+### 修复新增变更文件
+
+- `RiverClubTests/Support/HandHistoryAppTestSupport.swift`：仅增加删除尝试观察闭包，用于验证同一 `HandID` 重试计数；真实存档夹具生成路径未改变。
+
+### 修复后顾虑
+
+无已知功能阻塞。任务 7 UI E2E 仍按边界未执行；根层展示与状态行为由纯策略测试、会话测试和编译回归覆盖。

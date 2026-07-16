@@ -15,9 +15,12 @@ struct HandHistoryAppFixture {
         try makeFixture()
     }
 
-    static func withFailingDelete() throws -> Self {
+    static func withFailingDelete(
+        onSingleAttempt: @escaping (HandID) -> Void = { _ in }
+    ) throws -> Self {
         var dependencies = AppSessionDependencies.live
-        dependencies.deleteHandRecord = { _, _ in
+        dependencies.deleteHandRecord = { _, id in
+            onSingleAttempt(id)
             throw PokerSessionError.persistenceFailed
         }
         dependencies.deleteAllHandRecords = { _ in
