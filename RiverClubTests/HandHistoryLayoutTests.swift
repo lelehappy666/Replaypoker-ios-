@@ -1,4 +1,6 @@
 import CoreGraphics
+import PokerCore
+import PokerSession
 import SwiftUI
 import XCTest
 @testable import RiverClub
@@ -131,5 +133,35 @@ final class HandHistoryLayoutTests: XCTestCase {
             overlay.message,
             "\(item.tableName) · \(item.localDay.rawValue) · 第 \(item.handNumber) 手"
         )
+    }
+
+    func testPendingHandWithoutSelectionOrItemsStillHasVisibleOverlay() throws {
+        let id = try HandID("temporarily-unavailable-hand")
+        let state = HandHistoryViewState(
+            loadState: .failed("牌局存档读取失败，请重试。"),
+            pendingDeletion: .hand(id)
+        )
+
+        let overlay = try XCTUnwrap(
+            HandHistoryDeletionPresentation.overlay(for: state)
+        )
+
+        XCTAssertEqual(overlay.pendingDeletion, .hand(id))
+        XCTAssertEqual(
+            overlay.confirmationIdentifier,
+            HandHistoryDeletionPresentation.confirmDeleteOneIdentifier
+        )
+        XCTAssertFalse(overlay.message.isEmpty)
+        XCTAssertEqual(overlay.escapeAction, .cancel)
+    }
+
+    func testDeletionModalUsesScrollableStackedLayoutForLargeTypeAt424Points() {
+        let layout = HandHistoryDeletionLayout.metrics(
+            canvasHeight: 424,
+            dynamicTypeSize: .accessibility3
+        )
+
+        XCTAssertTrue(layout.usesVerticalScrolling)
+        XCTAssertTrue(layout.stacksActionsVertically)
     }
 }

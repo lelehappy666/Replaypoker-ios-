@@ -16,6 +16,13 @@ final class AppSessionTests: XCTestCase {
         XCTAssertFalse(AppRoute.sidebarRoutes.contains(.tableBrowser))
     }
 
+    func testHistoryDeletionModalDisablesAndHidesTheWholeAppShell() {
+        let policy = AppRootModalPolicy(isHistoryDeletionPresented: true)
+
+        XCTAssertFalse(policy.allowsBackgroundInteraction)
+        XCTAssertTrue(policy.hidesBackgroundFromAccessibility)
+    }
+
     @MainActor
     func testGuestLoginOpensLobbyAndLogoutReturnsToLogin() throws {
         let session = try AppSessionFixture().session

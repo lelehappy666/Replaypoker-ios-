@@ -33,12 +33,17 @@ enum HandHistoryPendingDeletion: Equatable, Sendable {
     case all
 }
 
+enum HandHistoryDeletionDismissAction: Equatable, Sendable {
+    case cancel
+}
+
 struct HandHistoryDeletionOverlay: Equatable, Sendable {
     let pendingDeletion: HandHistoryPendingDeletion
     let title: String
     let message: String
     let confirmationTitle: String
     let confirmationIdentifier: String
+    let escapeAction: HandHistoryDeletionDismissAction
 }
 
 enum HandHistoryDeletionPresentation {
@@ -46,6 +51,7 @@ enum HandHistoryDeletionPresentation {
     static let confirmDeleteOneIdentifier = "history.confirmDeleteOne"
     static let confirmDeleteAllIdentifier = "history.confirmDeleteAll"
     static let cancelDeleteIdentifier = "history.cancelDelete"
+    static let unavailableSingleMessage = "该牌局存档的牌桌、日期和手数暂不可用。"
 
     static func singleMessage(for detail: HandHistoryDetail) -> String {
         "\(detail.tableName) · \(detail.localDay.rawValue) · 第 \(detail.handNumber) 手"
@@ -64,14 +70,15 @@ enum HandHistoryDeletionPresentation {
             } else if let item = state.items.first(where: { $0.id == id }) {
                 message = "\(item.tableName) · \(item.localDay.rawValue) · 第 \(item.handNumber) 手"
             } else {
-                return nil
+                message = unavailableSingleMessage
             }
             overlay = HandHistoryDeletionOverlay(
                 pendingDeletion: pendingDeletion,
                 title: "删除本局存档？",
                 message: message,
                 confirmationTitle: "删除本局",
-                confirmationIdentifier: confirmDeleteOneIdentifier
+                confirmationIdentifier: confirmDeleteOneIdentifier,
+                escapeAction: .cancel
             )
         case .all:
             overlay = HandHistoryDeletionOverlay(
@@ -79,7 +86,8 @@ enum HandHistoryDeletionPresentation {
                 title: "清空全部牌局存档？",
                 message: deleteAllMessage,
                 confirmationTitle: "清空全部",
-                confirmationIdentifier: confirmDeleteAllIdentifier
+                confirmationIdentifier: confirmDeleteAllIdentifier,
+                escapeAction: .cancel
             )
         }
         guard let deletionError = state.deletionError else { return overlay }
@@ -88,7 +96,8 @@ enum HandHistoryDeletionPresentation {
             title: overlay.title,
             message: "\(overlay.message)\n\(deletionError)",
             confirmationTitle: overlay.confirmationTitle,
-            confirmationIdentifier: overlay.confirmationIdentifier
+            confirmationIdentifier: overlay.confirmationIdentifier,
+            escapeAction: overlay.escapeAction
         )
     }
 }

@@ -88,20 +88,7 @@ struct HandHistoryView: View {
     @Bindable var session: AppSession
 
     var body: some View {
-        ZStack {
-            historyContent
-                .allowsHitTesting(deletionOverlay == nil)
-                .accessibilityHidden(deletionOverlay != nil)
-
-            if let deletionOverlay {
-                HandHistoryDeletionConfirmationView(
-                    presentation: deletionOverlay,
-                    onConfirm: confirmDeletion,
-                    onCancel: session.cancelHistoryDeletion
-                )
-                .zIndex(1)
-            }
-        }
+        historyContent
         .background(RCTheme.background.ignoresSafeArea())
     }
 
@@ -145,75 +132,138 @@ struct HandHistoryView: View {
         .accessibilityIdentifier("history.list")
     }
 
-    private var deletionOverlay: HandHistoryDeletionOverlay? {
-        HandHistoryDeletionPresentation.overlay(
-            for: session.handHistoryState
-        )
-    }
+}
 
-    private func confirmDeletion() {
-        do {
-            try session.confirmHistoryDeletion()
-        } catch {
-            // AppSession 保留 pending、列表、详情和可重试的中文错误。
-        }
+struct HandHistoryDeletionLayout: Equatable {
+    let minimumContentHeight: CGFloat
+    let usesVerticalScrolling: Bool
+    let stacksActionsVertically: Bool
+
+    static func metrics(
+        canvasHeight: CGFloat,
+        dynamicTypeSize: DynamicTypeSize
+    ) -> Self {
+        let minimumContentHeight: CGFloat = dynamicTypeSize.isAccessibilitySize
+            ? 520
+            : 260
+        return Self(
+            minimumContentHeight: minimumContentHeight,
+            usesVerticalScrolling: minimumContentHeight > canvasHeight,
+            stacksActionsVertically: dynamicTypeSize.isAccessibilitySize
+        )
     }
 }
 
-private struct HandHistoryDeletionConfirmationView: View {
+struct HandHistoryDeletionConfirmationView: View {
     let presentation: HandHistoryDeletionOverlay
     let onConfirm: () -> Void
     let onCancel: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        ZStack {
-            Color.black.opacity(0.68)
-                .ignoresSafeArea()
-                .contentShape(Rectangle())
-
-            VStack(alignment: .leading, spacing: 18) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(presentation.title)
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(RCTheme.primaryText)
-                    Text(presentation.message)
-                        .font(.body)
-                        .foregroundStyle(RCTheme.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                HStack(spacing: 12) {
-                    Button("取消", role: .cancel, action: onCancel)
-                        .buttonStyle(.bordered)
-                        .accessibilityIdentifier(
-                            HandHistoryDeletionPresentation.cancelDeleteIdentifier
-                        )
-                    Spacer(minLength: 0)
-                    Button(
-                        presentation.confirmationTitle,
-                        role: .destructive,
-                        action: onConfirm
-                    )
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                    .accessibilityIdentifier(presentation.confirmationIdentifier)
-                }
-            }
-            .padding(24)
-            .frame(maxWidth: 440)
-            .background(
-                RCTheme.surfaceRaised,
-                in: RoundedRectangle(cornerRadius: RCTheme.corner)
+        GeometryReader { proxy in
+            let layout = HandHistoryDeletionLayout.metrics(
+                canvasHeight: proxy.size.height,
+                dynamicTypeSize: dynamicTypeSize
             )
-            .overlay {
-                RoundedRectangle(cornerRadius: RCTheme.corner)
-                    .stroke(RCTheme.gold.opacity(0.28), lineWidth: 1)
+            ZStack {
+                Color.black.opacity(0.68)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+
+                ScrollView(.vertical) {
+                    VStack(spacing: 0) {
+                        if !layout.usesVerticalScrolling { Spacer(minLength: 0) }
+                        confirmationCard(layout: layout)
+                        if !layout.usesVerticalScrolling { Spacer(minLength: 0) }
+                    }
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: layout.usesVerticalScrolling
+                            ? layout.minimumContentHeight
+                            : proxy.size.height
+                    )
+                }
+                .scrollDisabled(!layout.usesVerticalScrolling)
+                .scrollIndicators(layout.usesVerticalScrolling ? .visible : .hidden)
             }
-            .padding(24)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)
+        .accessibilityAction(.escape) {
+            perform(presentation.escapeAction)
+        }
         .accessibilityIdentifier("history.deletionConfirmation")
+    }
+
+    private func confirmationCard(
+        layout: HandHistoryDeletionLayout
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(presentation.title)
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(RCTheme.primaryText)
+                Text(presentation.message)
+                    .font(.body)
+                    .foregroundStyle(RCTheme.secondaryText)
+            }
+            actions(layout: layout)
+        }
+        .padding(24)
+        .frame(maxWidth: 440)
+        .background(
+            RCTheme.surfaceRaised,
+            in: RoundedRectangle(cornerRadius: RCTheme.corner)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: RCTheme.corner)
+                .stroke(RCTheme.gold.opacity(0.28), lineWidth: 1)
+        }
+        .padding(24)
+    }
+
+    @ViewBuilder
+    private func actions(layout: HandHistoryDeletionLayout) -> some View {
+        if layout.stacksActionsVertically {
+            VStack(spacing: 12) {
+                cancelButton
+                confirmButton
+            }
+        } else {
+            HStack(spacing: 12) {
+                cancelButton
+                Spacer(minLength: 0)
+                confirmButton
+            }
+        }
+    }
+
+    private var cancelButton: some View {
+        Button(role: .cancel, action: onCancel) {
+            Text("取消").frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .accessibilityIdentifier(
+            HandHistoryDeletionPresentation.cancelDeleteIdentifier
+        )
+    }
+
+    private var confirmButton: some View {
+        Button(role: .destructive, action: onConfirm) {
+            Text(presentation.confirmationTitle).frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(.red)
+        .accessibilityIdentifier(presentation.confirmationIdentifier)
+    }
+
+    private func perform(_ action: HandHistoryDeletionDismissAction) {
+        switch action {
+        case .cancel:
+            onCancel()
+        }
     }
 }
 

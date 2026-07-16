@@ -4,6 +4,16 @@ enum MotionPolicy {
     static func shouldAnimate(reduceMotion: Bool) -> Bool { !reduceMotion }
 }
 
+struct AppRootModalPolicy: Equatable {
+    let allowsBackgroundInteraction: Bool
+    let hidesBackgroundFromAccessibility: Bool
+
+    init(isHistoryDeletionPresented: Bool) {
+        allowsBackgroundInteraction = !isHistoryDeletionPresented
+        hidesBackgroundFromAccessibility = isHistoryDeletionPresented
+    }
+}
+
 struct AppRootView: View {
     @Bindable var session: AppSession
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -14,6 +24,49 @@ struct AppRootView: View {
     @State private var tableReturnRoute: AppRoute = .lobby
 
     var body: some View {
+        let deletionOverlay = HandHistoryDeletionPresentation.overlay(
+            for: session.handHistoryState
+        )
+        let modalPolicy = AppRootModalPolicy(
+            isHistoryDeletionPresented: deletionOverlay != nil
+        )
+        ZStack {
+            appShell
+                .allowsHitTesting(modalPolicy.allowsBackgroundInteraction)
+                .accessibilityHidden(
+                    modalPolicy.hidesBackgroundFromAccessibility
+                )
+
+            if let deletionOverlay {
+                HandHistoryDeletionConfirmationView(
+                    presentation: deletionOverlay,
+                    onConfirm: confirmHistoryDeletion,
+                    onCancel: session.cancelHistoryDeletion
+                )
+                .zIndex(3)
+            }
+        }
+        .background(RCTheme.background)
+        .preferredColorScheme(.dark)
+        .animation(
+            MotionPolicy.shouldAnimate(reduceMotion: reduceMotion)
+                ? .easeOut(duration: 0.16)
+                : nil,
+            value: pendingBuyInTable
+        )
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .active:
+                Task { await session.resumeTableForLifecycle() }
+            case .inactive, .background:
+                session.suspendTableForLifecycle()
+            @unknown default:
+                session.suspendTableForLifecycle()
+            }
+        }
+    }
+
+    private var appShell: some View {
         ZStack {
             NavigationStack {
                 Group {
@@ -59,24 +112,6 @@ struct AppRootView: View {
                     }
                 )
                 .zIndex(2)
-            }
-        }
-        .background(RCTheme.background)
-        .preferredColorScheme(.dark)
-        .animation(
-            MotionPolicy.shouldAnimate(reduceMotion: reduceMotion)
-                ? .easeOut(duration: 0.16)
-                : nil,
-            value: pendingBuyInTable
-        )
-        .onChange(of: scenePhase) { _, phase in
-            switch phase {
-            case .active:
-                Task { await session.resumeTableForLifecycle() }
-            case .inactive, .background:
-                session.suspendTableForLifecycle()
-            @unknown default:
-                session.suspendTableForLifecycle()
             }
         }
     }
@@ -153,6 +188,14 @@ struct AppRootView: View {
     private func closeBuyIn() {
         buyInError = nil
         pendingBuyInTable = nil
+    }
+
+    private func confirmHistoryDeletion() {
+        do {
+            try session.confirmHistoryDeletion()
+        } catch {
+            // AppSession 保留 pending、列表、详情和可重试的中文错误。
+        }
     }
 
 }

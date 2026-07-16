@@ -168,3 +168,49 @@ xcodebuild build -project RiverClub.xcodeproj -scheme RiverClub \
 ### 修复后顾虑
 
 无已知功能阻塞。任务 7 UI E2E 仍按边界未执行；根层展示与状态行为由纯策略测试、会话测试和编译回归覆盖。
+
+---
+
+## 第二轮正式评审修复：全应用模态与自适应布局
+
+### 问题与根因
+
+第二轮评审确认上一版自定义确认层只覆盖 `HandHistoryView` 的右侧内容区。应用侧栏仍可点击且仍暴露给辅助功能，用户可在删除 pending 存在时离开历史页面；返回后若载入失败或目标项已不在 selection/list 中，展示策略会返回 `nil`，形成不可见且无法处理的 pending。此外，固定高度与横向按钮在 424 点高度、辅助功能字号下存在内容或操作被裁切的风险，也没有显式的模态语义与辅助功能 Escape 取消契约。
+
+### 第二轮 RED
+
+先新增以下失败测试：
+
+- 历史删除模态必须禁用并从辅助功能树隐藏整个应用 shell，而非仅历史内容区。
+- pending 对应牌局同时不在 selection 和列表项中时，仍必须返回可见确认层。
+- 424 点高度配合辅助功能字号时，确认层必须使用纵向滚动并将操作按钮纵向排列。
+- 确认展示模型必须声明 Escape 对应取消操作。
+
+目标测试首次编译按预期失败，明确报告缺少 `AppRootModalPolicy`，退出码 65。
+
+### 第二轮最小修复
+
+- 将删除确认层上移至 `AppRootView` 最外层，覆盖侧栏、导航内容、买入弹层和牌桌恢复提示。
+- 新增纯策略 `AppRootModalPolicy`；确认层出现时，对整个应用 shell 同时应用 `allowsHitTesting(false)` 与 `accessibilityHidden(true)`。
+- `HandHistoryDeletionPresentation` 在目标牌局快照和列表项都缺失时改用稳定的通用中文说明，确保 pending 始终有可处理的确认层。
+- 为展示模型新增 Escape 取消契约；实际视图添加模态辅助功能特征和 `.accessibilityAction(.escape)`，统一调用取消逻辑。
+- 新增纯布局策略 `HandHistoryDeletionLayout`：在可用高度不足时启用纵向滚动，辅助功能字号下将操作按钮纵向排列；SwiftUI 确认层使用该策略渲染。
+- 保持确认按钮 destructive role 和既有自动化标识不变；失败后仍保留 pending、错误和同操作重试。
+
+### 第二轮 GREEN 与最终验证
+
+- 目标 `AppSessionTests` + `HandHistoryLayoutTests` + `HandHistorySessionTests`：24 个测试通过，0 失败，`** TEST SUCCEEDED **`。
+- 全量 `RiverClubTests`：94 个测试通过，0 失败，`** TEST SUCCEEDED **`（iPhone 17 Pro，iOS 26.5）。
+- `deletingHistoryIsAtomicAndPreservesLedgerSessionStatisticsAndReceipts`：1/1 通过。
+- `deletedHistoryKeepsHandAndSettlementIdentitiesPermanentlyReserved`：1/1 通过。
+- generic iOS Simulator build：`** BUILD SUCCEEDED **`。
+
+首次执行完整测试时指定的 iPhone 16 Pro 不存在，因此命令在测试执行前以目的地错误退出；随后改用本机可用的 iPhone 17 Pro 完成上述 94/94 回归。首次核心包命令使用系统默认 Swift 工具链，因缺少 `Testing` 模块在编译阶段退出；固定 `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` 后，两个目标不变量用例均通过。
+
+### 第二轮自审
+
+- 删除确认层只在 `AppRootView` 渲染，历史页面不再承载局部遮罩。
+- 全应用 shell 的交互与辅助功能可见性由同一纯策略控制，并有单元测试覆盖。
+- selection、列表项和加载状态同时缺失时仍能显示通用确认文案，Escape 与取消按钮都清除 pending。
+- 424 点高度和辅助功能字号布局由纯策略测试覆盖，实际视图消费同一策略。
+- 未修改 PokerSession 删除实现及经济数据路径；两条既有删除不变量继续通过。
