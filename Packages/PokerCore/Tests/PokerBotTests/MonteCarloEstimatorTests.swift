@@ -99,7 +99,10 @@ func makeSimulationObservation(
     street: Int = 1,
     seatTwoID: Int = 2,
     legalActions: String = #"{"canFold":true,"canCheck":false,"callAmount":100,"minimumBet":null,"minimumRaiseTo":400,"maximumRaiseTo":1000,"canAllIn":true}"#,
-    stateVersion: Int = 1
+    stateVersion: Int = 1,
+    viewerStack: Int = 900,
+    seatOneStack: Int = 800,
+    seatTwoStack: Int = 1_200
 ) throws -> BotObservation {
     let json = """
     {
@@ -107,9 +110,9 @@ func makeSimulationObservation(
         "ownHoleCards":\(ownCards),
         "communityCards":\(communityCards),
         "publicSeats":[
-            {"id":0,"stack":900,"committedThisStreet":100,"committedThisHand":100,"hasFolded":false,"isAllIn":false,"isSittingOut":false},
-            {"id":1,"stack":800,"committedThisStreet":200,"committedThisHand":200,"hasFolded":false,"isAllIn":false,"isSittingOut":false},
-            {"id":\(seatTwoID),"stack":1200,"committedThisStreet":200,"committedThisHand":200,"hasFolded":false,"isAllIn":false,"isSittingOut":false}
+            {"id":0,"stack":\(viewerStack),"committedThisStreet":100,"committedThisHand":100,"hasFolded":false,"isAllIn":false,"isSittingOut":false},
+            {"id":1,"stack":\(seatOneStack),"committedThisStreet":200,"committedThisHand":200,"hasFolded":false,"isAllIn":false,"isSittingOut":false},
+            {"id":\(seatTwoID),"stack":\(seatTwoStack),"committedThisStreet":200,"committedThisHand":200,"hasFolded":false,"isAllIn":false,"isSittingOut":false}
         ],
         "currentActor":0,
         "street":\(street),

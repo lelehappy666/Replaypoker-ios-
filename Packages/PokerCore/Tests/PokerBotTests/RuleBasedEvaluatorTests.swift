@@ -89,7 +89,7 @@ import Testing
     let observation = try makeStrategyObservation()
     let candidates = try RuleBasedEvaluator().legalCandidates(for: observation)
 
-    #expect(candidates.map(\.kind) == [.fold, .call, .raise, .allIn])
+    #expect(candidates.map(\.kind) == [.fold, .call, .raise])
     let raise = try #require(candidates.first { $0.kind == .raise })
     #expect(raise.minimumAmount == Chips(rawValue: 400))
     #expect(raise.maximumAmount == Chips(rawValue: 1_000))

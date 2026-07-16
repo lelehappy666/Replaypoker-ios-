@@ -28,7 +28,6 @@ public struct BotDecisionEngine: Sendable {
         history: BotHistorySummary? = nil
     ) async throws -> BotDecision {
         let evaluation = try evaluator.evaluate(observation, settings: settings)
-        let candidates = try evaluator.legalCandidates(for: observation)
         let personality = BotPersonality.offsets(
             for: stableIdentity,
             schemaVersion: settings.schemaVersion
@@ -41,6 +40,7 @@ public struct BotDecisionEngine: Sendable {
 
         let iterations: Int
         let strength: Int
+        let simulatedEquity: Int?
         if settings.difficulty == .hard {
             iterations = settings.thinkingSpeed.hardSimulationIterations
             let estimate = try await equityEstimator.estimate(
@@ -49,15 +49,34 @@ public struct BotDecisionEngine: Sendable {
                 seed: mixedSeed(seed, stableIdentity: stableIdentity)
             )
             strength = (evaluation.strengthBasisPoints + estimate.effectiveBasisPoints * 2) / 3
+            simulatedEquity = estimate.effectiveBasisPoints
         } else {
             iterations = 0
             strength = evaluation.strengthBasisPoints
+            simulatedEquity = nil
         }
 
         let aggression = personality.applying(to: settings.aggression, keyPath: \.aggression)
         let bluff = personality.applying(to: settings.bluffFrequency, keyPath: \.bluffFrequency)
         let calling = personality.applying(to: settings.callingWidth, keyPath: \.callingWidth)
         let sizing = personality.applying(to: settings.betSizing, keyPath: \.betSizing)
+        var candidates = try evaluator.legalCandidates(for: observation)
+        if observation.legalActions.canAllIn,
+           let maximum = observation.legalActions.maximumRaiseTo,
+           try allInIsEligible(
+               observation: observation,
+               settings: settings,
+               strength: strength,
+               simulatedEquity: simulatedEquity
+           ) {
+            candidates.append(
+                ActionCandidate(
+                    kind: .allIn,
+                    minimumAmount: maximum,
+                    maximumAmount: maximum
+                )
+            )
+        }
         let scored = candidates.map { candidate in
             (
                 candidate,
@@ -75,7 +94,11 @@ public struct BotDecisionEngine: Sendable {
             )
         }
         let candidate = choose(scored, seed: mixedSeed(seed, stableIdentity: stableIdentity))
-        let action = try action(for: candidate, sizing: sizing)
+        let action = try action(
+            for: candidate,
+            sizing: sizing,
+            observation: observation
+        )
         let reason: BotDecisionReason
         if settings.difficulty == .hard {
             reason = .simulatedEquity
@@ -158,7 +181,8 @@ public struct BotDecisionEngine: Sendable {
 
     private func action(
         for candidate: ActionCandidate,
-        sizing: Int
+        sizing: Int,
+        observation: BotObservation
     ) throws -> PlayerAction {
         switch candidate.kind {
         case .fold: return .fold
@@ -168,16 +192,45 @@ public struct BotDecisionEngine: Sendable {
         case .bet, .raise:
             guard let minimum = candidate.minimumAmount,
                   let maximum = candidate.maximumAmount,
-                  minimum <= maximum else {
+                  minimum <= maximum,
+                  let viewer = observation.publicSeats.first(where: {
+                      $0.id == observation.viewer
+                  }) else {
                 throw BotError.invalidObservation
             }
-            let distance = maximum.rawValue - minimum.rawValue
-            let amount = minimum.rawValue + distance * sizing / 100
-            guard let chips = Chips(rawValue: amount) else {
-                throw BotError.invalidObservation
-            }
-            return candidate.kind == .bet ? .bet(chips) : .raiseTo(chips)
+            let target = try BotBetSizing.target(
+                minimum: minimum,
+                maximum: maximum,
+                currentCommitment: viewer.committedThisStreet,
+                pot: observation.pot,
+                sizing: sizing
+            )
+            return candidate.kind == .bet ? .bet(target) : .raiseTo(target)
         }
+    }
+
+    private func allInIsEligible(
+        observation: BotObservation,
+        settings: BotSettings,
+        strength: Int,
+        simulatedEquity: Int?
+    ) throws -> Bool {
+        guard let viewer = observation.publicSeats.first(where: {
+            $0.id == observation.viewer
+        }) else {
+            throw BotError.invalidObservation
+        }
+        let forcedShortCall = observation.legalActions.callAmount.map {
+            $0.rawValue >= viewer.stack.rawValue
+        } ?? false
+        return BotAllInEligibility.isEligible(
+            strengthBasisPoints: strength,
+            simulatedEquityBasisPoints: simulatedEquity,
+            effectiveStackBigBlinds: try evaluator.effectiveStackBigBlinds(observation),
+            potOddsBasisPoints: try evaluator.potOddsBasisPoints(observation),
+            model: settings.model,
+            forcedShortCall: forcedShortCall
+        )
     }
 
     private func mixedSeed(_ seed: UInt64, stableIdentity: String) -> UInt64 {

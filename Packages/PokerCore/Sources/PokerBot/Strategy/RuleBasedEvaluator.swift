@@ -110,15 +110,6 @@ struct RuleBasedEvaluator: Sendable {
                 ActionCandidate(kind: .raise, minimumAmount: minimum, maximumAmount: maximum)
             )
         }
-        if legal.canAllIn {
-            candidates.append(
-                ActionCandidate(
-                    kind: .allIn,
-                    minimumAmount: legal.maximumRaiseTo,
-                    maximumAmount: legal.maximumRaiseTo
-                )
-            )
-        }
         guard !candidates.isEmpty else { throw BotError.invalidObservation }
         return candidates
     }
@@ -170,7 +161,7 @@ struct RuleBasedEvaluator: Sendable {
         return min(8_500, 2_500 + distance * 700)
     }
 
-    private func potOddsBasisPoints(_ observation: BotObservation) throws -> Int {
+    func potOddsBasisPoints(_ observation: BotObservation) throws -> Int {
         guard let call = observation.legalActions.callAmount else { return 0 }
         let (total, overflow) = observation.pot.rawValue.addingReportingOverflow(
             call.rawValue
@@ -195,7 +186,7 @@ struct RuleBasedEvaluator: Sendable {
         return min(10_000, score)
     }
 
-    private func effectiveStackBigBlinds(_ observation: BotObservation) throws -> Int {
+    func effectiveStackBigBlinds(_ observation: BotObservation) throws -> Int {
         guard let viewer = observation.publicSeats.first(where: {
             $0.id == observation.viewer
         }) else {
