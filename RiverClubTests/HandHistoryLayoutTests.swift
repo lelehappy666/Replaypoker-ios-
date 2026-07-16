@@ -1,4 +1,5 @@
 import CoreGraphics
+import SwiftUI
 import XCTest
 @testable import RiverClub
 
@@ -12,14 +13,31 @@ final class HandHistoryLayoutTests: XCTestCase {
     }
 
     func testDetailUsesNineUniqueSeatSlotsWithoutCardCompression() {
-        let slots = HandHistoryDetailLayout.seatSlots(
-            in: CGSize(width: 932, height: 424)
-        )
+        let canvas = CGSize(width: 932 - 220, height: 424)
+        let layout = HandHistoryDetailLayout.metrics(in: canvas)
+        let slots = layout.seatSlots
 
         XCTAssertEqual(slots.count, 9)
         XCTAssertEqual(Set(slots.map(\.id)).count, 9)
         XCTAssertTrue(slots.allSatisfy { $0.cardSize.width >= 28 })
         XCTAssertTrue(slots.allSatisfy { $0.cardSize.height >= 40 })
+        XCTAssertTrue(slots.allSatisfy { slot in
+            slot.frame.minX >= layout.contentPadding
+                && slot.frame.maxX <= canvas.width - layout.contentPadding
+                && slot.frame.minY >= 0
+                && slot.frame.maxY <= canvas.height
+        })
+    }
+
+    func testLargeTypeFilterPanelUsesVerticalScrollingOnLandscapeCanvas() {
+        let layout = HandHistoryFilterPanelLayout.metrics(
+            canvasHeight: 424 - 40,
+            dynamicTypeSize: .accessibility3
+        )
+
+        XCTAssertTrue(layout.usesVerticalScrolling)
+        XCTAssertGreaterThan(layout.minimumContentHeight, layout.canvasHeight)
+        XCTAssertGreaterThanOrEqual(layout.minimumControlHeight, 60)
     }
 
     func testHistoryRowsFitTheCanvasRemainingAfterTheAppSidebar() {

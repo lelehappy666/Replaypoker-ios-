@@ -59,6 +59,31 @@ struct HandHistoryRowLayout: Equatable {
     }
 }
 
+struct HandHistoryFilterPanelLayout: Equatable {
+    let canvasHeight: CGFloat
+    let minimumContentHeight: CGFloat
+    let minimumControlHeight: CGFloat
+    let usesVerticalScrolling: Bool
+
+    static func metrics(
+        canvasHeight: CGFloat,
+        dynamicTypeSize: DynamicTypeSize
+    ) -> Self {
+        let minimumContentHeight: CGFloat = dynamicTypeSize.isAccessibilitySize
+            ? 520
+            : 340
+        let minimumControlHeight: CGFloat = dynamicTypeSize.isAccessibilitySize
+            ? 68
+            : 44
+        return Self(
+            canvasHeight: canvasHeight,
+            minimumContentHeight: minimumContentHeight,
+            minimumControlHeight: minimumControlHeight,
+            usesVerticalScrolling: minimumContentHeight > canvasHeight
+        )
+    }
+}
+
 struct HandHistoryView: View {
     @Bindable var session: AppSession
 
@@ -100,7 +125,6 @@ struct HandHistoryView: View {
         .padding(20)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("history.list")
-        .onAppear { session.loadHandHistory() }
     }
 }
 
@@ -110,8 +134,34 @@ private struct HandHistoryFilterPanel: View {
     let availableTables: [HandHistoryTableOption]
     let onChange: (HandHistoryFilters) -> Void
     let onDeleteAll: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
+        GeometryReader { proxy in
+            let layout = HandHistoryFilterPanelLayout.metrics(
+                canvasHeight: proxy.size.height,
+                dynamicTypeSize: dynamicTypeSize
+            )
+            ScrollView(.vertical) {
+                controls(minimumControlHeight: layout.minimumControlHeight)
+                    .padding(16)
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: layout.minimumContentHeight,
+                        alignment: .topLeading
+                    )
+            }
+            .scrollDisabled(!layout.usesVerticalScrolling)
+            .scrollIndicators(layout.usesVerticalScrolling ? .visible : .hidden)
+        }
+        .background(RCTheme.surface, in: RoundedRectangle(cornerRadius: RCTheme.corner))
+        .overlay {
+            RoundedRectangle(cornerRadius: RCTheme.corner)
+                .stroke(RCTheme.gold.opacity(0.18), lineWidth: 1)
+        }
+    }
+
+    private func controls(minimumControlHeight: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("牌局存档")
@@ -131,7 +181,11 @@ private struct HandHistoryFilterPanel: View {
                 Button("今天") { changeDate(.today) }
                 Button("最近 7 天") { changeDate(.lastSevenDays) }
             } label: {
-                filterControl(title: dateTitle, systemImage: "calendar")
+                filterControl(
+                    title: dateTitle,
+                    systemImage: "calendar",
+                    minimumHeight: minimumControlHeight
+                )
             }
             .accessibilityIdentifier("history.filter.date")
 
@@ -142,11 +196,13 @@ private struct HandHistoryFilterPanel: View {
                     Button(table.name) { changeTable(table.id) }
                 }
             } label: {
-                filterControl(title: tableTitle, systemImage: "rectangle.on.rectangle")
+                filterControl(
+                    title: tableTitle,
+                    systemImage: "rectangle.on.rectangle",
+                    minimumHeight: minimumControlHeight
+                )
             }
             .accessibilityIdentifier("history.filter.table")
-
-            Spacer(minLength: 8)
 
             Button(role: .destructive, action: onDeleteAll) {
                 Label("清空全部存档", systemImage: "trash")
@@ -154,12 +210,6 @@ private struct HandHistoryFilterPanel: View {
             }
             .buttonStyle(.bordered)
             .accessibilityIdentifier("history.deleteAll")
-        }
-        .padding(16)
-        .background(RCTheme.surface, in: RoundedRectangle(cornerRadius: RCTheme.corner))
-        .overlay {
-            RoundedRectangle(cornerRadius: RCTheme.corner)
-                .stroke(RCTheme.gold.opacity(0.18), lineWidth: 1)
         }
     }
 
@@ -169,17 +219,21 @@ private struct HandHistoryFilterPanel: View {
             .foregroundStyle(RCTheme.secondaryText)
     }
 
-    private func filterControl(title: String, systemImage: String) -> some View {
+    private func filterControl(
+        title: String,
+        systemImage: String,
+        minimumHeight: CGFloat
+    ) -> some View {
         HStack {
             Label(title, systemImage: systemImage)
-                .lineLimit(1)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
             Spacer(minLength: 4)
             Image(systemName: "chevron.up.chevron.down")
                 .font(.caption2)
         }
         .foregroundStyle(RCTheme.primaryText)
         .padding(.horizontal, 12)
-        .frame(height: 44)
+        .frame(minHeight: minimumHeight)
         .background(RCTheme.surfaceRaised, in: RoundedRectangle(cornerRadius: 10))
     }
 

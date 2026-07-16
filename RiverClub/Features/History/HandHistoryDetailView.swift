@@ -5,15 +5,59 @@ enum HandHistoryDetailLayout {
     struct SeatSlot: Identifiable, Equatable {
         let id: Int
         let cardSize: CGSize
+        let frame: CGRect
     }
 
-    static func seatSlots(in size: CGSize) -> [SeatSlot] {
-        let availableWidth = max(0, size.width - 40)
-        let cardWidth = max(28, min(34, (availableWidth / 3 - 80) / 2))
-        let cardHeight = max(40, cardWidth * 46 / 34)
-        return (0..<9).map {
-            SeatSlot(id: $0, cardSize: CGSize(width: cardWidth, height: cardHeight))
+    struct Metrics: Equatable {
+        let canvasSize: CGSize
+        let contentPadding: CGFloat
+        let columnSpacing: CGFloat
+        let rowSpacing: CGFloat
+        let columnCount: Int
+        let seatMinimumHeight: CGFloat
+        let cardSize: CGSize
+
+        var seatSlots: [SeatSlot] {
+            let contentWidth = max(0, canvasSize.width - contentPadding * 2)
+            let seatWidth = max(
+                0,
+                (contentWidth - columnSpacing * CGFloat(columnCount - 1))
+                    / CGFloat(columnCount)
+            )
+            return (0..<9).map { id in
+                let column = id % columnCount
+                let row = id / columnCount
+                return SeatSlot(
+                    id: id,
+                    cardSize: cardSize,
+                    frame: CGRect(
+                        x: contentPadding
+                            + CGFloat(column) * (seatWidth + columnSpacing),
+                        y: CGFloat(row) * (seatMinimumHeight + rowSpacing),
+                        width: seatWidth,
+                        height: seatMinimumHeight
+                    )
+                )
+            }
         }
+    }
+
+    static func metrics(in size: CGSize) -> Metrics {
+        let contentPadding: CGFloat = 20
+        let columnSpacing: CGFloat = 8
+        let contentWidth = max(0, size.width - contentPadding * 2)
+        let seatWidth = max(0, (contentWidth - columnSpacing * 2) / 3)
+        let cardWidth = max(28, min(34, (seatWidth - 112) / 2))
+        let cardHeight = max(40, cardWidth * 46 / 34)
+        return Metrics(
+            canvasSize: size,
+            contentPadding: contentPadding,
+            columnSpacing: columnSpacing,
+            rowSpacing: 8,
+            columnCount: 3,
+            seatMinimumHeight: 76,
+            cardSize: CGSize(width: cardWidth, height: cardHeight)
+        )
     }
 }
 
@@ -23,21 +67,24 @@ struct HandHistoryDetailView: View {
     let onDelete: () -> Void
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 12) {
-                HandHistoryDetailHeader(
-                    detail: detail,
-                    onBack: onBack,
-                    onDelete: onDelete
-                )
-                HandHistoryCommunityCards(cards: detail.communityCards)
-                HandHistorySeatGrid(seats: detail.seats)
-                HandHistoryPotList(
-                    pots: detail.pots,
-                    returns: detail.uncalledReturns
-                )
+        GeometryReader { proxy in
+            let layout = HandHistoryDetailLayout.metrics(in: proxy.size)
+            ScrollView {
+                VStack(spacing: 12) {
+                    HandHistoryDetailHeader(
+                        detail: detail,
+                        onBack: onBack,
+                        onDelete: onDelete
+                    )
+                    HandHistoryCommunityCards(cards: detail.communityCards)
+                    HandHistorySeatGrid(seats: detail.seats, layout: layout)
+                    HandHistoryPotList(
+                        pots: detail.pots,
+                        returns: detail.uncalledReturns
+                    )
+                }
+                .padding(layout.contentPadding)
             }
-            .padding(20)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("history.detail")
@@ -98,15 +145,20 @@ private struct HandHistoryCommunityCards: View {
 
 private struct HandHistorySeatGrid: View {
     let seats: [HandHistorySeatResult]
-    private let columns = Array(
-        repeating: GridItem(.flexible(), spacing: 8),
-        count: 3
-    )
+    let layout: HandHistoryDetailLayout.Metrics
 
     var body: some View {
-        LazyVGrid(columns: columns, spacing: 8) {
-            ForEach(seats.sorted(by: { $0.id < $1.id })) { seat in
-                HandHistorySeatResultView(seat: seat)
+        LazyVGrid(
+            columns: Array(
+                repeating: GridItem(.flexible(), spacing: layout.columnSpacing),
+                count: layout.columnCount
+            ),
+            spacing: layout.rowSpacing
+        ) {
+            ForEach(layout.seatSlots) { slot in
+                if let seat = seats.first(where: { $0.id.rawValue == slot.id }) {
+                    HandHistorySeatResultView(seat: seat, slot: slot)
+                }
             }
         }
     }
@@ -114,6 +166,7 @@ private struct HandHistorySeatGrid: View {
 
 private struct HandHistorySeatResultView: View {
     let seat: HandHistorySeatResult
+    let slot: HandHistoryDetailLayout.SeatSlot
 
     var body: some View {
         HStack(spacing: 9) {
@@ -145,7 +198,10 @@ private struct HandHistorySeatResultView: View {
                 HStack(spacing: 4) {
                     ForEach(Array(seat.cards.prefix(2).enumerated()), id: \.offset) { index, card in
                         TableCardView(card: card)
-                            .frame(width: 28, height: 40)
+                            .frame(
+                                width: slot.cardSize.width,
+                                height: slot.cardSize.height
+                            )
                             .accessibilityIdentifier(
                                 "history.holeCard.\(seat.id.rawValue).\(index)"
                             )
@@ -154,7 +210,7 @@ private struct HandHistorySeatResultView: View {
             }
         }
         .padding(10)
-        .frame(maxWidth: .infinity, minHeight: 76)
+        .frame(maxWidth: .infinity, minHeight: slot.frame.height)
         .background(
             seat.status == .winner ? RCTheme.surfaceRaised : RCTheme.surface,
             in: RoundedRectangle(cornerRadius: 11)
