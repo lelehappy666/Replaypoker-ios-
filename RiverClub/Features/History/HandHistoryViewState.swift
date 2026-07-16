@@ -39,4 +39,9 @@ struct HandHistoryViewState: Equatable, Sendable {
         self.filters = filters
         self.loadState = loadState
     }
+
+    var items: [HandHistoryListItem] {
+        guard case let .loaded(items) = loadState else { return [] }
+        return items
+    }
 }

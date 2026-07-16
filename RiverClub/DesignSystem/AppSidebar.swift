@@ -40,7 +40,7 @@ private extension AppRoute {
         case .tournaments: "锦标赛"
         case .tables: "我的牌局"
         case .profile: "个人中心"
-        case .login, .table: ""
+        case .login, .tableBrowser, .table: ""
         }
     }
 
@@ -50,7 +50,7 @@ private extension AppRoute {
         case .tournaments: "trophy.fill"
         case .tables: "suit.club.fill"
         case .profile: "person.crop.circle.fill"
-        case .login, .table: ""
+        case .login, .tableBrowser, .table: ""
         }
     }
 
@@ -61,6 +61,7 @@ private extension AppRoute {
         case .tables: "tables"
         case .profile: "profile"
         case .login: "login"
+        case .tableBrowser: "tableBrowser"
         case .table: "table"
         }
     }

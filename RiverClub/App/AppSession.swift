@@ -5,7 +5,9 @@ import PokerCoordinator
 import PokerCore
 import PokerSession
 
-enum AppRoute: Equatable { case login, lobby, tables, table, tournaments, profile }
+enum AppRoute: Equatable {
+    case login, lobby, tables, tableBrowser, table, tournaments, profile
+}
 
 extension AppRoute {
     static let sidebarRoutes: [AppRoute] = [.lobby, .tournaments, .tables, .profile]
@@ -27,6 +29,50 @@ struct AppSessionDependencies {
         _ archiveMetadata: HandArchiveMetadata,
         _ runtime: TableRuntimeDependencies
     ) throws -> CashTableCoordinator
+    var loadHandRecords: (LocalPokerStore, HandRecordFilter) throws -> [StoredHandRecord]
+    var deleteHandRecord: (LocalPokerStore, HandID) throws -> Void
+    var deleteAllHandRecords: (LocalPokerStore) throws -> Void
+    var currentLocalDay: () -> LocalDay
+
+    init(
+        nextSessionID: @escaping () throws -> SessionID,
+        nextBusinessID: @escaping (_ purpose: String) throws -> BusinessID,
+        makeRuntimeDependencies: @escaping (
+            _ reduceMotion: Bool
+        ) -> TableRuntimeDependencies,
+        makeCoordinator: @escaping (
+            _ store: LocalPokerStore,
+            _ humanSeat: SeatID,
+            _ profiles: [TableSeatProfile],
+            _ archiveMetadata: HandArchiveMetadata,
+            _ runtime: TableRuntimeDependencies
+        ) throws -> CashTableCoordinator,
+        loadHandRecords: @escaping (
+            LocalPokerStore,
+            HandRecordFilter
+        ) throws -> [StoredHandRecord] = { store, filter in
+            store.handRecords(filter: filter)
+        },
+        deleteHandRecord: @escaping (LocalPokerStore, HandID) throws -> Void = {
+            store, id in
+            try store.deleteHand(id: id)
+        },
+        deleteAllHandRecords: @escaping (LocalPokerStore) throws -> Void = { store in
+            try store.deleteAllHands(confirmation: .confirmed)
+        },
+        currentLocalDay: @escaping () -> LocalDay = {
+            AppSessionClock().currentDay
+        }
+    ) {
+        self.nextSessionID = nextSessionID
+        self.nextBusinessID = nextBusinessID
+        self.makeRuntimeDependencies = makeRuntimeDependencies
+        self.makeCoordinator = makeCoordinator
+        self.loadHandRecords = loadHandRecords
+        self.deleteHandRecord = deleteHandRecord
+        self.deleteAllHandRecords = deleteAllHandRecords
+        self.currentLocalDay = currentLocalDay
+    }
 
     static var live: Self {
         Self(
@@ -78,6 +124,7 @@ final class AppSession {
     private(set) var frozenBotSettings: BotSettings?
     private(set) var botSettingsError: String?
     private(set) var tableStartupError: String?
+    private(set) var handHistoryState = HandHistoryViewState()
     @ObservationIgnored private let botSettingsRepository: any BotSettingsPersisting
     @ObservationIgnored private let dependencies: AppSessionDependencies
     private var tableState = TableSessionState()
@@ -185,7 +232,34 @@ final class AppSession {
 
     func continueAsGuest() { route = .lobby }
     func logout() { route = .login }
-    func open(_ route: AppRoute) { self.route = route }
+    func open(_ route: AppRoute) {
+        self.route = route
+        if route == .tables {
+            loadHandHistory()
+        }
+    }
+
+    func updateHandHistoryFilters(_ filters: HandHistoryFilters) {
+        handHistoryState.filters = filters
+    }
+
+    func loadHandHistory() {
+        handHistoryState.loadState = .loading
+        do {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = .autoupdatingCurrent
+            let filter = try HandHistoryPresentation.storeFilter(
+                filters: handHistoryState.filters,
+                today: dependencies.currentLocalDay(),
+                calendar: calendar
+            )
+            let records = try dependencies.loadHandRecords(pokerStore, filter)
+            let items = try records.map(HandHistoryPresentation.listItem(from:))
+            handHistoryState.loadState = .loaded(items)
+        } catch {
+            handHistoryState.loadState = .failed("牌局存档读取失败，请重试。")
+        }
+    }
 
     func joinCashTable(
         _ table: PokerTableSummary,
@@ -326,7 +400,7 @@ final class AppSession {
     func leaveTable(returningTo route: AppRoute) {
         tableState.leave()
         tableStartupError = nil
-        self.route = route
+        open(route)
     }
 
     func saveBotSettings(_ settings: BotSettings) throws {

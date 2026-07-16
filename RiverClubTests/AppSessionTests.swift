@@ -11,8 +11,9 @@ final class AppSessionTests: XCTestCase {
         XCTAssertTrue(MotionPolicy.shouldAnimate(reduceMotion: false))
     }
 
-    func testSidebarRoutesAreStable() {
+    func testSidebarKeepsHistoryAndTableBrowserIsNotSidebarItem() {
         XCTAssertEqual(AppRoute.sidebarRoutes, [.lobby, .tournaments, .tables, .profile])
+        XCTAssertFalse(AppRoute.sidebarRoutes.contains(.tableBrowser))
     }
 
     @MainActor

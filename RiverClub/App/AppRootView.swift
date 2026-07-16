@@ -33,7 +33,7 @@ struct AppRootView: View {
                                 sendIntent: session.sendTableIntent
                             )
                         }
-                    case .lobby, .tournaments, .tables, .profile:
+                    case .lobby, .tournaments, .tables, .tableBrowser, .profile:
                         HStack(spacing: 0) {
                             AppSidebar(selection: session.route, onSelect: session.open)
                             routedSidebarContent
@@ -89,9 +89,11 @@ struct AppRootView: View {
                 repository: repository,
                 balance: session.chipBalance,
                 onQuickJoin: openBuyInIfJoinable,
-                onAllTables: { session.open(.tables) }
+                onAllTables: { session.open(.tableBrowser) }
             )
         case .tables:
+            HandHistoryPlaceholderView()
+        case .tableBrowser:
             TableListView(repository: repository, onSelect: openBuyInIfJoinable)
         case .tournaments:
             TournamentsView(repository: repository)
@@ -153,6 +155,12 @@ struct AppRootView: View {
         pendingBuyInTable = nil
     }
 
+}
+
+private struct HandHistoryPlaceholderView: View {
+    var body: some View {
+        EmptyView()
+    }
 }
 
 struct TableStartupRecoveryPresentation: Equatable {
