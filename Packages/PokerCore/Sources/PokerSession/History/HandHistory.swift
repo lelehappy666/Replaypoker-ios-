@@ -1,6 +1,73 @@
 import Foundation
 import PokerCore
 
+public struct HandArchiveMetadata: Codable, Equatable, Sendable {
+    public let tableDisplayName: String
+    public let humanSeat: SeatID
+    public let seatDisplayNames: [SeatID: String]
+
+    public init(
+        tableDisplayName: String,
+        humanSeat: SeatID,
+        seatDisplayNames: [SeatID: String]
+    ) throws {
+        let tableName = tableDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !tableName.isEmpty,
+              seatDisplayNames.count == 9,
+              seatDisplayNames[humanSeat] != nil
+        else {
+            throw PokerSessionError.invalidTable
+        }
+
+        var names: [SeatID: String] = [:]
+        for (seat, displayName) in seatDisplayNames {
+            let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else {
+                throw PokerSessionError.invalidTable
+            }
+            names[seat] = name
+        }
+        self.tableDisplayName = tableName
+        self.humanSeat = humanSeat
+        self.seatDisplayNames = names
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case tableDisplayName
+        case humanSeat
+        case seatDisplayNames
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        do {
+            try self.init(
+                tableDisplayName: container.decode(String.self, forKey: .tableDisplayName),
+                humanSeat: container.decode(SeatID.self, forKey: .humanSeat),
+                seatDisplayNames: container.decode(
+                    [SeatID: String].self,
+                    forKey: .seatDisplayNames
+                )
+            )
+        } catch let error as DecodingError {
+            throw error
+        } catch {
+            throw DecodingError.dataCorruptedError(
+                forKey: .seatDisplayNames,
+                in: container,
+                debugDescription: "Invalid hand archive metadata"
+            )
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(tableDisplayName, forKey: .tableDisplayName)
+        try container.encode(humanSeat, forKey: .humanSeat)
+        try container.encode(seatDisplayNames, forKey: .seatDisplayNames)
+    }
+}
+
 public struct StoredHandRecord: Codable, Equatable, Sendable {
     public let id: HandID
     public let transactionID: BusinessID?
@@ -11,6 +78,7 @@ public struct StoredHandRecord: Codable, Equatable, Sendable {
     public let localDay: LocalDay
     public let handNumber: Int
     public let record: CompletedHandRecord
+    public let archiveMetadata: HandArchiveMetadata?
 
     public init(
         id: HandID,
@@ -21,7 +89,8 @@ public struct StoredHandRecord: Codable, Equatable, Sendable {
         endedAt: Date,
         localDay: LocalDay,
         handNumber: Int,
-        record: CompletedHandRecord
+        record: CompletedHandRecord,
+        archiveMetadata: HandArchiveMetadata? = nil
     ) {
         self.id = id
         self.transactionID = transactionID
@@ -32,6 +101,51 @@ public struct StoredHandRecord: Codable, Equatable, Sendable {
         self.localDay = localDay
         self.handNumber = handNumber
         self.record = record
+        self.archiveMetadata = archiveMetadata
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case transactionID
+        case sessionID
+        case table
+        case startedAt
+        case endedAt
+        case localDay
+        case handNumber
+        case record
+        case archiveMetadata
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(HandID.self, forKey: .id)
+        transactionID = try container.decodeIfPresent(BusinessID.self, forKey: .transactionID)
+        sessionID = try container.decode(SessionID.self, forKey: .sessionID)
+        table = try container.decode(TableID.self, forKey: .table)
+        startedAt = try container.decode(Date.self, forKey: .startedAt)
+        endedAt = try container.decode(Date.self, forKey: .endedAt)
+        localDay = try container.decode(LocalDay.self, forKey: .localDay)
+        handNumber = try container.decode(Int.self, forKey: .handNumber)
+        record = try container.decode(CompletedHandRecord.self, forKey: .record)
+        archiveMetadata = try container.decodeIfPresent(
+            HandArchiveMetadata.self,
+            forKey: .archiveMetadata
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encodeIfPresent(transactionID, forKey: .transactionID)
+        try container.encode(sessionID, forKey: .sessionID)
+        try container.encode(table, forKey: .table)
+        try container.encode(startedAt, forKey: .startedAt)
+        try container.encode(endedAt, forKey: .endedAt)
+        try container.encode(localDay, forKey: .localDay)
+        try container.encode(handNumber, forKey: .handNumber)
+        try container.encode(record, forKey: .record)
+        try container.encodeIfPresent(archiveMetadata, forKey: .archiveMetadata)
     }
 }
 
@@ -54,10 +168,35 @@ public struct PlayerStatisticsView: Codable, Equatable, Sendable {
 public struct HandRecordFilter: Equatable, Sendable {
     public let table: TableID?
     public let localDay: LocalDay?
+    public let dateRange: HandRecordDateRange?
 
     public init(table: TableID? = nil, localDay: LocalDay? = nil) {
         self.table = table
         self.localDay = localDay
+        dateRange = nil
+    }
+
+    public init(table: TableID? = nil, dateRange: HandRecordDateRange) {
+        self.table = table
+        localDay = nil
+        self.dateRange = dateRange
+    }
+}
+
+public struct HandRecordDateRange: Equatable, Sendable {
+    public let first: LocalDay
+    public let last: LocalDay
+
+    public init(first: LocalDay, last: LocalDay) throws {
+        guard first.rawValue <= last.rawValue else {
+            throw PokerSessionError.invalidIdentifier
+        }
+        self.first = first
+        self.last = last
+    }
+
+    public func contains(_ day: LocalDay) -> Bool {
+        first.rawValue <= day.rawValue && day.rawValue <= last.rawValue
     }
 }
 

@@ -95,15 +95,20 @@ public final class LocalPokerStore {
     }
 
     public func handRecords(filter: HandRecordFilter = .init()) -> [StoredHandRecord] {
-        committed.recordOrder.reversed().compactMap { id in
-            guard let record = committed.records[id],
-                  filter.table == nil || record.table == filter.table,
-                  filter.localDay == nil || record.localDay == filter.localDay
-            else {
-                return nil
+        committed.records.values
+            .filter { record in
+                (filter.table == nil || record.table == filter.table)
+                    && (filter.localDay == nil || record.localDay == filter.localDay)
+                    && (filter.dateRange == nil
+                        || filter.dateRange!.contains(record.localDay))
             }
-            return record
-        }
+            .sorted {
+                if $0.endedAt != $1.endedAt { return $0.endedAt > $1.endedAt }
+                if $0.handNumber != $1.handNumber {
+                    return $0.handNumber > $1.handNumber
+                }
+                return $0.id.rawValue > $1.id.rawValue
+            }
     }
 
     public func deleteHand(id: HandID) throws {
@@ -289,7 +294,8 @@ public final class LocalPokerStore {
                 endedAt: clock.now,
                 localDay: clock.currentDay,
                 handNumber: handNumber,
-                record: pending.record
+                record: pending.record,
+                archiveMetadata: nil
             )
             try updateStatistics(
                 &state.statistics,

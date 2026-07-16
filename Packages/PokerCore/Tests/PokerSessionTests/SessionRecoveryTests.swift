@@ -3,6 +3,32 @@ import PokerCore
 import Testing
 @testable import PokerSession
 
+@Test func 旧记录缺少显示元数据仍能解码且不会被改写() throws {
+    let legacy = try storedRecord(id: "legacy-history", archiveMetadata: nil)
+    let data = try JSONEncoder().encode(legacy)
+    let decoded = try JSONDecoder().decode(StoredHandRecord.self, from: data)
+
+    #expect(decoded.archiveMetadata == nil)
+    #expect(decoded == legacy)
+}
+
+@Test func 日期范围与牌桌筛选组合并保持稳定倒序() throws {
+    let fixture = try HistoryQueryFixture()
+    try fixture.save(table: "table-a", day: "2027-01-10", endedAt: 100, hand: 1)
+    try fixture.save(table: "table-a", day: "2027-01-12", endedAt: 300, hand: 2)
+    try fixture.save(table: "table-b", day: "2027-01-11", endedAt: 200, hand: 3)
+    let range = try HandRecordDateRange(
+        first: LocalDay("2027-01-10"),
+        last: LocalDay("2027-01-12")
+    )
+
+    let records = fixture.store.handRecords(
+        filter: HandRecordFilter(table: try TableID("table-a"), dateRange: range)
+    )
+
+    #expect(records.map(\.handNumber) == [2, 1])
+}
+
 @Test func unfinishedHandNeverAppearsInHistoryAfterReopen() throws {
     let directory = try RecoveryTemporaryDirectory()
     let store = try makeRecoveryStore(in: directory.url)
