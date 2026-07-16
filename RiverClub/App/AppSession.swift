@@ -116,6 +116,11 @@ private struct CashTableJoinAttempt {
     }
 }
 
+private struct TableDepartureAttempt {
+    let settlementID: BusinessID
+    let cashOutID: BusinessID
+}
+
 @MainActor @Observable
 final class AppSession {
     var route: AppRoute = .login
@@ -125,11 +130,16 @@ final class AppSession {
     private(set) var frozenBotSettings: BotSettings?
     private(set) var botSettingsError: String?
     private(set) var tableStartupError: String?
+    private(set) var isTableDeparturePresented = false
+    private(set) var isLeavingTable = false
+    private(set) var tableDepartureError: String?
     private(set) var handHistoryState = HandHistoryViewState()
     @ObservationIgnored private let botSettingsRepository: any BotSettingsPersisting
     @ObservationIgnored private let dependencies: AppSessionDependencies
     private var tableState = TableSessionState()
     private var cashTableJoinAttempt: CashTableJoinAttempt?
+    private var tableDepartureAttempt: TableDepartureAttempt?
+    private var tableReturnRoute: AppRoute = .lobby
     private var isStartingOrResumingTableHand = false
 
     var chipBalance: Int { pokerStore.accountBalance.rawValue }
@@ -419,6 +429,7 @@ final class AppSession {
             }
             attempt = existing
         } else {
+            tableReturnRoute = route == .table ? .lobby : route
             try CashTableRequestFactory.validate(
                 table: table,
                 buyIn: buyIn,
@@ -538,8 +549,72 @@ final class AppSession {
 
     func leaveTable(returningTo route: AppRoute) {
         tableState.leave()
+        tableCoordinator = nil
+        cashTableJoinAttempt = nil
+        tableDepartureAttempt = nil
+        isTableDeparturePresented = false
+        isLeavingTable = false
+        tableDepartureError = nil
         tableStartupError = nil
         open(route)
+    }
+
+    func requestTableDeparture() {
+        guard route == .table, tableCoordinator != nil, !isLeavingTable else {
+            return
+        }
+        isTableDeparturePresented = true
+        tableDepartureError = nil
+    }
+
+    func cancelTableDeparture() {
+        guard !isLeavingTable else { return }
+        isTableDeparturePresented = false
+        tableDepartureError = nil
+    }
+
+    func confirmTableDeparture() async {
+        guard isTableDeparturePresented,
+              !isLeavingTable,
+              let tableCoordinator
+        else {
+            return
+        }
+
+        do {
+            if tableDepartureAttempt == nil {
+                tableDepartureAttempt = TableDepartureAttempt(
+                    settlementID: try dependencies.nextBusinessID(
+                        "departure-settlement"
+                    ),
+                    cashOutID: try dependencies.nextBusinessID(
+                        "departure-cash-out"
+                    )
+                )
+            }
+            guard let attempt = tableDepartureAttempt else {
+                throw PokerCoordinatorError.saveFailed
+            }
+
+            isLeavingTable = true
+            tableDepartureError = nil
+            try await tableCoordinator.leaveTable(
+                settlementID: attempt.settlementID,
+                cashOutID: attempt.cashOutID
+            )
+
+            tableState.leave()
+            self.tableCoordinator = nil
+            cashTableJoinAttempt = nil
+            tableDepartureAttempt = nil
+            isTableDeparturePresented = false
+            isLeavingTable = false
+            tableStartupError = nil
+            open(tableReturnRoute)
+        } catch {
+            isLeavingTable = false
+            tableDepartureError = "离桌结算失败，请重试。"
+        }
     }
 
     func saveBotSettings(_ settings: BotSettings) throws {

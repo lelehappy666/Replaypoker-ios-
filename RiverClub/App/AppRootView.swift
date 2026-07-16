@@ -8,9 +8,14 @@ struct AppRootModalPolicy: Equatable {
     let allowsBackgroundInteraction: Bool
     let hidesBackgroundFromAccessibility: Bool
 
-    init(isHistoryDeletionPresented: Bool) {
-        allowsBackgroundInteraction = !isHistoryDeletionPresented
-        hidesBackgroundFromAccessibility = isHistoryDeletionPresented
+    init(
+        isHistoryDeletionPresented: Bool,
+        isTableDeparturePresented: Bool = false
+    ) {
+        let isModalPresented = isHistoryDeletionPresented
+            || isTableDeparturePresented
+        allowsBackgroundInteraction = !isModalPresented
+        hidesBackgroundFromAccessibility = isModalPresented
     }
 }
 
@@ -21,14 +26,14 @@ struct AppRootView: View {
     private let repository: any PokerRepository = MockPokerRepository()
     @State private var pendingBuyInTable: PokerTableSummary?
     @State private var buyInError: String?
-    @State private var tableReturnRoute: AppRoute = .lobby
 
     var body: some View {
         let deletionOverlay = HandHistoryDeletionPresentation.overlay(
             for: session.handHistoryState
         )
         let modalPolicy = AppRootModalPolicy(
-            isHistoryDeletionPresented: deletionOverlay != nil
+            isHistoryDeletionPresented: deletionOverlay != nil,
+            isTableDeparturePresented: session.isTableDeparturePresented
         )
         ZStack {
             appShell
@@ -44,6 +49,18 @@ struct AppRootView: View {
                     onCancel: session.cancelHistoryDeletion
                 )
                 .zIndex(3)
+            }
+
+            if session.isTableDeparturePresented {
+                TableDepartureConfirmationView(
+                    isLeaving: session.isLeavingTable,
+                    errorMessage: session.tableDepartureError,
+                    onConfirm: {
+                        Task { await session.confirmTableDeparture() }
+                    },
+                    onCancel: session.cancelTableDeparture
+                )
+                .zIndex(4)
             }
         }
         .background(RCTheme.background)
@@ -83,7 +100,8 @@ struct AppRootView: View {
                                 coordinator: coordinator,
                                 table: table,
                                 balance: session.chipBalance,
-                                sendIntent: session.sendTableIntent
+                                sendIntent: session.sendTableIntent,
+                                onRequestLeave: session.requestTableDeparture
                             )
                         }
                     case .lobby, .tournaments, .tables, .tableBrowser, .profile:
@@ -180,7 +198,6 @@ struct AppRootView: View {
 
     private func openBuyInIfJoinable(_ table: PokerTableSummary) {
         guard JoinDisposition(table: table) == .buyIn else { return }
-        tableReturnRoute = session.route
         buyInError = nil
         pendingBuyInTable = table
     }
@@ -198,6 +215,87 @@ struct AppRootView: View {
         }
     }
 
+}
+
+private struct TableDepartureConfirmationView: View {
+    let isLeaving: Bool
+    let errorMessage: String?
+    let onConfirm: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.68)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("确认离开牌桌？")
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(RCTheme.primaryText)
+                    Text("当前手牌将自动弃牌，结算完成后带走剩余筹码。")
+                        .foregroundStyle(RCTheme.secondaryText)
+                }
+
+                if isLeaving {
+                    ProgressView("正在结算并离桌…")
+                        .tint(RCTheme.gold)
+                        .foregroundStyle(RCTheme.primaryText)
+                        .accessibilityIdentifier("table.leave.progress")
+                } else {
+                    if let errorMessage {
+                        Label(
+                            errorMessage,
+                            systemImage: "exclamationmark.triangle.fill"
+                        )
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.orange)
+                    }
+
+                    HStack {
+                        Button("继续游戏", action: onCancel)
+                            .buttonStyle(.bordered)
+                            .accessibilityIdentifier("table.leave.cancel")
+
+                        Spacer()
+
+                        Button(
+                            errorMessage == nil ? "弃牌并离桌" : "重试离桌",
+                            role: .destructive,
+                            action: onConfirm
+                        )
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                        .accessibilityIdentifier(
+                            errorMessage == nil
+                                ? "table.leave.confirm"
+                                : "table.leave.retry"
+                        )
+                    }
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: 460)
+            .background(
+                RCTheme.surfaceRaised,
+                in: RoundedRectangle(cornerRadius: RCTheme.corner)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: RCTheme.corner)
+                    .stroke(RCTheme.gold.opacity(0.28), lineWidth: 1)
+            }
+            .padding(24)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)
+        .accessibilityAction(.escape) {
+            guard !isLeaving else { return }
+            onCancel()
+        }
+        .accessibilityIdentifier("table.leave.confirmation")
+    }
 }
 
 struct TableStartupRecoveryPresentation: Equatable {

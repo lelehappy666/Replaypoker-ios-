@@ -23,6 +23,16 @@ final class AppSessionTests: XCTestCase {
         XCTAssertTrue(policy.hidesBackgroundFromAccessibility)
     }
 
+    func testTableDepartureModalDisablesAndHidesTheWholeAppShell() {
+        let policy = AppRootModalPolicy(
+            isHistoryDeletionPresented: false,
+            isTableDeparturePresented: true
+        )
+
+        XCTAssertFalse(policy.allowsBackgroundInteraction)
+        XCTAssertTrue(policy.hidesBackgroundFromAccessibility)
+    }
+
     @MainActor
     func testUITestStoreIDsAreIsolatedAndRejectUnsafePaths() throws {
         let first = try AppSession.uiTestingStoreDirectory(storeID: "history-flow")
@@ -90,6 +100,56 @@ final class AppSessionTests: XCTestCase {
 
         XCTAssertEqual(session.route, .tables)
         XCTAssertNil(session.selectedTable)
+    }
+
+    @MainActor
+    func testDepartureConfirmationReturnsToEntryRouteAndRefundsOnce() async throws {
+        let fixture = try AppSessionFixture()
+        let session = fixture.session
+        let balanceBefore = session.chipBalance
+        session.open(.tableBrowser)
+        try session.joinCashTable(
+            fixture.table,
+            buyIn: 16_000,
+            autoTopUp: false,
+            reduceMotion: true
+        )
+
+        session.requestTableDeparture()
+        XCTAssertTrue(session.isTableDeparturePresented)
+        XCTAssertFalse(session.isLeavingTable)
+
+        await session.confirmTableDeparture()
+        let balanceAfter = session.chipBalance
+
+        XCTAssertEqual(session.route, .tableBrowser)
+        XCTAssertNil(session.selectedTable)
+        XCTAssertNil(session.tableCoordinator)
+        XCTAssertFalse(session.isTableDeparturePresented)
+        XCTAssertNil(session.tableDepartureError)
+        XCTAssertEqual(balanceAfter, balanceBefore)
+
+        await session.confirmTableDeparture()
+        XCTAssertEqual(session.chipBalance, balanceAfter)
+    }
+
+    @MainActor
+    func testCancellingDepartureKeepsCurrentTable() throws {
+        let fixture = try AppSessionFixture()
+        let session = fixture.session
+        try session.joinCashTable(
+            fixture.table,
+            buyIn: 16_000,
+            autoTopUp: false,
+            reduceMotion: true
+        )
+
+        session.requestTableDeparture()
+        session.cancelTableDeparture()
+
+        XCTAssertEqual(session.route, .table)
+        XCTAssertEqual(session.selectedTable, fixture.table)
+        XCTAssertFalse(session.isTableDeparturePresented)
     }
 
     private func makeTable(name: String, smallBlind: Int, bigBlind: Int) -> PokerTableSummary {
