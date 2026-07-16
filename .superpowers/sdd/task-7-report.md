@@ -22,6 +22,14 @@
 - 删除后的空态标识原先分散到 Image/StaticText；为普通空态与筛选空态增加 `.accessibilityElement(children: .contain)` 后，`history.empty` 成为稳定语义容器。
 - 最终定向及组合运行均通过，0 失败。
 
+### 正式评审修复 RED / GREEN
+
+- UI RED：将自动化证据收紧为固定真人座位 8。新增 `history.holeCard.8.0` 与 `.8.1` 后两个断言均已通过；新增 `history.seat.8` 标签包含“已弃牌”的断言在旧实现上失败，1 项测试、1 失败，退出码 65。
+- UI GREEN：仅为座位结果容器补充由昵称、状态和筹码变化组成的公开可访问性标签；重跑后 seat 8 的两张牌与“已弃牌”语义同时通过。
+- 边界 RED：新增错误诊断夹具，其中源码回显含 `botSettings`，但主错误是其他成员 `otherMember` 不存在。在精确 matcher 尚未实现时，定向测试因 `completedHistoryDiagnostics` 不存在而明确编译失败。
+- 边界 GREEN：matcher 现在只接受 `has no member '<目标>'` 或 `'<目标>' is inaccessible due to`；夹具证明旧宽松组合被拒绝，两种真实主诊断形式被接受。
+- 六个探针分别先 typecheck 安全祖先路径：`record.communityCards`、`archiveMetadata.tableDisplayName` 或 `store.accountBalance`；源码也显式声明 `StoredHandRecord` 与 `LocalPokerStore` 类型控制，证明失败确实落在末级目标成员。
+
 ## 实际模拟器
 
 - 型号：iPhone 17 Pro Max
@@ -38,7 +46,7 @@
 3. 调整 `buyIn.slider` 到 0.25 后点击 `buyIn.confirm`，由真实账本完成买入。
 4. 等待真人行动并点击 `action.fold`，由机器人和规则引擎继续推进，等待真实结算保存后的 `action.nextHand`。
 5. 终止应用，以 `-openHistory` 重启；读取同一固定 store，显示 `history.row.ui-hand-1`。
-6. 打开详情并验证 9 个 `history.seat.*`；测试要求 `history.holeCard.*` 数量大于 2。失败诊断层级实际显示 9 个已获发座位各 2 张牌，共 18 张，其中真人座位 8 状态为“已弃牌”，仍显示两张最终底牌。
+6. 打开详情并验证 9 个 `history.seat.*`，且 `history.holeCard.*` 总数大于 2。更关键的自动化证据是：测试明确要求固定真人座位 8 的 `history.holeCard.8.0` 和 `.8.1` 存在，并要求 `history.seat.8` 的公开可访问性标签包含“已弃牌”。因此现在由自动化直接证明“刚执行 fold 的真人座位在完成存档中仍显示两张最终底牌”，不再依赖失败诊断层级推断 18 张牌。
 7. 记录删除前 `history.balance` 为“娱乐筹码 117,100”；点击 `history.deleteOne` 和全应用覆盖层中的 `history.confirmDeleteOne` 后出现 `history.empty`，余额标签保持相同。
 8. `CoreFlowUITests` 继续点击 `action.nextHand` 并验证手牌 ID 更新以及下一手可再次行动，证明既有闭环无回归。
 
@@ -48,7 +56,8 @@
 
 - 控制源码必须先以状态 0 编译成功。
 - 六个探针逐项验证 `record.deck`、`record.seed`、`record.checkpoint`、`archiveMetadata.botSettings`、`archiveMetadata.decisionModel` 和 `store.pendingShowdownObservation`。
-- 每个探针都要求状态 1、诊断包含目标成员名，并包含 `has no member` 或 `is inaccessible due to`；同时明确拒绝 `no such module`。
+- 每个探针都要求状态 1，且主诊断必须精确绑定目标成员：`has no member '<目标>'` 或 `'<目标>' is inaccessible due to`；同时明确拒绝 `no such module`。
+- 每个末级探针前的分层安全控制源必须先以状态 0 编译成功。
 - PokerCoordinator 既有控制源码也补充拒绝 `no such module` 的断言。
 
 ## README
@@ -65,9 +74,11 @@
 
 自审加固后重新执行步骤 3–5，结果如下：
 
-- PokerCore 全量：357 项测试，0 失败，耗时 170.647 秒。
-- RiverClubTests：94 项测试，0 失败，耗时 1.512 秒。
-- CoreFlow + HandHistory UI：2 项测试，0 失败，耗时 66.618 秒。
+- PokerSession + PokerCoordinator 公开 API 定向：6 项测试，0 失败，耗时 2.990 秒。
+- HandHistory UI 定向：1 项测试，0 失败，测试耗时 34.588 秒。
+- PokerCore 全量：358 项测试，0 失败，耗时 172.819 秒。
+- RiverClubTests：94 项测试，0 失败，耗时 1.589 秒。
+- CoreFlow + HandHistory UI：2 项测试，0 失败，耗时 65.490 秒。
 - `xcodegen generate`：成功，新 UI 测试已进入 RiverClubUITests Sources。
 - generic iOS `build-for-testing`：`TEST BUILD SUCCEEDED`。
 - `git diff --check`：通过，无空白错误。

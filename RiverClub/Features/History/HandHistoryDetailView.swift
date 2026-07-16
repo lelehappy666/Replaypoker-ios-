@@ -225,6 +225,7 @@ private struct HandHistorySeatResultView: View {
                 )
         }
         .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(seat.displayName)，\(statusText)，\(deltaText)")
         .accessibilityIdentifier("history.seat.\(seat.id.rawValue)")
     }
 

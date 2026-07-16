@@ -47,26 +47,52 @@ import Testing
 }
 
 @Test func completedHistoryDoesNotExposeEngineOrBotInternalsToOrdinaryImport() throws {
-    let control = try typecheckCompletedHistoryProbe(nil)
-    #expect(control.status == 0, Comment(rawValue: control.diagnostics))
-
     for probe in CompletedHistoryBoundaryProbe.allCases {
-        let result = try typecheckCompletedHistoryProbe(probe)
+        let control = try typecheckCompletedHistorySource(probe.controlSource)
+        #expect(control.status == 0, Comment(rawValue: control.diagnostics))
+
+        let result = try typecheckCompletedHistorySource(probe.rawValue)
         #expect(result.status == 1, Comment(rawValue: result.diagnostics))
         #expect(
             result.diagnostics.contains("no such module") == false,
             Comment(rawValue: result.diagnostics)
         )
         #expect(
-            result.diagnostics.contains(probe.memberName),
-            Comment(rawValue: result.diagnostics)
-        )
-        #expect(
-            result.diagnostics.contains("has no member")
-                || result.diagnostics.contains("is inaccessible due to"),
+            completedHistoryDiagnostics(
+                result.diagnostics,
+                rejectMemberNamed: probe.memberName
+            ),
             Comment(rawValue: result.diagnostics)
         )
     }
+}
+
+@Test func completedHistoryDiagnosticMatcherBindsFailureToTargetMember() {
+    let misleadingDiagnostics = """
+    completed-history-boundary.swift:9:27: error: value of type 'HandArchiveMetadata' has no member 'otherMember'
+    _ = storedRecord.archiveMetadata?.botSettings
+    """
+    let oldMatcherWouldAccept = misleadingDiagnostics.contains("botSettings")
+        && misleadingDiagnostics.contains("has no member")
+    #expect(oldMatcherWouldAccept)
+    #expect(
+        completedHistoryDiagnostics(
+            misleadingDiagnostics,
+            rejectMemberNamed: "botSettings"
+        ) == false
+    )
+    #expect(
+        completedHistoryDiagnostics(
+            "error: value of type 'HandArchiveMetadata' has no member 'botSettings'",
+            rejectMemberNamed: "botSettings"
+        )
+    )
+    #expect(
+        completedHistoryDiagnostics(
+            "error: 'botSettings' is inaccessible due to 'internal' protection level",
+            rejectMemberNamed: "botSettings"
+        )
+    )
 }
 
 private enum CompletedHistoryBoundaryProbe: String, CaseIterable {
@@ -85,6 +111,17 @@ private enum CompletedHistoryBoundaryProbe: String, CaseIterable {
         case .botSettings: "botSettings"
         case .decisionModel: "decisionModel"
         case .pendingShowdown: "pendingShowdownObservation"
+        }
+    }
+
+    var controlSource: String {
+        switch self {
+        case .deck, .seed, .checkpoint:
+            "_ = storedRecord.record.communityCards"
+        case .botSettings, .decisionModel:
+            "_ = storedRecord.archiveMetadata?.tableDisplayName"
+        case .pendingShowdown:
+            "_ = store.accountBalance"
         }
     }
 }
@@ -152,15 +189,22 @@ private func expectPokerSessionTypecheckFailure(_ probe: PublicBoundaryProbe) th
     )
 }
 
-private func typecheckCompletedHistoryProbe(
-    _ probe: CompletedHistoryBoundaryProbe?
+private func completedHistoryDiagnostics(
+    _ diagnostics: String,
+    rejectMemberNamed memberName: String
+) -> Bool {
+    diagnostics.contains("has no member '\(memberName)'")
+        || diagnostics.contains("'\(memberName)' is inaccessible due to")
+}
+
+private func typecheckCompletedHistorySource(
+    _ probeSource: String
 ) throws -> (status: Int32, diagnostics: String) {
     let packageRoot = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
     let modules = try sessionModulesDirectory(in: packageRoot)
-    let probeSource = probe.map(\.rawValue) ?? ""
     let source = """
     import PokerCore
     import PokerSession
@@ -169,6 +213,8 @@ private func typecheckCompletedHistoryProbe(
     func unavailableStore() -> LocalPokerStore { fatalError() }
     let storedRecord = unavailableStoredRecord()
     let store = unavailableStore()
+    let _: StoredHandRecord = storedRecord
+    let _: LocalPokerStore = store
     \(probeSource)
     """
     let file = FileManager.default.temporaryDirectory

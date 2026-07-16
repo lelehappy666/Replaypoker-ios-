@@ -70,6 +70,11 @@ final class HandHistoryFlowUITests: XCTestCase {
             ).count,
             2
         )
+        XCTAssertTrue(app.otherElements["history.holeCard.8.0"].exists)
+        XCTAssertTrue(app.otherElements["history.holeCard.8.1"].exists)
+        XCTAssertTrue(
+            app.otherElements["history.seat.8"].label.contains("已弃牌")
+        )
 
         app.buttons["history.deleteOne"].tap()
         let confirmDelete = app.buttons["history.confirmDeleteOne"]
