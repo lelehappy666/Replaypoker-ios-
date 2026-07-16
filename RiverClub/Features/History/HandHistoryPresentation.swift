@@ -4,11 +4,18 @@ import PokerSession
 
 struct HandHistoryListItem: Identifiable, Equatable, Sendable {
     let id: HandID
+    let tableID: TableID
     let tableName: String
     let endedAt: Date
     let localDay: LocalDay
     let handNumber: Int
+    let communityCards: [Card]
     let humanChipDelta: Int?
+}
+
+struct HandHistoryTableOption: Identifiable, Equatable, Sendable {
+    let id: TableID
+    let name: String
 }
 
 struct HandHistoryDetail: Identifiable, Equatable, Sendable {
@@ -21,6 +28,7 @@ struct HandHistoryDetail: Identifiable, Equatable, Sendable {
     let communityCards: [Card]
     let seats: [HandHistorySeatResult]
     let pots: [HandHistoryPotResult]
+    let uncalledReturns: [SeatID: Chips]
 }
 
 struct HandHistorySeatResult: Identifiable, Equatable, Sendable {
@@ -51,10 +59,12 @@ enum HandHistoryPresentation {
         let humanSeat = record.archiveMetadata?.humanSeat
         return HandHistoryListItem(
             id: record.id,
+            tableID: record.table,
             tableName: tableName(for: record),
             endedAt: record.endedAt,
             localDay: record.localDay,
             handNumber: record.handNumber,
+            communityCards: record.record.communityCards,
             humanChipDelta: humanSeat.flatMap { record.record.chipDeltas[$0] }
         )
     }
@@ -130,7 +140,8 @@ enum HandHistoryPresentation {
             handNumber: record.handNumber,
             communityCards: record.record.communityCards,
             seats: seats,
-            pots: pots
+            pots: pots,
+            uncalledReturns: record.record.uncalledReturns
         )
     }
 

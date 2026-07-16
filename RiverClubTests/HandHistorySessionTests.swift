@@ -5,6 +5,30 @@ import XCTest
 
 final class HandHistorySessionTests: XCTestCase {
     @MainActor
+    func testAvailableTablesIgnoreCurrentFiltersAndSelectionReadsCompletedRecord() throws {
+        let fixture = try HandHistoryAppFixture.withThreeRecords()
+        fixture.session.updateHandHistoryFilters(
+            HandHistoryFilters(
+                table: try TableID("table-a"),
+                dateSelection: .custom(try LocalDay("2027-01-12"))
+            )
+        )
+
+        fixture.session.loadHandHistory()
+
+        XCTAssertEqual(
+            Set(fixture.session.handHistoryState.availableTables.map(\.id)),
+            Set([try TableID("table-a"), try TableID("table-b")])
+        )
+        let item = try XCTUnwrap(fixture.session.handHistoryState.items.first)
+        fixture.session.selectHandHistory(id: item.id)
+        XCTAssertEqual(fixture.session.handHistoryState.selection?.id, item.id)
+
+        fixture.session.closeHandHistoryDetail()
+        XCTAssertNil(fixture.session.handHistoryState.selection)
+    }
+
+    @MainActor
     func testLoadingHistoryUsesTheSameStoreAndCurrentFilters() throws {
         let fixture = try HandHistoryAppFixture.withThreeRecords()
         fixture.session.open(.tables)

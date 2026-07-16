@@ -90,6 +90,18 @@ final class HandHistoryPresentationTests: XCTestCase {
         XCTAssertEqual(item.humanChipDelta, record.record.chipDeltas[metadata.humanSeat])
     }
 
+    func testListAndDetailExposeOnlyCompletedPublicCardsAndReturns() throws {
+        let record = try makeHistoryRecord(
+            archiveMetadata: makePresentationArchiveMetadata()
+        )
+
+        let item = try HandHistoryPresentation.listItem(from: record)
+        let detail = try HandHistoryPresentation.detail(from: record)
+
+        XCTAssertEqual(item.communityCards, record.record.communityCards)
+        XCTAssertEqual(detail.uncalledReturns, record.record.uncalledReturns)
+    }
+
     func testDateSelectionsMapToExactStoredLocalDays() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 14 * 60 * 60)!

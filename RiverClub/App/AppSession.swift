@@ -241,6 +241,7 @@ final class AppSession {
 
     func updateHandHistoryFilters(_ filters: HandHistoryFilters) {
         handHistoryState.filters = filters
+        loadHandHistory()
     }
 
     func loadHandHistory() {
@@ -253,12 +254,49 @@ final class AppSession {
                 today: dependencies.currentLocalDay(),
                 calendar: calendar
             )
+            let directoryItems = try dependencies
+                .loadHandRecords(pokerStore, HandRecordFilter())
+                .map(HandHistoryPresentation.listItem(from:))
             let records = try dependencies.loadHandRecords(pokerStore, filter)
             let items = try records.map(HandHistoryPresentation.listItem(from:))
+            handHistoryState.availableTables = Self.historyTableOptions(
+                from: directoryItems
+            )
             handHistoryState.loadState = .loaded(items)
         } catch {
             handHistoryState.loadState = .failed("牌局存档读取失败，请重试。")
         }
+    }
+
+    func selectHandHistory(id: HandID) {
+        do {
+            guard let record = pokerStore.handRecords().first(where: { $0.id == id }) else {
+                handHistoryState.selection = nil
+                return
+            }
+            handHistoryState.selection = try HandHistoryPresentation.detail(from: record)
+        } catch {
+            handHistoryState.selection = nil
+        }
+    }
+
+    func closeHandHistoryDetail() {
+        handHistoryState.selection = nil
+    }
+
+    private static func historyTableOptions(
+        from items: [HandHistoryListItem]
+    ) -> [HandHistoryTableOption] {
+        var namesByID: [TableID: String] = [:]
+        for item in items where namesByID[item.tableID] == nil {
+            namesByID[item.tableID] = item.tableName
+        }
+        return namesByID
+            .map { HandHistoryTableOption(id: $0.key, name: $0.value) }
+            .sorted {
+                if $0.name == $1.name { return $0.id.rawValue < $1.id.rawValue }
+                return $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
     }
 
     func joinCashTable(

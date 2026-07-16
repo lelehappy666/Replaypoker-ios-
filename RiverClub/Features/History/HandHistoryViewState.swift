@@ -31,13 +31,19 @@ enum HandHistoryLoadState: Equatable, Sendable {
 struct HandHistoryViewState: Equatable, Sendable {
     var filters: HandHistoryFilters
     var loadState: HandHistoryLoadState
+    var availableTables: [HandHistoryTableOption]
+    var selection: HandHistoryDetail?
 
     init(
         filters: HandHistoryFilters = HandHistoryFilters(),
-        loadState: HandHistoryLoadState = .idle
+        loadState: HandHistoryLoadState = .idle,
+        availableTables: [HandHistoryTableOption] = [],
+        selection: HandHistoryDetail? = nil
     ) {
         self.filters = filters
         self.loadState = loadState
+        self.availableTables = availableTables
+        self.selection = selection
     }
 
     var items: [HandHistoryListItem] {

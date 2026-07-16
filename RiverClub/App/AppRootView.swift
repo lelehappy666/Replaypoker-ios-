@@ -92,7 +92,7 @@ struct AppRootView: View {
                 onAllTables: { session.open(.tableBrowser) }
             )
         case .tables:
-            HandHistoryPlaceholderView()
+            HandHistoryView(session: session)
         case .tableBrowser:
             TableListView(repository: repository, onSelect: openBuyInIfJoinable)
         case .tournaments:
@@ -155,12 +155,6 @@ struct AppRootView: View {
         pendingBuyInTable = nil
     }
 
-}
-
-private struct HandHistoryPlaceholderView: View {
-    var body: some View {
-        EmptyView()
-    }
 }
 
 struct TableStartupRecoveryPresentation: Equatable {
