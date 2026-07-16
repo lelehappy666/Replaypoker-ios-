@@ -280,4 +280,49 @@ final class HandHistoryPresentationTests: XCTestCase {
             )
         }
     }
+
+    func testCustomDatePolicyAlwaysUsesGregorianYearWithNonGregorianCalendars() throws {
+        let instant = Date(timeIntervalSince1970: 1_768_498_200)
+        let timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 8 * 60 * 60))
+        for identifier in [
+            Calendar.Identifier.buddhist,
+            Calendar.Identifier.islamicCivil,
+        ] {
+            var calendar = Calendar(identifier: identifier)
+            calendar.timeZone = timeZone
+
+            XCTAssertEqual(
+                try HandHistoryCustomDatePolicy.localDay(
+                    from: instant,
+                    calendar: calendar
+                ),
+                try LocalDay("2026-01-16")
+            )
+        }
+    }
+
+    func testStoredGregorianLocalDayRoundTripsThroughNonGregorianPickerCalendars() throws {
+        let storedDay = try LocalDay("2026-07-16")
+        let timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 8 * 60 * 60))
+        for identifier in [
+            Calendar.Identifier.buddhist,
+            Calendar.Identifier.islamicCivil,
+        ] {
+            var calendar = Calendar(identifier: identifier)
+            calendar.timeZone = timeZone
+
+            let pickerDate = try HandHistoryCustomDatePolicy.date(
+                for: storedDay,
+                calendar: calendar
+            )
+
+            XCTAssertEqual(
+                try HandHistoryCustomDatePolicy.localDay(
+                    from: pickerDate,
+                    calendar: calendar
+                ),
+                storedDay
+            )
+        }
+    }
 }

@@ -103,6 +103,40 @@ final class HandHistorySessionTests: XCTestCase {
     }
 
     @MainActor
+    func testNonGregorianPickerSelectionStillKeepsTableAndGregorianDay() throws {
+        let fixture = try HandHistoryAppFixture.withThreeRecords()
+        let table = try TableID("table-a")
+        fixture.session.updateHandHistoryFilters(
+            HandHistoryFilters(table: table, dateSelection: .all)
+        )
+        var calendar = Calendar(identifier: .buddhist)
+        calendar.timeZone = try XCTUnwrap(
+            TimeZone(secondsFromGMT: 8 * 60 * 60)
+        )
+        var gregorian = Calendar(identifier: .gregorian)
+        gregorian.timeZone = calendar.timeZone
+        let selectedDate = try XCTUnwrap(
+            gregorian.date(
+                from: DateComponents(year: 2027, month: 1, day: 12, hour: 12)
+            )
+        )
+
+        try fixture.session.selectCustomHandHistoryDate(
+            selectedDate,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(
+            fixture.session.handHistoryState.filters,
+            HandHistoryFilters(
+                table: table,
+                dateSelection: .custom(try LocalDay("2027-01-12"))
+            )
+        )
+        XCTAssertEqual(fixture.session.handHistoryState.items.map(\.handNumber), [2])
+    }
+
+    @MainActor
     func testClosingDetailRestoresTheSameListScrollTarget() throws {
         let fixture = try HandHistoryAppFixture.withThreeRecords()
         fixture.session.loadHandHistory()

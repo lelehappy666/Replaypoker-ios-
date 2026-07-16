@@ -16,6 +16,9 @@ enum HandHistoryDetailLayout {
         let columnCount: Int
         let seatMinimumHeight: CGFloat
         let cardSize: CGSize
+        let stacksSeatContentVertically: Bool
+        let stackSummaryLineLimit: Int?
+        let minimumContentHeight: CGFloat
 
         var seatSlots: [SeatSlot] {
             let contentWidth = max(0, canvasSize.width - contentPadding * 2)
@@ -42,21 +45,39 @@ enum HandHistoryDetailLayout {
         }
     }
 
-    static func metrics(in size: CGSize) -> Metrics {
+    static func metrics(
+        in size: CGSize,
+        dynamicTypeSize: DynamicTypeSize = .large
+    ) -> Metrics {
         let contentPadding: CGFloat = 20
         let columnSpacing: CGFloat = 8
+        let rowSpacing: CGFloat = 8
         let contentWidth = max(0, size.width - contentPadding * 2)
         let seatWidth = max(0, (contentWidth - columnSpacing * 2) / 3)
         let cardWidth = max(28, min(34, (seatWidth - 112) / 2))
         let cardHeight = max(40, cardWidth * 46 / 34)
+        let seatMinimumHeight: CGFloat
+        switch dynamicTypeSize {
+        case .accessibility4, .accessibility5:
+            seatMinimumHeight = 184
+        case .accessibility1, .accessibility2, .accessibility3:
+            seatMinimumHeight = 152
+        default:
+            seatMinimumHeight = 76
+        }
         return Metrics(
             canvasSize: size,
             contentPadding: contentPadding,
             columnSpacing: columnSpacing,
-            rowSpacing: 8,
+            rowSpacing: rowSpacing,
             columnCount: 3,
-            seatMinimumHeight: 76,
-            cardSize: CGSize(width: cardWidth, height: cardHeight)
+            seatMinimumHeight: seatMinimumHeight,
+            cardSize: CGSize(width: cardWidth, height: cardHeight),
+            stacksSeatContentVertically: dynamicTypeSize.isAccessibilitySize,
+            stackSummaryLineLimit: nil,
+            minimumContentHeight: contentPadding * 2
+                + seatMinimumHeight * 3
+                + rowSpacing * 2
         )
     }
 }
@@ -65,10 +86,14 @@ struct HandHistoryDetailView: View {
     let detail: HandHistoryDetail
     let onBack: () -> Void
     let onDelete: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         GeometryReader { proxy in
-            let layout = HandHistoryDetailLayout.metrics(in: proxy.size)
+            let layout = HandHistoryDetailLayout.metrics(
+                in: proxy.size,
+                dynamicTypeSize: dynamicTypeSize
+            )
             ScrollView {
                 VStack(spacing: 12) {
                     HandHistoryDetailHeader(
@@ -159,7 +184,11 @@ private struct HandHistorySeatGrid: View {
         ) {
             ForEach(layout.seatSlots) { slot in
                 if let seat = seats.first(where: { $0.id.rawValue == slot.id }) {
-                    HandHistorySeatResultView(seat: seat, slot: slot)
+                    HandHistorySeatResultView(
+                        seat: seat,
+                        slot: slot,
+                        layout: layout
+                    )
                 }
             }
         }
@@ -169,46 +198,19 @@ private struct HandHistorySeatGrid: View {
 private struct HandHistorySeatResultView: View {
     let seat: HandHistorySeatResult
     let slot: HandHistoryDetailLayout.SeatSlot
+    let layout: HandHistoryDetailLayout.Metrics
 
     var body: some View {
-        HStack(spacing: 9) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 5) {
-                    Text(seat.displayName)
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-                    if seat.status == .winner {
-                        Image(systemName: "crown.fill")
-                            .foregroundStyle(RCTheme.gold)
-                    }
+        Group {
+            if layout.stacksSeatContentVertically {
+                VStack(alignment: .leading, spacing: 9) {
+                    seatSummary
+                    cardContent
                 }
-                Text(statusText)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(statusColor)
-                Text(seat.stackSummaryText)
-                    .font(.caption2.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(RCTheme.secondaryText)
-                    .lineLimit(2)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            if seat.status == .notDealt {
-                Text("未参与")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(RCTheme.secondaryText)
-                    .frame(minWidth: 65)
             } else {
-                HStack(spacing: 4) {
-                    ForEach(Array(seat.cards.prefix(2).enumerated()), id: \.offset) { index, card in
-                        TableCardView(card: card)
-                            .frame(
-                                width: slot.cardSize.width,
-                                height: slot.cardSize.height
-                            )
-                            .accessibilityIdentifier(
-                                "history.holeCard.\(seat.id.rawValue).\(index)"
-                            )
-                    }
+                HStack(spacing: 9) {
+                    seatSummary
+                    cardContent
                 }
             }
         }
@@ -232,6 +234,52 @@ private struct HandHistorySeatResultView: View {
             "\(seat.displayName)，\(statusText)，\(seat.stackSummaryText)"
         )
         .accessibilityIdentifier("history.seat.\(seat.id.rawValue)")
+    }
+
+    private var seatSummary: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 5) {
+                Text(seat.displayName)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                if seat.status == .winner {
+                    Image(systemName: "crown.fill")
+                        .foregroundStyle(RCTheme.gold)
+                }
+            }
+            Text(statusText)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(statusColor)
+            Text(seat.stackSummaryText)
+                .font(.caption2.monospacedDigit().weight(.semibold))
+                .foregroundStyle(RCTheme.secondaryText)
+                .lineLimit(layout.stackSummaryLineLimit)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var cardContent: some View {
+        if seat.status == .notDealt {
+            Text("未参与")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(RCTheme.secondaryText)
+                .frame(minWidth: 65)
+        } else {
+            HStack(spacing: 4) {
+                ForEach(Array(seat.cards.prefix(2).enumerated()), id: \.offset) { index, card in
+                    TableCardView(card: card)
+                        .frame(
+                            width: slot.cardSize.width,
+                            height: slot.cardSize.height
+                        )
+                        .accessibilityIdentifier(
+                            "history.holeCard.\(seat.id.rawValue).\(index)"
+                        )
+                }
+            }
+        }
     }
 
     private var statusText: String {

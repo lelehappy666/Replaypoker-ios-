@@ -14,7 +14,8 @@ enum HandHistoryCustomDatePolicy {
         from date: Date,
         calendar: Calendar
     ) throws -> LocalDay {
-        let components = calendar.dateComponents(
+        let gregorian = gregorianCalendar(timeZone: calendar.timeZone)
+        let components = gregorian.dateComponents(
             [.year, .month, .day],
             from: date
         )
@@ -33,9 +34,10 @@ enum HandHistoryCustomDatePolicy {
         for day: LocalDay,
         calendar: Calendar
     ) throws -> Date {
+        let gregorian = gregorianCalendar(timeZone: calendar.timeZone)
         let values = day.rawValue.split(separator: "-").compactMap { Int($0) }
         guard values.count == 3,
-              let date = calendar.date(
+              let date = gregorian.date(
                   from: DateComponents(
                       year: values[0],
                       month: values[1],
@@ -47,6 +49,14 @@ enum HandHistoryCustomDatePolicy {
             throw PokerSessionError.invalidIdentifier
         }
         return date
+    }
+
+    private static func gregorianCalendar(
+        timeZone: TimeZone
+    ) -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        return calendar
     }
 }
 

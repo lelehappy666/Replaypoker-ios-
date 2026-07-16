@@ -42,6 +42,32 @@ final class HandHistoryLayoutTests: XCTestCase {
         })
     }
 
+    func testAccessibilityTypeUsesTallerScrollableSeatsAndVerticalContent() {
+        let canvas = CGSize(width: 932 - 220, height: 424)
+        let layout = HandHistoryDetailLayout.metrics(
+            in: canvas,
+            dynamicTypeSize: .accessibility3
+        )
+
+        XCTAssertEqual(layout.seatSlots.count, 9)
+        XCTAssertTrue(layout.stacksSeatContentVertically)
+        XCTAssertGreaterThanOrEqual(layout.seatMinimumHeight, 132)
+        XCTAssertTrue(layout.seatSlots.allSatisfy {
+            $0.cardSize.width >= 28 && $0.cardSize.height >= 40
+        })
+        XCTAssertGreaterThan(layout.minimumContentHeight, canvas.height)
+    }
+
+    func testLargestAccessibilityTypeNeverCapsTheStackSummaryToTwoLines() {
+        let layout = HandHistoryDetailLayout.metrics(
+            in: CGSize(width: 932 - 220, height: 424),
+            dynamicTypeSize: .accessibility5
+        )
+
+        XCTAssertNil(layout.stackSummaryLineLimit)
+        XCTAssertTrue(layout.stacksSeatContentVertically)
+    }
+
     func testLargeTypeFilterPanelUsesVerticalScrollingOnLandscapeCanvas() {
         let layout = HandHistoryFilterPanelLayout.metrics(
             canvasHeight: 424 - 40,
