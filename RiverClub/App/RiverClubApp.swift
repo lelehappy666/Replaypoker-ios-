@@ -11,7 +11,13 @@ import SwiftUI
             let initialSession: AppSession
             if arguments.contains("-uiTesting"),
                arguments.contains("-uiTestingImmediatePoker") {
-                initialSession = try AppSession.uiTestingImmediate()
+                initialSession = try AppSession.uiTestingImmediate(
+                    resetHistoryStore: arguments.contains("-resetHistoryStore")
+                )
+                if arguments.contains("-openHistory") {
+                    initialSession.continueAsGuest()
+                    initialSession.open(.tables)
+                }
             } else {
                 initialSession = try AppSession.live()
             }

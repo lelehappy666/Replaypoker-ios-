@@ -6,7 +6,11 @@ final class CoreFlowUITests: XCTestCase {
 
     func testGuestCanCompleteHandAndStartNextHand() throws {
         let app = XCUIApplication()
-        app.launchArguments = ["-uiTesting", "-uiTestingImmediatePoker"]
+        app.launchArguments = [
+            "-uiTesting",
+            "-uiTestingImmediatePoker",
+            "-resetHistoryStore",
+        ]
         app.launch()
 
         let guestLogin = app.buttons["login.guest"]

@@ -179,13 +179,15 @@ final class AppSession {
         )
     }
 
-    static func uiTestingImmediate() throws -> AppSession {
+    static func uiTestingImmediate(resetHistoryStore: Bool) throws -> AppSession {
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory.appendingPathComponent(
             "RiverClub-Immediate-UITests",
             isDirectory: true
         )
-        try? fileManager.removeItem(at: directory)
+        if resetHistoryStore, fileManager.fileExists(atPath: directory.path) {
+            try fileManager.removeItem(at: directory)
+        }
         try fileManager.createDirectory(
             at: directory,
             withIntermediateDirectories: true

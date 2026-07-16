@@ -46,6 +46,49 @@ import Testing
     }
 }
 
+@Test func completedHistoryDoesNotExposeEngineOrBotInternalsToOrdinaryImport() throws {
+    let control = try typecheckCompletedHistoryProbe(nil)
+    #expect(control.status == 0, Comment(rawValue: control.diagnostics))
+
+    for probe in CompletedHistoryBoundaryProbe.allCases {
+        let result = try typecheckCompletedHistoryProbe(probe)
+        #expect(result.status == 1, Comment(rawValue: result.diagnostics))
+        #expect(
+            result.diagnostics.contains("no such module") == false,
+            Comment(rawValue: result.diagnostics)
+        )
+        #expect(
+            result.diagnostics.contains(probe.memberName),
+            Comment(rawValue: result.diagnostics)
+        )
+        #expect(
+            result.diagnostics.contains("has no member")
+                || result.diagnostics.contains("is inaccessible due to"),
+            Comment(rawValue: result.diagnostics)
+        )
+    }
+}
+
+private enum CompletedHistoryBoundaryProbe: String, CaseIterable {
+    case deck = "_ = storedRecord.record.deck"
+    case seed = "_ = storedRecord.record.seed"
+    case checkpoint = "_ = storedRecord.record.checkpoint"
+    case botSettings = "_ = storedRecord.archiveMetadata?.botSettings"
+    case decisionModel = "_ = storedRecord.archiveMetadata?.decisionModel"
+    case pendingShowdown = "_ = store.pendingShowdownObservation"
+
+    var memberName: String {
+        switch self {
+        case .deck: "deck"
+        case .seed: "seed"
+        case .checkpoint: "checkpoint"
+        case .botSettings: "botSettings"
+        case .decisionModel: "decisionModel"
+        case .pendingShowdown: "pendingShowdownObservation"
+        }
+    }
+}
+
 private enum PublicBoundaryProbe: String, CaseIterable {
     case cashSession = "let _: CashGameSession.Type = CashGameSession.self"
     case persistedState = "let _: PersistedAppState.Type = PersistedAppState.self"
@@ -107,6 +150,44 @@ private func expectPokerSessionTypecheckFailure(_ probe: PublicBoundaryProbe) th
             || diagnostics.contains("extra argument"),
         Comment(rawValue: diagnostics)
     )
+}
+
+private func typecheckCompletedHistoryProbe(
+    _ probe: CompletedHistoryBoundaryProbe?
+) throws -> (status: Int32, diagnostics: String) {
+    let packageRoot = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let modules = try sessionModulesDirectory(in: packageRoot)
+    let probeSource = probe.map(\.rawValue) ?? ""
+    let source = """
+    import PokerCore
+    import PokerSession
+
+    func unavailableStoredRecord() -> StoredHandRecord { fatalError() }
+    func unavailableStore() -> LocalPokerStore { fatalError() }
+    let storedRecord = unavailableStoredRecord()
+    let store = unavailableStore()
+    \(probeSource)
+    """
+    let file = FileManager.default.temporaryDirectory
+        .appendingPathComponent("completed-history-boundary-\(UUID().uuidString).swift")
+    try source.write(to: file, atomically: true, encoding: .utf8)
+    defer { try? FileManager.default.removeItem(at: file) }
+
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+    process.arguments = ["swiftc", "-typecheck", "-I", modules.path, file.path]
+    let errors = Pipe()
+    process.standardError = errors
+    try process.run()
+    process.waitUntilExit()
+    let diagnostics = String(
+        data: errors.fileHandleForReading.readDataToEndOfFile(),
+        encoding: .utf8
+    ) ?? ""
+    return (process.terminationStatus, diagnostics)
 }
 
 private func sessionModulesDirectory(in packageRoot: URL) throws -> URL {

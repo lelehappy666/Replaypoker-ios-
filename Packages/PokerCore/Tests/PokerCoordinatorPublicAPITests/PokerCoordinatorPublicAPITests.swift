@@ -33,6 +33,10 @@ private enum HiddenInformationProbe: String, CaseIterable {
 private func expectControlSourceTypechecks() throws {
     let result = try typecheck(probe: nil)
     #expect(result.status == 0, Comment(rawValue: result.diagnostics))
+    #expect(
+        result.diagnostics.contains("no such module") == false,
+        Comment(rawValue: result.diagnostics)
+    )
 }
 
 private func expectTypecheckFailure(_ probe: HiddenInformationProbe) throws {

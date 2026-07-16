@@ -461,12 +461,14 @@ private struct HandHistoryContent: View {
             statusPanel(title: "还没有完成的牌局存档", systemImage: "tray") {
                 EmptyView()
             }
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("history.empty")
         } else {
             statusPanel(title: "当前筛选没有结果", systemImage: "line.3.horizontal.decrease.circle") {
                 Button("清除筛选", action: onResetFilters)
                     .buttonStyle(.bordered)
             }
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("history.filteredEmpty")
         }
     }
