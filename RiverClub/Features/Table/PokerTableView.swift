@@ -40,6 +40,7 @@ struct PokerTableView: View {
                         x: PokerTableLayout.centerBoardRegion(for: proxy.size).midX,
                         y: PokerTableLayout.centerBoardRegion(for: proxy.size).midY
                     )
+                    .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("table.centerBoard")
 
                 awardAnimationLayer(canvas: proxy.size)
@@ -64,11 +65,16 @@ struct PokerTableView: View {
                                 .accessibilityIdentifier("table.seat.\(index)")
                                 .allowsHitTesting(false)
                         }
+                        .frame(
+                            width: PokerTableLayout.seatSize.width,
+                            height: PokerTableLayout.seatSize.height
+                        )
                         .position(x: positions[index].x, y: positions[index].y)
                     }
                 }
 
                 topBar
+                    .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("table.topBar")
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
@@ -81,6 +87,8 @@ struct PokerTableView: View {
                         height: PokerTableLayout.betControlSize.height,
                         alignment: .bottomTrailing
                     )
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("table.betControls")
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
             }
         }

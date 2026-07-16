@@ -129,6 +129,11 @@ struct PokerSeatView: View {
                                 lineWidth: 1
                             )
                     }
+                    .accessibilityIdentifier(
+                        seat.isHuman
+                            ? "table.localAvatar"
+                            : "table.botAvatar.\(seat.id.rawValue)"
+                    )
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text(seat.displayName)

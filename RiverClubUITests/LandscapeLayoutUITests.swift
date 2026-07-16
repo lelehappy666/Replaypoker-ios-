@@ -7,7 +7,13 @@ final class LandscapeLayoutUITests: XCTestCase {
 
     func testLandscapeTableLayoutAndEntertainmentChipCompliance() {
         let app = XCUIApplication()
-        app.launchArguments = ["-uiTesting"]
+        app.launchArguments = [
+            "-uiTesting",
+            "-uiTestingImmediatePoker",
+            "-resetHistoryStore",
+            "-uiTestingStoreID",
+            "landscape-layout",
+        ]
         app.launch()
 
         let guestLogin = app.buttons["login.guest"]
@@ -36,7 +42,10 @@ final class LandscapeLayoutUITests: XCTestCase {
             XCTAssertTrue(app.buttons[setting].exists)
         }
         app.buttons["牌局记录"].tap()
-        XCTAssertTrue(app.otherElements["profile.unavailable"].waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            app.descendants(matching: .any)["profile.unavailable"]
+                .waitForExistence(timeout: 3)
+        )
         assertNoCurrencySymbols(in: app)
 
         let lobbyNavigation = app.buttons["sidebar.lobby"]
@@ -61,6 +70,11 @@ final class LandscapeLayoutUITests: XCTestCase {
 
         let localSeat = app.otherElements["table.seat.8"]
         XCTAssertTrue(localSeat.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.descendants(matching: .any)["table.currentHand"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(app.buttons["table.leave"].exists)
         let safeCanvas = app.otherElements["table.safeCanvas"]
         XCTAssertTrue(safeCanvas.waitForExistence(timeout: 5))
         let safeCanvasFrame = safeCanvas.frame
@@ -97,7 +111,7 @@ final class LandscapeLayoutUITests: XCTestCase {
             }
         }
 
-        let localAvatar = app.otherElements["table.localAvatar"]
+        let localAvatar = app.descendants(matching: .any)["table.localAvatar"]
         XCTAssertTrue(localAvatar.waitForExistence(timeout: 5))
         let avatarFrame = localAvatar.frame
         XCTAssertFalse(avatarFrame.isEmpty)
