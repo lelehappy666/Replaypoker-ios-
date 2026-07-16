@@ -93,7 +93,13 @@ struct HandHistoryView: View {
                 HandHistoryDetailView(
                     detail: detail,
                     onBack: session.closeHandHistoryDetail,
-                    onDelete: {}
+                    onDelete: {
+                        session.requestDeleteHand(id: detail.id)
+                    },
+                    isDeleteConfirmationPresented: singleDeleteIsPresented,
+                    deletionError: session.handHistoryState.deletionError,
+                    onConfirmDelete: confirmDeletion,
+                    onCancelDelete: session.cancelHistoryDeletion
                 )
             } else {
                 historyList
@@ -109,7 +115,7 @@ struct HandHistoryView: View {
                 filters: session.handHistoryState.filters,
                 availableTables: session.handHistoryState.availableTables,
                 onChange: session.updateHandHistoryFilters,
-                onDeleteAll: {}
+                onDeleteAll: session.requestDeleteAllHistory
             )
             .frame(width: 220)
 
@@ -125,6 +131,55 @@ struct HandHistoryView: View {
         .padding(20)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("history.list")
+        .alert(
+            "清空全部牌局存档？",
+            isPresented: deleteAllIsPresented
+        ) {
+            Button("取消", role: .cancel, action: session.cancelHistoryDeletion)
+                .accessibilityIdentifier(
+                    HandHistoryDeletionPresentation.cancelDeleteIdentifier
+                )
+            Button("清空全部", role: .destructive, action: confirmDeletion)
+                .accessibilityIdentifier(
+                    HandHistoryDeletionPresentation.confirmDeleteAllIdentifier
+                )
+        } message: {
+            Text(deletionMessage(HandHistoryDeletionPresentation.deleteAllMessage))
+        }
+    }
+
+    private var singleDeleteIsPresented: Binding<Bool> {
+        Binding(
+            get: {
+                guard case .hand = session.handHistoryState.pendingDeletion else {
+                    return false
+                }
+                return true
+            },
+            set: { _ in }
+        )
+    }
+
+    private var deleteAllIsPresented: Binding<Bool> {
+        Binding(
+            get: { session.handHistoryState.pendingDeletion == .all },
+            set: { _ in }
+        )
+    }
+
+    private func confirmDeletion() {
+        do {
+            try session.confirmHistoryDeletion()
+        } catch {
+            // AppSession 保留 pending、列表、详情和可重试的中文错误。
+        }
+    }
+
+    private func deletionMessage(_ message: String) -> String {
+        guard let error = session.handHistoryState.deletionError else {
+            return message
+        }
+        return "\(message)\n\(error)"
     }
 }
 

@@ -65,6 +65,10 @@ struct HandHistoryDetailView: View {
     let detail: HandHistoryDetail
     let onBack: () -> Void
     let onDelete: () -> Void
+    let isDeleteConfirmationPresented: Binding<Bool>
+    let deletionError: String?
+    let onConfirmDelete: () -> Void
+    let onCancelDelete: () -> Void
 
     var body: some View {
         GeometryReader { proxy in
@@ -88,6 +92,27 @@ struct HandHistoryDetailView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("history.detail")
+        .alert(
+            "删除本局存档？",
+            isPresented: isDeleteConfirmationPresented
+        ) {
+            Button("取消", role: .cancel, action: onCancelDelete)
+                .accessibilityIdentifier(
+                    HandHistoryDeletionPresentation.cancelDeleteIdentifier
+                )
+            Button("删除本局", role: .destructive, action: onConfirmDelete)
+                .accessibilityIdentifier(
+                    HandHistoryDeletionPresentation.confirmDeleteOneIdentifier
+                )
+        } message: {
+            Text(deletionMessage)
+        }
+    }
+
+    private var deletionMessage: String {
+        let message = HandHistoryDeletionPresentation.singleMessage(for: detail)
+        guard let deletionError else { return message }
+        return "\(message)\n\(deletionError)"
     }
 }
 

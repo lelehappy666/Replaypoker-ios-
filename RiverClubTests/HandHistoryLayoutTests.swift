@@ -53,4 +53,33 @@ final class HandHistoryLayoutTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(row.cardSize.width, 28)
         XCTAssertGreaterThanOrEqual(row.cardSize.height, 40)
     }
+
+    func testDeletionConfirmationCopyAndIdentifiersAreExplicit() throws {
+        let detail = try HandHistoryPresentation.detail(
+            from: makeHistoryRecord(
+                archiveMetadata: try makePresentationArchiveMetadata()
+            )
+        )
+
+        XCTAssertEqual(
+            HandHistoryDeletionPresentation.singleMessage(for: detail),
+            "\(detail.tableName) · \(detail.localDay.rawValue) · 第 \(detail.handNumber) 手"
+        )
+        XCTAssertEqual(
+            HandHistoryDeletionPresentation.deleteAllMessage,
+            "此操作只会删除牌局存档，余额、统计和账本不会删除。"
+        )
+        XCTAssertEqual(
+            HandHistoryDeletionPresentation.confirmDeleteOneIdentifier,
+            "history.confirmDeleteOne"
+        )
+        XCTAssertEqual(
+            HandHistoryDeletionPresentation.confirmDeleteAllIdentifier,
+            "history.confirmDeleteAll"
+        )
+        XCTAssertEqual(
+            HandHistoryDeletionPresentation.cancelDeleteIdentifier,
+            "history.cancelDelete"
+        )
+    }
 }

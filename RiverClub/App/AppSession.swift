@@ -284,6 +284,41 @@ final class AppSession {
         handHistoryState.selection = nil
     }
 
+    func requestDeleteHand(id: HandID) {
+        handHistoryState.pendingDeletion = .hand(id)
+        handHistoryState.deletionError = nil
+    }
+
+    func requestDeleteAllHistory() {
+        handHistoryState.pendingDeletion = .all
+        handHistoryState.deletionError = nil
+    }
+
+    func cancelHistoryDeletion() {
+        handHistoryState.pendingDeletion = nil
+        handHistoryState.deletionError = nil
+    }
+
+    func confirmHistoryDeletion() throws {
+        guard let pendingDeletion = handHistoryState.pendingDeletion else { return }
+        do {
+            switch pendingDeletion {
+            case let .hand(id):
+                try dependencies.deleteHandRecord(pokerStore, id)
+            case .all:
+                try dependencies.deleteAllHandRecords(pokerStore)
+            }
+        } catch {
+            handHistoryState.deletionError = "牌局存档删除失败，请重试。"
+            throw error
+        }
+
+        handHistoryState.pendingDeletion = nil
+        handHistoryState.selection = nil
+        handHistoryState.deletionError = nil
+        loadHandHistory()
+    }
+
     private static func historyTableOptions(
         from items: [HandHistoryListItem]
     ) -> [HandHistoryTableOption] {
