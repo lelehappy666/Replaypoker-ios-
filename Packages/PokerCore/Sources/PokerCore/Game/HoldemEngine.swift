@@ -44,11 +44,21 @@ enum HoldemEngine {
             guard state.street == recordedAction.street else {
                 throw PokerRuleError.invalidState("record action street mismatch")
             }
-            state = try applying(
-                recordedAction.action,
-                by: recordedAction.seat,
-                to: state
-            ).state
+            if recordedAction.isDeparture {
+                guard recordedAction.action == .fold else {
+                    throw PokerRuleError.invalidState("invalid departure action")
+                }
+                state = try foldingForDeparture(
+                    recordedAction.seat,
+                    in: state
+                ).state
+            } else {
+                state = try applying(
+                    recordedAction.action,
+                    by: recordedAction.seat,
+                    to: state
+                ).state
+            }
         }
 
         while state.street != .complete {
@@ -184,6 +194,58 @@ enum HoldemEngine {
         result.currentActor = BettingActorResolver.expectedActor(in: result)
         guard result.currentActor != nil else {
             throw PokerRuleError.invalidState("betting round has no next actor")
+        }
+        return try validatedResult(EngineResult(state: result, events: events))
+    }
+
+    static func foldingForDeparture(
+        _ seat: SeatID,
+        in state: HoldemState
+    ) throws -> EngineResult {
+        try validatePublicInput(state)
+        guard [.preflop, .flop, .turn, .river].contains(state.street),
+              let index = state.seats.firstIndex(where: { $0.id == seat }),
+              !state.seats[index].hasFolded,
+              !state.seats[index].isSittingOut
+        else {
+            throw PokerRuleError.illegalAction("seat cannot fold for departure")
+        }
+
+        let previousActor = state.currentActor
+        var result = state
+        result.seats[index].hasFolded = true
+        result.actionHistory.append(
+            RecordedAction(
+                seat: seat,
+                street: state.street,
+                action: .fold,
+                isDeparture: true
+            )
+        )
+        var events: [GameEvent] = [.actionApplied(seat: seat, action: .fold)]
+
+        if remainingPlayers(in: result).count <= 1 {
+            normalizeForTerminalStreet(&result)
+            events.append(.streetChanged(.showdown))
+            return try validatedResult(EngineResult(state: result, events: events))
+        }
+
+        guard previousActor == seat else {
+            result.currentActor = previousActor
+            return try validatedResult(EngineResult(state: result, events: events))
+        }
+
+        if roundIsComplete(result) || noFurtherBettingIsPossible(result) {
+            let advanced = try advanceOneStreet(result)
+            events.append(contentsOf: advanced.events)
+            return try validatedResult(
+                EngineResult(state: advanced.state, events: events)
+            )
+        }
+
+        result.currentActor = BettingActorResolver.expectedActor(in: result)
+        guard result.currentActor != nil else {
+            throw PokerRuleError.invalidState("departure fold has no next actor")
         }
         return try validatedResult(EngineResult(state: result, events: events))
     }

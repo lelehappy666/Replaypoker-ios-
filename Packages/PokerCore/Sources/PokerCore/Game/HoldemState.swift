@@ -56,6 +56,44 @@ public struct RecordedAction: Codable, Equatable, Sendable {
     public let seat: SeatID
     public let street: Street
     public let action: PlayerAction
+    public let isDeparture: Bool
+
+    public init(
+        seat: SeatID,
+        street: Street,
+        action: PlayerAction,
+        isDeparture: Bool = false
+    ) {
+        self.seat = seat
+        self.street = street
+        self.action = action
+        self.isDeparture = isDeparture
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case seat, street, action, isDeparture
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        seat = try container.decode(SeatID.self, forKey: .seat)
+        street = try container.decode(Street.self, forKey: .street)
+        action = try container.decode(PlayerAction.self, forKey: .action)
+        isDeparture = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .isDeparture
+        ) ?? false
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(seat, forKey: .seat)
+        try container.encode(street, forKey: .street)
+        try container.encode(action, forKey: .action)
+        if isDeparture {
+            try container.encode(true, forKey: .isDeparture)
+        }
+    }
 }
 
 public struct Pot: Codable, Equatable, Sendable {

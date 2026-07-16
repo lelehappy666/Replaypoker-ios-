@@ -38,6 +38,15 @@ public final class HoldemGame: CustomReflectable {
     }
 
     @discardableResult
+    package func foldForDeparture(_ seat: SeatID) throws -> GameTransition {
+        let result = try HoldemEngine.foldingForDeparture(seat, in: state)
+        state = result.state
+        let transition = GameTransition(result.events)
+        lastTransition = transition
+        return transition
+    }
+
+    @discardableResult
     public func advanceIfRoundComplete() throws -> GameTransition {
         let result = try HoldemEngine.advanceIfRoundComplete(state)
         state = result.state

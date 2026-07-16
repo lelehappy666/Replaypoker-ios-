@@ -235,6 +235,17 @@ public final class LocalPokerStore {
         }
     }
 
+    package func foldHumanForDeparture() throws -> GameTransition {
+        try transact { state in
+            guard var session = state.activeCashSession else {
+                throw PokerSessionError.invalidLifecycle
+            }
+            let transition = try session.foldHumanForDeparture()
+            state.activeCashSession = session
+            return transition
+        }
+    }
+
     public func advanceIfRoundComplete() throws -> GameTransition {
         try transact { state in
             guard var session = state.activeCashSession else {

@@ -264,6 +264,17 @@ package struct CashGameSession: Codable, Equatable, Sendable {
     }
 
     @discardableResult
+    package mutating func foldHumanForDeparture() throws -> GameTransition {
+        guard phase == .handInProgress else {
+            throw lifecycleError
+        }
+        let game = try requireRestoredGame()
+        let transition = try game.foldForDeparture(humanSeat)
+        try replaceState(after: game)
+        return transition
+    }
+
+    @discardableResult
     package mutating func advanceIfRoundComplete() throws -> GameTransition {
         guard phase == .handInProgress else {
             throw lifecycleError

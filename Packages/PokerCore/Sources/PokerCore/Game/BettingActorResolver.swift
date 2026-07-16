@@ -4,7 +4,9 @@ enum BettingActorResolver {
             return nil
         }
 
-        let anchor = state.actionHistory.last(where: { $0.street == state.street })?.seat
+        let anchor = state.actionHistory.last(where: {
+            $0.street == state.street && !$0.isDeparture
+        })?.seat
             ?? (state.street == .preflop ? state.bigBlindSeat : state.dealer)
         return circularOrder(after: anchor, among: state.seats.map(\.id)).first { id in
             guard state.canAct(id),

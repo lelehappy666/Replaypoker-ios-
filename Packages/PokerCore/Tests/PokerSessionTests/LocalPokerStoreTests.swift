@@ -695,6 +695,31 @@ import Testing
     #expect(pendingRepository.saveCount == pendingSaveCount)
 }
 
+@Test func departureFoldPersistsHumanFoldWithoutCashingOutEarly() throws {
+    let repository = InMemorySessionRepository()
+    let store = try seatedStore(repository: repository)
+    _ = try store.startHand(id: HandID("departure-fold"), seed: 42)
+    let balanceBefore = store.accountBalance
+
+    let transition = try store.foldHumanForDeparture()
+    let human = try #require(store.cashSession?.humanSeat)
+
+    #expect(
+        store.cashSession?.seats.first { $0.id == human }?.hasFolded == true
+    )
+    #expect(store.accountBalance == balanceBefore)
+    #expect(
+        transition.events.contains(
+            .actionApplied(seat: human, action: .fold)
+        )
+    )
+
+    let reopened = try LocalPokerStore(repository: repository, clock: storeClock)
+    #expect(
+        reopened.cashSession?.seats.first { $0.id == human }?.hasFolded == true
+    )
+}
+
 @Test func rebuyDebitsOnceAndConflictingAmountIsRejected() throws {
     let repository = InMemorySessionRepository()
     let store = try seatedStore(repository: repository, human: 4_000)

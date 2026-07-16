@@ -232,6 +232,48 @@ public final class CashTableCoordinator {
         try await startHand(settings: settings)
     }
 
+    public func leaveTable(
+        settlementID: BusinessID,
+        cashOutID: BusinessID
+    ) async throws {
+        cancelCountdown()
+        cancelBotDecision()
+        incrementStateVersion()
+        await finishPendingBotCancellation()
+        botTask.clear()
+
+        if store.cashSession == nil {
+            try store.leave(businessID: cashOutID)
+            return
+        }
+
+        state = stateReplacing(phase: .settling, errorMessage: nil)
+
+        if store.cashSession?.phase == .handInProgress {
+            let human = store.cashSession?.seats.first { $0.id == humanSeat }
+            if human?.hasFolded == false {
+                _ = try store.foldHumanForDeparture()
+            }
+            try completeHandForDeparture()
+        }
+
+        if store.cashSession?.phase == .settlementPending {
+            let effectiveSettlementID = pendingSettlementID ?? settlementID
+            pendingSettlementID = effectiveSettlementID
+            _ = try store.commitPendingHand(
+                transactionID: effectiveSettlementID,
+                archiveMetadata: archiveMetadata
+            )
+        }
+
+        guard store.cashSession?.phase == .readyForHand else {
+            throw PokerCoordinatorError.invalidPhase
+        }
+        try store.leave(businessID: cashOutID)
+        currentHandID = nil
+        pendingSettlementID = nil
+    }
+
     public func retrySave() async throws {
         guard state.phase == .saveFailed,
               pendingSettlementID != nil
@@ -239,6 +281,32 @@ public final class CashTableCoordinator {
             throw PokerCoordinatorError.invalidPhase
         }
         await finishSettlement()
+    }
+
+    private func completeHandForDeparture() throws {
+        var remainingTransitions = 1_000
+        while store.cashSession?.phase == .handInProgress {
+            guard remainingTransitions > 0 else {
+                throw PokerCoordinatorError.invalidPhase
+            }
+            remainingTransitions -= 1
+
+            if let actor = store.cashSession?.currentActor {
+                let observation = try Self.requireBotPlayerObservation(
+                    store.playerObservation(for: actor)
+                )
+                guard let legalActions = observation.legalActions,
+                      let action = CashTableActionPipeline.fallbackAction(
+                          for: legalActions
+                      )
+                else {
+                    throw PokerCoordinatorError.missingObservation
+                }
+                _ = try store.apply(action, by: actor)
+            } else {
+                _ = try store.advanceIfRoundComplete()
+            }
+        }
     }
 
     package func finishSettlement() async {
