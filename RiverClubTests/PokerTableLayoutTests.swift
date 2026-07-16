@@ -2,6 +2,7 @@ import CoreGraphics
 import XCTest
 @testable import RiverClub
 
+@MainActor
 final class PokerTableLayoutTests: XCTestCase {
     private let canvases = [
         CGSize(width: 780, height: 360),
@@ -53,13 +54,23 @@ final class PokerTableLayoutTests: XCTestCase {
         XCTAssertEqual(PokerTableLayout.betControlSize.height, 164)
     }
 
-    func testPlayableTableDoesNotExposeBackOrExitControl() throws {
+    func testApprovedLandscapeCardAndSidebarMetrics() {
+        XCTAssertEqual(AppSidebar.landscapePhoneWidth, 168)
+        XCTAssertGreaterThanOrEqual(PokerTableLayout.communityCardSize.width, 46)
+        XCTAssertGreaterThanOrEqual(PokerTableLayout.communityCardSize.height, 62)
+        XCTAssertGreaterThanOrEqual(PokerTableLayout.humanHoleCardSize.width, 42)
+        XCTAssertGreaterThanOrEqual(PokerTableLayout.humanHoleCardSize.height, 57)
+        XCTAssertGreaterThanOrEqual(PokerTableLayout.botHoleCardSize.width, 34)
+        XCTAssertGreaterThanOrEqual(PokerTableLayout.botHoleCardSize.height, 46)
+    }
+
+    func testPlayableTableExposesDepartureControl() throws {
         let source = try String(
             contentsOfFile: #filePath
                 .replacingOccurrences(of: "RiverClubTests/PokerTableLayoutTests.swift", with: "RiverClub/Features/Table/PokerTableView.swift"),
             encoding: .utf8
         )
-        XCTAssertFalse(source.contains("Label(\"返回\""))
-        XCTAssertFalse(source.contains("onExit"))
+        XCTAssertTrue(source.contains("table.leave"))
+        XCTAssertTrue(source.contains("onRequestLeave"))
     }
 }

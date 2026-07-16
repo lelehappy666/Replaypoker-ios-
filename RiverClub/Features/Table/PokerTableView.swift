@@ -7,6 +7,7 @@ struct PokerTableView: View {
     let table: PokerTableSummary
     let balance: Int
     let sendIntent: @MainActor (TableIntent) async throws -> Void
+    var onRequestLeave: () -> Void = {}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var actionRequest = TableActionRequestModel()
     @State private var animationPresentation = TableAnimationPresentation()
@@ -121,7 +122,10 @@ struct PokerTableView: View {
             HStack(spacing: 5) {
                 ForEach(Array(state.communityCards.enumerated()), id: \.offset) { index, card in
                     TableCardView(card: card)
-                        .frame(width: 34, height: 46)
+                        .frame(
+                            width: PokerTableLayout.communityCardSize.width,
+                            height: PokerTableLayout.communityCardSize.height
+                        )
                         .scaleEffect(
                             reduceMotion ? 1 : animationPresentation.communityCardScale(at: index)
                         )
@@ -155,6 +159,16 @@ struct PokerTableView: View {
 
     private var topBar: some View {
         HStack(spacing: 10) {
+            Button {
+                onRequestLeave()
+            } label: {
+                Label("离桌", systemImage: "chevron.left")
+            }
+            .buttonStyle(.bordered)
+            .tint(RCTheme.gold)
+            .frame(minHeight: 44)
+            .accessibilityIdentifier("table.leave")
+
             Text(PokerTablePresentation.title(for: table))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(RCTheme.primaryText)

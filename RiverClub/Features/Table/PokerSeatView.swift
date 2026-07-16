@@ -5,6 +5,9 @@ enum PokerTableLayout {
     static let seatSize = CGSize(width: 108, height: 96)
     static let seatContentSize = CGSize(width: 104, height: 92)
     static let betControlSize = CGSize(width: 330, height: 164)
+    static let communityCardSize = CGSize(width: 46, height: 62)
+    static let humanHoleCardSize = CGSize(width: 42, height: 57)
+    static let botHoleCardSize = CGSize(width: 34, height: 46)
 
     static func positions(for canvas: CGSize) -> [CGPoint] {
         let topY = topBarRegion(for: canvas).maxY + seatSize.height / 2 + 2
@@ -47,10 +50,10 @@ enum PokerTableLayout {
     }
 
     static func centerBoardRegion(for canvas: CGSize) -> CGRect {
-        let size = CGSize(width: min(250, canvas.width * 0.32), height: 90)
+        let size = CGSize(width: min(270, canvas.width * 0.36), height: 104)
         return CGRect(
             x: canvas.width * 0.5 - size.width / 2,
-            y: canvas.height * 0.54 - size.height / 2,
+            y: canvas.height * 0.565 - size.height / 2,
             width: size.width,
             height: size.height
         )
@@ -78,28 +81,38 @@ struct PokerSeatView: View {
     }
 
     var body: some View {
-        VStack(spacing: 2) {
+        VStack(spacing: 1) {
             HStack(spacing: -6) {
                 ForEach(Array(seat.cards.enumerated()), id: \.offset) { _, card in
                     TableCardView(cardState: card)
-                        .frame(width: 29, height: 39)
+                        .frame(
+                            width: holeCardSize.width,
+                            height: holeCardSize.height
+                        )
                         .accessibilityIdentifier(
                             seat.isHuman ? "table.localHoleCard" : "table.botHoleCard"
                         )
                 }
             }
-            .frame(height: 39)
+            .frame(height: holeCardSize.height)
             .scaleEffect(holeCardScale)
 
             HStack(spacing: 4) {
                 Text(initials)
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(seat.isHuman ? RCTheme.gold : RCTheme.primaryText)
-                    .frame(width: 26, height: 26)
+                    .frame(width: 30, height: 30)
                     .background(
                         seat.isHuman ? RCTheme.gold.opacity(0.24) : RCTheme.surfaceRaised,
                         in: Circle()
                     )
+                    .overlay {
+                        Circle()
+                            .stroke(
+                                seat.isHuman ? RCTheme.gold.opacity(0.72) : RCTheme.primaryText.opacity(0.24),
+                                lineWidth: 1
+                            )
+                    }
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text(seat.displayName)
@@ -111,13 +124,16 @@ struct PokerSeatView: View {
                 }
             }
 
-            if seat.isCurrentActor || seat.hasFolded || seat.isAllIn {
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if showsStatus {
                 Text(statusText)
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(RCTheme.background)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
                     .background(RCTheme.gold, in: Capsule())
+                    .offset(y: 3)
             }
         }
         .foregroundStyle(RCTheme.primaryText)
@@ -139,6 +155,16 @@ struct PokerSeatView: View {
 
     private var holeCardScale: CGFloat {
         reduceMotion ? 1 : animation.holeCardScale(for: seat.id)
+    }
+
+    private var holeCardSize: CGSize {
+        seat.isHuman
+            ? PokerTableLayout.humanHoleCardSize
+            : PokerTableLayout.botHoleCardSize
+    }
+
+    private var showsStatus: Bool {
+        seat.isCurrentActor || seat.hasFolded || seat.isAllIn
     }
 
     private var statusText: String {

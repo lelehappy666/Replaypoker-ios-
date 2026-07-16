@@ -1,6 +1,9 @@
 import SwiftUI
 
 struct AppSidebar: View {
+    static let landscapePhoneWidth: CGFloat = 168
+    static let horizontalPadding: CGFloat = 10
+
     let selection: AppRoute
     let onSelect: (AppRoute) -> Void
 
@@ -13,7 +16,7 @@ struct AppSidebar: View {
                 } label: {
                     Label(route.sidebarLabel, systemImage: route.sidebarSystemImage)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, Self.horizontalPadding)
                         .padding(.vertical, 12)
                         .foregroundStyle(selection == route ? RCTheme.gold : RCTheme.primaryText)
                         .background(
@@ -27,8 +30,9 @@ struct AppSidebar: View {
 
             Spacer()
         }
-        .padding(16)
-        .frame(width: 220)
+        .padding(.horizontal, Self.horizontalPadding)
+        .padding(.vertical, 16)
+        .frame(width: Self.landscapePhoneWidth)
         .background(RCTheme.surface)
     }
 }
