@@ -67,6 +67,22 @@ enum PokerTableLayout {
             height: betControlSize.height
         )
     }
+
+    static func vectorFromPot(
+        toSeatAt index: Int,
+        canvas: CGSize
+    ) -> CGVector? {
+        let positions = positions(for: canvas)
+        guard positions.indices.contains(index) else { return nil }
+        let pot = CGPoint(
+            x: centerBoardRegion(for: canvas).midX,
+            y: centerBoardRegion(for: canvas).midY + 34
+        )
+        return CGVector(
+            dx: positions[index].x - pot.x,
+            dy: positions[index].y - pot.y
+        )
+    }
 }
 
 struct PokerSeatView: View {

@@ -132,11 +132,24 @@ struct TableAnimationPresentation: Equatable {
         return Double(progress)
     }
 
+    var awardTargetSeat: SeatID? {
+        guard case let .awardPot(seat, _, _)? = event else { return nil }
+        return seat
+    }
+
+    var awardAmount: Chips? {
+        guard case let .awardPot(_, amount, _)? = event else { return nil }
+        return amount
+    }
+
+    var awardProgress: CGFloat {
+        awardTargetSeat == nil ? 0 : progress
+    }
+
     var chipOffset: CGFloat {
         switch event?.kind {
         case .moveCommitmentToPot: 7 * progress
         case .returnUncalledBet: -7 * progress
-        case .awardPot: -12 * progress
         default: 0
         }
     }

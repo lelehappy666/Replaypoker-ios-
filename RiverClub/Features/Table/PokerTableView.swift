@@ -42,6 +42,8 @@ struct PokerTableView: View {
                     )
                     .accessibilityIdentifier("table.centerBoard")
 
+                awardAnimationLayer(canvas: proxy.size)
+
                 ForEach(Array(state.seats.enumerated()), id: \.element.id) { index, seat in
                     if positions.indices.contains(index) {
                         ZStack {
@@ -164,6 +166,51 @@ struct PokerTableView: View {
 
     private var chipCount: Int {
         state.pot.rawValue == 0 ? 0 : min(6, max(1, state.pot.rawValue / 200))
+    }
+
+    @ViewBuilder
+    private func awardAnimationLayer(canvas: CGSize) -> some View {
+        if let targetSeat = animationPresentation.awardTargetSeat,
+           let amount = animationPresentation.awardAmount,
+           let seatIndex = state.seats.firstIndex(where: { $0.id == targetSeat }),
+           let vector = PokerTableLayout.vectorFromPot(
+               toSeatAt: seatIndex,
+               canvas: canvas
+           ) {
+            let center = PokerTableLayout.centerBoardRegion(for: canvas)
+            let progress = reduceMotion ? 1 : animationPresentation.awardProgress
+
+            HStack(spacing: -4) {
+                ForEach(0..<5, id: \.self) { _ in
+                    Circle()
+                        .fill(RCTheme.gold)
+                        .frame(width: 12, height: 12)
+                        .overlay {
+                            Circle().stroke(RCTheme.background, lineWidth: 1)
+                        }
+                }
+            }
+            .position(
+                x: center.midX + vector.dx * progress,
+                y: center.midY + 34 + vector.dy * progress
+            )
+            .shadow(color: RCTheme.gold.opacity(0.7), radius: 7)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+
+            Text("\(displayName(for: targetSeat)) 赢得 \(amount.rawValue.formatted())")
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(RCTheme.gold)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(.black.opacity(0.72), in: Capsule())
+                .position(x: center.midX, y: max(72, center.minY - 12))
+                .accessibilityIdentifier("table.winnerAnnouncement")
+        }
+    }
+
+    private func displayName(for seat: SeatID) -> String {
+        state.seats.first(where: { $0.id == seat })?.displayName ?? "玩家"
     }
 
     private var currentHandText: String? {
@@ -336,11 +383,14 @@ struct PokerTableView: View {
         }
 
         animationPresentation.begin(event, token: sequence)
-        withAnimation(.easeOut(duration: 0.22)) {
+        let duration = event.kind == .awardPot ? 0.52 : 0.22
+        withAnimation(.easeInOut(duration: duration)) {
             animationPresentation.advance(token: sequence)
         }
         animationResetTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(220))
+            try? await Task.sleep(
+                for: .milliseconds(event.kind == .awardPot ? 560 : 220)
+            )
             guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.12)) {
                 animationPresentation.reset(token: sequence)
