@@ -13,7 +13,14 @@ struct HandHistoryLayout: Equatable {
     let minimumRowHeight: CGFloat
 
     static func safeCanvas(width: CGFloat, height _: CGFloat) -> Self {
-        let filterWidth: CGFloat = 220
+        let filterWidth: CGFloat
+        if width < 680 {
+            filterWidth = 168
+        } else if width < 800 {
+            filterWidth = 184
+        } else {
+            filterWidth = 220
+        }
         let horizontalPadding: CGFloat = 40
         let spacing: CGFloat = 16
         return Self(
@@ -24,14 +31,26 @@ struct HandHistoryLayout: Equatable {
     }
 
     static func rowMetrics(contentWidth: CGFloat) -> HandHistoryRowLayout {
+        if contentWidth < 440 {
+            return HandHistoryRowLayout(
+                titleWidth: 105,
+                cardSize: CGSize(width: 26, height: 37),
+                horizontalSpacing: 4,
+                horizontalPadding: 8,
+                minimumSpacerWidth: 2,
+                deltaWidth: 112,
+                potLineLimit: 2
+            )
+        }
         if contentWidth < 520 {
             return HandHistoryRowLayout(
-                titleWidth: 120,
+                titleWidth: 115,
                 cardSize: CGSize(width: 28, height: 40),
                 horizontalSpacing: 6,
-                horizontalPadding: 10,
+                horizontalPadding: 8,
                 minimumSpacerWidth: 4,
-                deltaWidth: 118
+                deltaWidth: 112,
+                potLineLimit: 2
             )
         }
         return HandHistoryRowLayout(
@@ -40,7 +59,8 @@ struct HandHistoryLayout: Equatable {
             horizontalSpacing: 12,
             horizontalPadding: 16,
             minimumSpacerWidth: 8,
-            deltaWidth: 130
+            deltaWidth: 130,
+            potLineLimit: 1
         )
     }
 }
@@ -52,6 +72,7 @@ struct HandHistoryRowLayout: Equatable {
     let horizontalPadding: CGFloat
     let minimumSpacerWidth: CGFloat
     let deltaWidth: CGFloat
+    let potLineLimit: Int
 
     var minimumWidth: CGFloat {
         let fiveCardsWidth = cardSize.width * 5 + 4 * 4
@@ -113,35 +134,43 @@ struct HandHistoryView: View {
     }
 
     private var historyList: some View {
-        HStack(spacing: 16) {
-            HandHistoryFilterPanel(
-                balance: session.chipBalance,
-                filters: session.handHistoryState.filters,
-                availableTables: session.handHistoryState.availableTables,
-                canDeleteAll: session.handHistoryState.canDeleteAll,
-                onChange: session.updateHandHistoryFilters,
-                onBeginCustomDate: session.beginCustomHandHistoryDateSelection,
-                onChangeCustomDate: { date, calendar in
-                    try? session.selectCustomHandHistoryDate(
-                        date,
-                        calendar: calendar
-                    )
-                },
-                onDeleteAll: session.requestDeleteAllHistory
+        GeometryReader { proxy in
+            let layout = HandHistoryLayout.safeCanvas(
+                width: proxy.size.width,
+                height: proxy.size.height
             )
-            .frame(width: 220)
+            HStack(spacing: 16) {
+                HandHistoryFilterPanel(
+                    balance: session.chipBalance,
+                    filters: session.handHistoryState.filters,
+                    availableTables: session.handHistoryState.availableTables,
+                    canDeleteAll: session.handHistoryState.canDeleteAll,
+                    onChange: session.updateHandHistoryFilters,
+                    onBeginCustomDate: session.beginCustomHandHistoryDateSelection,
+                    onChangeCustomDate: { date, calendar in
+                        try? session.selectCustomHandHistoryDate(
+                            date,
+                            calendar: calendar
+                        )
+                    },
+                    onDeleteAll: session.requestDeleteAllHistory
+                )
+                .frame(width: layout.filterWidth)
 
-            HandHistoryContent(
-                state: session.handHistoryState,
-                onSelect: session.selectHandHistory,
-                onScrollTargetChange: session.updateHandHistoryScrollTarget,
-                onRetry: session.loadHandHistory,
-                onResetFilters: {
-                    session.updateHandHistoryFilters(HandHistoryFilters())
-                }
-            )
+                HandHistoryContent(
+                    state: session.handHistoryState,
+                    onSelect: session.selectHandHistory,
+                    onScrollTargetChange: session.updateHandHistoryScrollTarget,
+                    onRetry: session.loadHandHistory,
+                    onResetFilters: {
+                        session.updateHandHistoryFilters(HandHistoryFilters())
+                    }
+                )
+                .frame(width: layout.contentWidth)
+            }
+            .frame(maxHeight: .infinity)
+            .padding(20)
         }
-        .padding(20)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("history.list")
     }
@@ -581,6 +610,8 @@ private struct HandHistoryRow: View {
                     Text("\(item.tableName) · 第 \(item.handNumber) 手")
                         .font(.headline)
                         .foregroundStyle(RCTheme.primaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                     Text(item.completedAtText)
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(RCTheme.secondaryText)
@@ -606,9 +637,14 @@ private struct HandHistoryRow: View {
                     Text(item.humanChipDeltaText)
                         .font(.subheadline.monospacedDigit().weight(.bold))
                         .foregroundStyle(deltaColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                     Text(item.allocatedPotTotalText)
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(RCTheme.secondaryText)
+                        .lineLimit(layout.potLineLimit)
+                        .minimumScaleFactor(0.75)
+                        .multilineTextAlignment(.trailing)
                 }
                 .frame(width: layout.deltaWidth, alignment: .trailing)
             }

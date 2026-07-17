@@ -93,6 +93,21 @@ final class HandHistoryLayoutTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(row.cardSize.height, 40)
     }
 
+    func testCompactLandscapeHistoryKeepsRightResultInsideRoutedCanvas() {
+        let canvas = HandHistoryLayout.safeCanvas(width: 622, height: 424)
+        let row = HandHistoryLayout.rowMetrics(
+            contentWidth: canvas.contentWidth
+        )
+
+        XCTAssertEqual(canvas.filterWidth, 168)
+        XCTAssertLessThanOrEqual(
+            canvas.filterWidth + 16 + canvas.contentWidth + 40,
+            622
+        )
+        XCTAssertLessThanOrEqual(row.minimumWidth, canvas.contentWidth)
+        XCTAssertGreaterThanOrEqual(row.deltaWidth, 112)
+    }
+
     func testDeletionConfirmationCopyAndIdentifiersAreExplicit() throws {
         let detail = try HandHistoryPresentation.detail(
             from: makeHistoryRecord(
