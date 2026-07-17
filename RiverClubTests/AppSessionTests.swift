@@ -1,6 +1,7 @@
 import Foundation
 import PokerBot
 import PokerCoordinator
+import PokerCore
 import PokerSession
 import XCTest
 @testable import RiverClub
@@ -50,6 +51,35 @@ final class AppSessionTests: XCTestCase {
         XCTAssertThrowsError(
             try AppSession.uiTestingStoreDirectory(storeID: "-openHistory")
         )
+    }
+
+    func testUITestFixtureOnlySleepsForShortAnimationDurations() {
+        XCTAssertEqual(
+            AppSession.uiTestingAnimationSleepDuration(for: .milliseconds(600)),
+            .milliseconds(600)
+        )
+        XCTAssertNil(AppSession.uiTestingAnimationSleepDuration(for: .seconds(1)))
+        XCTAssertNil(AppSession.uiTestingAnimationSleepDuration(for: .zero))
+    }
+
+    @MainActor
+    func testUITestIdentitySeedProducesDistinctEightPersonGroupsForSeparateEntries() throws {
+        let session = try AppSession.uiTestingImmediate(
+            resetHistoryStore: true,
+            storeID: "identity-seed-fixture",
+            identitySeed: 41
+        )
+        let humanSeat = try SeatID(8)
+        let first = try session.uiTestingSeatProfiles(humanSeat: humanSeat)
+        let second = try session.uiTestingSeatProfiles(humanSeat: humanSeat)
+
+        let firstBots = first.filter { $0.id != humanSeat }.map { $0.displayName }
+        let secondBots = second.filter { $0.id != humanSeat }.map { $0.displayName }
+        XCTAssertEqual(firstBots.count, 8)
+        XCTAssertEqual(Set(firstBots).count, 8)
+        XCTAssertEqual(secondBots.count, 8)
+        XCTAssertEqual(Set(secondBots).count, 8)
+        XCTAssertNotEqual(firstBots, secondBots)
     }
 
     @MainActor

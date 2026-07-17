@@ -70,4 +70,132 @@ final class CoreFlowUITests: XCTestCase {
         XCTAssertNotEqual(safeCanvas.value as? String, firstHandID)
         XCTAssertTrue(app.buttons["action.fold"].waitForExistence(timeout: 10))
     }
+
+    func testBotIdentitiesRemainStableUntilNextHandAndChangeOnlyAfterLeaving() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-uiTesting",
+            "-uiTestingImmediatePoker",
+            "-resetHistoryStore",
+            "-uiTestingStoreID",
+            "identity-lifecycle",
+            "-uiTestingIdentitySeed",
+            "41",
+        ]
+        app.launch()
+
+        enterFirstTable(in: app)
+        let first = botIdentityValues(in: app)
+
+        let fold = app.buttons["action.fold"]
+        XCTAssertTrue(fold.waitForExistence(timeout: 10))
+        fold.tap()
+        let nextHand = app.buttons["action.nextHand"]
+        XCTAssertTrue(nextHand.waitForExistence(timeout: 15))
+        nextHand.tap()
+        XCTAssertTrue(app.buttons["action.fold"].waitForExistence(timeout: 10))
+        XCTAssertEqual(botIdentityValues(in: app), first)
+
+        app.buttons["table.leave"].tap()
+        XCTAssertTrue(app.buttons["table.leave.confirm"].waitForExistence(timeout: 5))
+        app.buttons["table.leave.confirm"].tap()
+        XCTAssertTrue(app.buttons[firstTableIdentifier].waitForExistence(timeout: 15))
+        app.buttons[firstTableIdentifier].tap()
+        XCTAssertTrue(app.sliders["buyIn.slider"].waitForExistence(timeout: 5))
+        app.buttons["buyIn.confirm"].tap()
+
+        let reentered = botIdentityValues(in: app)
+        XCTAssertEqual(reentered.count, 8)
+        XCTAssertEqual(Set(reentered).count, 8)
+        XCTAssertNotEqual(reentered, first)
+    }
+
+    func testSinglePayoutAnnouncementIsPresentedExactlyOnce() throws {
+        let app = launchPayoutScenario("single", storeID: "payout-single")
+        enterFirstTable(in: app)
+
+        let records = payoutRecords(in: app, expectedCount: 1)
+        XCTAssertEqual(records, ["4|\(displayName(in: app, forSeat: 4))|800"])
+    }
+
+    func testSplitPayoutAnnouncementsPreserveInputOrderWithoutDuplicates() throws {
+        let app = launchPayoutScenario("split", storeID: "payout-split")
+        enterFirstTable(in: app)
+
+        let records = payoutRecords(in: app, expectedCount: 2)
+        XCTAssertEqual(records, [
+            "8|RiverAce|500",
+            "2|\(displayName(in: app, forSeat: 2))|250",
+        ])
+        XCTAssertEqual(Set(records).count, 2)
+    }
+
+    private func enterFirstTable(in app: XCUIApplication) {
+        XCTAssertTrue(app.buttons["login.guest"].waitForExistence(timeout: 5))
+        app.buttons["login.guest"].tap()
+        XCTAssertTrue(app.buttons["lobby.allTables"].waitForExistence(timeout: 5))
+        app.buttons["lobby.allTables"].tap()
+        XCTAssertTrue(app.buttons[firstTableIdentifier].waitForExistence(timeout: 5))
+        app.buttons[firstTableIdentifier].tap()
+        XCTAssertTrue(app.sliders["buyIn.slider"].waitForExistence(timeout: 5))
+        app.buttons["buyIn.confirm"].tap()
+        XCTAssertTrue(app.otherElements["table.safeCanvas"].waitForExistence(timeout: 5))
+    }
+
+    private func botIdentityValues(in app: XCUIApplication) -> [String] {
+        let avatars = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH 'table.botAvatar.'"))
+            .allElementsBoundByIndex
+            .sorted { $0.identifier < $1.identifier }
+        XCTAssertEqual(avatars.count, 8)
+        let values = avatars.compactMap { $0.value as? String }
+        XCTAssertEqual(values.count, 8)
+        XCTAssertEqual(Set(values).count, 8)
+        return values
+    }
+
+    private func launchPayoutScenario(
+        _ scenario: String,
+        storeID: String
+    ) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-uiTesting",
+            "-uiTestingImmediatePoker",
+            "-resetHistoryStore",
+            "-uiTestingStoreID",
+            storeID,
+            "-uiTestingPayoutScenario",
+            scenario,
+            "-uiTestingPayoutLog",
+            "-uiTestingIdentitySeed",
+            "41",
+        ]
+        app.launch()
+        return app
+    }
+
+    private func payoutRecords(
+        in app: XCUIApplication,
+        expectedCount: Int
+    ) -> [String] {
+        let log = app.otherElements["table.uiTestingPayoutLog"]
+        XCTAssertTrue(log.waitForExistence(timeout: 5))
+        let expected = expectedCount == 1
+            ? NSPredicate(format: "value != ''")
+            : NSPredicate(format: "value CONTAINS ','")
+        expectation(for: expected, evaluatedWith: log)
+        waitForExpectations(timeout: 5)
+        let records = (log.value as? String ?? "")
+            .split(separator: ",")
+            .map(String.init)
+        XCTAssertEqual(records.count, expectedCount)
+        return records
+    }
+
+    private func displayName(in app: XCUIApplication, forSeat seat: Int) -> String {
+        let avatar = app.descendants(matching: .any)["table.botAvatar.\(seat)"]
+        XCTAssertTrue(avatar.waitForExistence(timeout: 5))
+        return avatar.value as? String ?? ""
+    }
 }

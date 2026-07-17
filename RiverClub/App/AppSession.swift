@@ -232,7 +232,8 @@ final class AppSession {
 
     static func uiTestingImmediate(
         resetHistoryStore: Bool,
-        storeID: String
+        storeID: String,
+        identitySeed: UInt64? = nil
     ) throws -> AppSession {
         let fileManager = FileManager.default
         let directory = try uiTestingStoreDirectory(storeID: storeID)
@@ -244,6 +245,7 @@ final class AppSession {
             withIntermediateDirectories: true
         )
         let ids = UITestIDSequence(namespace: UUID().uuidString)
+        let identitySequence = identitySeed.map(UITestIdentityProfileSequence.init)
         let store = try LocalPokerStore.open(
             directory: directory,
             clock: AppSessionClock()
@@ -260,7 +262,12 @@ final class AppSession {
                         "ui:\(purpose):\(ids.nextBusinessID())"
                     )
                 },
-                makeSeatProfiles: TableSeatProfileFactory.make,
+                makeSeatProfiles: { humanSeat in
+                    if let identitySequence {
+                        return try identitySequence.next(humanSeat: humanSeat)
+                    }
+                    return try TableSeatProfileFactory.make(humanSeat: humanSeat)
+                },
                 makeRuntimeDependencies: { _ in
                     TableRuntimeDependencies(
                         nextHandID: { try HandID(ids.nextHandID()) },
@@ -269,8 +276,11 @@ final class AppSession {
                         },
                         nextSeed: { 37 },
                         sleep: { duration in
-                            guard duration > .zero else { return }
-                            try await ContinuousClock().sleep(for: .seconds(300))
+                            if let animationDuration = uiTestingAnimationSleepDuration(for: duration) {
+                                try await ContinuousClock().sleep(for: animationDuration)
+                            } else if duration > .zero {
+                                try await ContinuousClock().sleep(for: .seconds(300))
+                            }
                         },
                         reduceMotion: true
                     )
@@ -287,6 +297,17 @@ final class AppSession {
             )
         )
     }
+
+    nonisolated static func uiTestingAnimationSleepDuration(for duration: Duration) -> Duration? {
+        guard duration > .zero, duration <= .milliseconds(700) else { return nil }
+        return duration
+    }
+
+    #if DEBUG
+    func uiTestingSeatProfiles(humanSeat: SeatID) throws -> [TableSeatProfile] {
+        try dependencies.makeSeatProfiles(humanSeat)
+    }
+    #endif
 
     func continueAsGuest() { route = .lobby }
     func logout() { route = .login }
@@ -775,6 +796,23 @@ private final class UITestIDSequence: @unchecked Sendable {
     }
 }
 
+private final class UITestIdentityProfileSequence {
+    private let seed: UInt64
+    private var entry = 0
+
+    init(seed: UInt64) {
+        self.seed = seed
+    }
+
+    func next(humanSeat: SeatID) throws -> [TableSeatProfile] {
+        let identities = RobotIdentityCatalog.all
+        let start = (Int(seed % UInt64(identities.count)) + entry * 8) % identities.count
+        entry += 1
+        let robots = (0..<8).map { identities[(start + $0) % identities.count] }
+        return try TableSeatProfileFactory.make(humanSeat: humanSeat, robots: robots)
+    }
+}
+
 struct AppSessionClock: SessionClock {
     var now: Date { Date() }
 
@@ -865,6 +903,18 @@ enum TableSeatProfileFactory {
         using generator: inout R
     ) throws -> [TableSeatProfile] {
         let robots = RobotIdentityCatalog.draw(count: 8, using: &generator)
+        return try make(humanSeat: humanSeat, robots: robots)
+    }
+
+    static func make(
+        humanSeat: SeatID,
+        robots: [RobotIdentity]
+    ) throws -> [TableSeatProfile] {
+        guard robots.count == 8,
+              Set(robots.map(\.id)).count == 8
+        else {
+            throw PokerCoordinatorError.missingObservation
+        }
         var robotIndex = 0
         return try (0..<9).map { index in
             let seat = try SeatID(index)

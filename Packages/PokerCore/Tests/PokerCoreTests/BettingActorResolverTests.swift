@@ -48,6 +48,35 @@ import Testing
     #expect(BettingActorResolver.expectedActor(in: state) == expected)
 }
 
+@Test func 庄家从八号环回零号且跳过弃牌和全下座位仍顺时针() throws {
+    var state = try HoldemEngine.start(
+        config: Fixtures.standardConfig(dealer: 8),
+        stacks: Dictionary(
+            uniqueKeysWithValues: (0..<9).map {
+                (try! SeatID($0), try! Chips(1_000))
+            }
+        ),
+        seed: 95
+    ).state
+    state.street = .flop
+    state.currentBet = try Chips(0)
+    state.forcedBringIn = try Chips(0)
+    state.actedSinceLastFullRaise = []
+    state.lastActedAtBet = [:]
+    for index in state.seats.indices {
+        state.seats[index].committedThisStreet = try Chips(0)
+    }
+
+    let zero = try SeatID(0)
+    #expect(BettingActorResolver.expectedActor(in: state) == zero)
+
+    state.seats[0].hasFolded = true
+    state.seats[1].stack = try Chips(0)
+    state.seats[1].isAllIn = true
+    let two = try SeatID(2)
+    #expect(BettingActorResolver.expectedActor(in: state) == two)
+}
+
 @Test func actorResolverReturnsNilWhenNoSeatStillNeedsAction() throws {
     var state = try HoldemEngine.start(
         config: Fixtures.standardConfig(dealer: 0),

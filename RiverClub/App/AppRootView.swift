@@ -197,8 +197,10 @@ struct AppRootView: View {
                         )
                         buyInError = nil
                         pendingBuyInTable = nil
-                        Task {
-                            await session.startOrResumeTableHand()
+                        if !uiTestingPayoutScenarioIsActive {
+                            Task {
+                                await session.startOrResumeTableHand()
+                            }
                         }
                     } catch {
                         buyInError = "买入失败，请重试。"
@@ -234,6 +236,15 @@ struct AppRootView: View {
         }
     }
 
+}
+
+private var uiTestingPayoutScenarioIsActive: Bool {
+    let arguments = ProcessInfo.processInfo.arguments
+    guard arguments.contains("-uiTesting"),
+          let flag = arguments.firstIndex(of: "-uiTestingPayoutScenario"),
+          arguments.indices.contains(flag + 1)
+    else { return false }
+    return ["single", "split"].contains(arguments[flag + 1])
 }
 
 private struct AbandonedCashSessionSettlementView: View {

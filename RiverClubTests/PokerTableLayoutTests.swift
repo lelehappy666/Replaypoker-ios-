@@ -48,6 +48,28 @@ final class PokerTableLayoutTests: XCTestCase {
         }
     }
 
+    func testVisualSeatRingFollowsCoreClockwiseSeatOrderWithoutAngleWrapAssumptions() {
+        for canvas in canvases {
+            let positions = PokerTableLayout.positions(for: canvas)
+            let center = PokerTableLayout.tableCenter(for: canvas)
+
+            // 视觉环从左下的 0 号座位开始：沿左边上行、穿过顶部、再到右上，
+            // 最后回到本人所在的底部中央 8 号座位；不能用跨 π 的 atan2 排序误判。
+            XCTAssertLessThan(positions[0].x, center.x)
+            XCTAssertGreaterThan(positions[0].y, center.y)
+            XCTAssertLessThan(positions[1].x, center.x)
+            XCTAssertLessThan(positions[1].y, positions[0].y)
+            XCTAssertLessThan(positions[2].y, positions[1].y)
+            for index in 3...7 {
+                XCTAssertLessThanOrEqual(positions[index - 1].x, positions[index].x)
+                XCTAssertLessThanOrEqual(positions[index - 1].y, positions[index].y + 0.001)
+            }
+            XCTAssertEqual(positions[8].x, canvas.width * 0.5, accuracy: 0.001)
+            XCTAssertGreaterThan(positions[8].y, center.y)
+            XCTAssertGreaterThan(positions[8].x, positions[0].x)
+        }
+    }
+
     func testActionRegionKeepsApprovedLandscapeFootprint() {
         XCTAssertEqual(PokerTableLayout.seatSize.width, 108)
         XCTAssertEqual(PokerTableLayout.seatSize.height, 96)

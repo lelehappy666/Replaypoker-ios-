@@ -20,7 +20,8 @@ import SwiftUI
                 }
                 initialSession = try AppSession.uiTestingImmediate(
                     resetHistoryStore: arguments.contains("-resetHistoryStore"),
-                    storeID: arguments[storeFlag + 1]
+                    storeID: arguments[storeFlag + 1],
+                    identitySeed: uiTestingIdentitySeed(arguments: arguments)
                 )
                 if arguments.contains("-openHistory") {
                     initialSession.continueAsGuest()
@@ -51,6 +52,15 @@ import SwiftUI
             }
         }
     }
+}
+
+private func uiTestingIdentitySeed(arguments: [String]) -> UInt64? {
+    guard let flag = arguments.firstIndex(of: "-uiTestingIdentitySeed"),
+          arguments.indices.contains(flag + 1)
+    else {
+        return nil
+    }
+    return UInt64(arguments[flag + 1])
 }
 
 struct PersistenceStartupErrorView: View {
