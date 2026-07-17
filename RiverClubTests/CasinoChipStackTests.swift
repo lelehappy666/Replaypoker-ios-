@@ -58,10 +58,13 @@ final class CasinoChipStackTests: XCTestCase {
             CasinoChipBreakdown.make(amount: 1_499, maximumVisibleChips: 1),
             [.oneThousand]
         )
+        let result = CasinoChipBreakdown.make(amount: 1_499, maximumVisibleChips: 2)
+
         XCTAssertEqual(
-            CasinoChipBreakdown.make(amount: 1_499, maximumVisibleChips: 2),
-            [.oneThousand, .fiveHundred]
+            result,
+            [.oneThousand, .oneHundred]
         )
+        XCTAssertLessThanOrEqual(result.reduce(0) { $0 + $1.rawValue }, 1_499)
     }
 
     func testMaximumIntegerAmountCompletesWithinTheVisibleLimit() {
