@@ -15,6 +15,7 @@ extension AppRoute {
 
 enum AppSessionError: Error, Equatable {
     case conflictingCashTableAttempt
+    case unsettledCashSession
     case invalidUITestStoreID
 }
 
@@ -121,6 +122,11 @@ private struct TableDepartureAttempt {
     let cashOutID: BusinessID
 }
 
+private struct AbandonedCashSessionSettlementAttempt {
+    let settlementID: BusinessID
+    let cashOutID: BusinessID
+}
+
 @MainActor @Observable
 final class AppSession {
     var route: AppRoute = .login
@@ -133,17 +139,26 @@ final class AppSession {
     private(set) var isTableDeparturePresented = false
     private(set) var isLeavingTable = false
     private(set) var tableDepartureError: String?
+    private(set) var isSettlingAbandonedCashSession = false
+    private(set) var abandonedCashSessionError: String?
     private(set) var handHistoryState = HandHistoryViewState()
     @ObservationIgnored private let botSettingsRepository: any BotSettingsPersisting
     @ObservationIgnored private let dependencies: AppSessionDependencies
     private var tableState = TableSessionState()
     private var cashTableJoinAttempt: CashTableJoinAttempt?
     private var tableDepartureAttempt: TableDepartureAttempt?
+    private var abandonedCashSessionSettlementAttempt:
+        AbandonedCashSessionSettlementAttempt?
     private var tableReturnRoute: AppRoute = .lobby
     private var isStartingOrResumingTableHand = false
 
     var chipBalance: Int { pokerStore.accountBalance.rawValue }
     var selectedTable: PokerTableSummary? { tableState.selectedTable }
+    var hasUnsettledCashSession: Bool {
+        pokerStore.cashSession != nil
+            && tableCoordinator == nil
+            && cashTableJoinAttempt == nil
+    }
 
     init(
         pokerStore: LocalPokerStore,
@@ -429,6 +444,9 @@ final class AppSession {
             }
             attempt = existing
         } else {
+            guard pokerStore.cashSession == nil else {
+                throw AppSessionError.unsettledCashSession
+            }
             tableReturnRoute = route == .table ? .lobby : route
             try CashTableRequestFactory.validate(
                 table: table,
@@ -482,6 +500,71 @@ final class AppSession {
         tableState.enter(table)
         tableStartupError = nil
         route = .table
+    }
+
+    func settleAbandonedCashSessionIfNeeded() async {
+        guard hasUnsettledCashSession,
+              !isSettlingAbandonedCashSession,
+              let cashSession = pokerStore.cashSession
+        else {
+            if pokerStore.cashSession == nil {
+                abandonedCashSessionSettlementAttempt = nil
+                abandonedCashSessionError = nil
+            }
+            return
+        }
+
+        isSettlingAbandonedCashSession = true
+        abandonedCashSessionError = nil
+        defer { isSettlingAbandonedCashSession = false }
+
+        do {
+            if abandonedCashSessionSettlementAttempt == nil {
+                abandonedCashSessionSettlementAttempt =
+                    AbandonedCashSessionSettlementAttempt(
+                        settlementID: try dependencies.nextBusinessID(
+                            "abandoned-settlement"
+                        ),
+                        cashOutID: try dependencies.nextBusinessID(
+                            "abandoned-cash-out"
+                        )
+                    )
+            }
+            guard let attempt = abandonedCashSessionSettlementAttempt else {
+                throw PokerCoordinatorError.saveFailed
+            }
+            let profiles = try TableSeatProfileFactory.make(
+                humanSeat: cashSession.humanSeat
+            )
+            let archiveMetadata = try HandArchiveMetadata(
+                tableDisplayName: "上次牌桌",
+                humanSeat: cashSession.humanSeat,
+                seatDisplayNames: Dictionary(
+                    uniqueKeysWithValues: profiles.map {
+                        ($0.id, $0.displayName)
+                    }
+                )
+            )
+            let coordinator = try dependencies.makeCoordinator(
+                pokerStore,
+                cashSession.humanSeat,
+                profiles,
+                archiveMetadata,
+                dependencies.makeRuntimeDependencies(true)
+            )
+            try await coordinator.leaveTable(
+                settlementID: attempt.settlementID,
+                cashOutID: attempt.cashOutID
+            )
+            abandonedCashSessionSettlementAttempt = nil
+            abandonedCashSessionError = nil
+        } catch {
+            abandonedCashSessionError = "上次牌桌结算失败，请重试。"
+        }
+    }
+
+    func retryAbandonedCashSessionSettlement() async {
+        await settleAbandonedCashSessionIfNeeded()
     }
 
     func startOrResumeTableHand() async {

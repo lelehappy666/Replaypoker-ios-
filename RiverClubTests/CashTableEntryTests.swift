@@ -67,6 +67,113 @@ final class CashTableEntryTests: XCTestCase {
         XCTAssertNotNil(fixture.session.tableCoordinator)
     }
 
+    @MainActor
+    func testLaunchSettlementClosesAbandonedSessionAndReturnsStack() async throws {
+        let fixture = try AppSessionFixture()
+        let initialBalance = fixture.session.chipBalance
+        try fixture.session.joinCashTable(
+            fixture.table,
+            buyIn: 16_000,
+            autoTopUp: false,
+            reduceMotion: true
+        )
+        XCTAssertNotNil(fixture.store.cashSession)
+        XCTAssertEqual(fixture.session.chipBalance, initialBalance - 16_000)
+
+        let recoverySession = AppSession(
+            pokerStore: fixture.store,
+            botSettingsRepository: MemoryBotSettingsRepository(initial: .recommended),
+            dependencies: .live
+        )
+
+        await recoverySession.settleAbandonedCashSessionIfNeeded()
+
+        XCTAssertNil(fixture.store.cashSession)
+        XCTAssertEqual(recoverySession.chipBalance, initialBalance)
+        XCTAssertNil(recoverySession.abandonedCashSessionError)
+        XCTAssertFalse(recoverySession.hasUnsettledCashSession)
+    }
+
+    @MainActor
+    func testFailedLaunchSettlementKeepsSessionAndRetryReusesBusinessIDs() async throws {
+        let fixture = try AppSessionFixture()
+        try fixture.session.joinCashTable(
+            fixture.table,
+            buyIn: 16_000,
+            autoTopUp: false,
+            reduceMotion: true
+        )
+        let ids = JoinAttemptIDSpy()
+        var coordinatorCalls = 0
+        let dependencies = makeDependencies(
+            ids: ids,
+            makeCoordinator: { store, humanSeat, profiles, archiveMetadata, runtime in
+                coordinatorCalls += 1
+                if coordinatorCalls == 1 {
+                    throw CashTableEntryTestError.coordinatorCreation
+                }
+                return try CashTableCoordinator(
+                    store: store,
+                    humanSeat: humanSeat,
+                    seatProfiles: profiles,
+                    archiveMetadata: archiveMetadata,
+                    dependencies: runtime
+                )
+            }
+        )
+        let recoverySession = AppSession(
+            pokerStore: fixture.store,
+            botSettingsRepository: MemoryBotSettingsRepository(initial: .recommended),
+            dependencies: dependencies
+        )
+
+        await recoverySession.settleAbandonedCashSessionIfNeeded()
+
+        XCTAssertNotNil(fixture.store.cashSession)
+        XCTAssertEqual(
+            recoverySession.abandonedCashSessionError,
+            "上次牌桌结算失败，请重试。"
+        )
+        XCTAssertEqual(ids.businessIDCalls, 2)
+
+        await recoverySession.retryAbandonedCashSessionSettlement()
+
+        XCTAssertNil(fixture.store.cashSession)
+        XCTAssertNil(recoverySession.abandonedCashSessionError)
+        XCTAssertEqual(ids.businessIDCalls, 2)
+        XCTAssertEqual(coordinatorCalls, 2)
+    }
+
+    @MainActor
+    func testNewBuyInIsRejectedBeforeGeneratingIDsWhileOldSessionExists() throws {
+        let fixture = try AppSessionFixture()
+        try fixture.session.joinCashTable(
+            fixture.table,
+            buyIn: 16_000,
+            autoTopUp: false,
+            reduceMotion: true
+        )
+        let ids = JoinAttemptIDSpy()
+        let recoverySession = AppSession(
+            pokerStore: fixture.store,
+            botSettingsRepository: MemoryBotSettingsRepository(initial: .recommended),
+            dependencies: makeDependencies(ids: ids)
+        )
+
+        XCTAssertThrowsError(
+            try recoverySession.joinCashTable(
+                fixture.table,
+                buyIn: 16_000,
+                autoTopUp: false,
+                reduceMotion: true
+            )
+        ) { error in
+            XCTAssertEqual(error as? AppSessionError, .unsettledCashSession)
+        }
+        XCTAssertEqual(ids.sessionIDCalls, 0)
+        XCTAssertEqual(ids.businessIDCalls, 0)
+    }
+
     func testNineProfilesAreUniqueAndMatchRequestSeats() throws {
         let table = AppSessionFixture.makeTable()
         let request = try CashTableRequestFactory.make(

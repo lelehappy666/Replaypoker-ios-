@@ -10,10 +10,12 @@ struct AppRootModalPolicy: Equatable {
 
     init(
         isHistoryDeletionPresented: Bool,
-        isTableDeparturePresented: Bool = false
+        isTableDeparturePresented: Bool = false,
+        isAbandonedSettlementPresented: Bool = false
     ) {
         let isModalPresented = isHistoryDeletionPresented
             || isTableDeparturePresented
+            || isAbandonedSettlementPresented
         allowsBackgroundInteraction = !isModalPresented
         hidesBackgroundFromAccessibility = isModalPresented
     }
@@ -33,7 +35,8 @@ struct AppRootView: View {
         )
         let modalPolicy = AppRootModalPolicy(
             isHistoryDeletionPresented: deletionOverlay != nil,
-            isTableDeparturePresented: session.isTableDeparturePresented
+            isTableDeparturePresented: session.isTableDeparturePresented,
+            isAbandonedSettlementPresented: session.hasUnsettledCashSession
         )
         ZStack {
             appShell
@@ -62,6 +65,19 @@ struct AppRootView: View {
                 )
                 .zIndex(4)
             }
+
+            if session.hasUnsettledCashSession {
+                AbandonedCashSessionSettlementView(
+                    isSettling: session.isSettlingAbandonedCashSession,
+                    errorMessage: session.abandonedCashSessionError,
+                    onRetry: {
+                        Task {
+                            await session.retryAbandonedCashSessionSettlement()
+                        }
+                    }
+                )
+                .zIndex(5)
+            }
         }
         .background(RCTheme.background)
         .preferredColorScheme(.dark)
@@ -80,6 +96,9 @@ struct AppRootView: View {
             @unknown default:
                 session.suspendTableForLifecycle()
             }
+        }
+        .task {
+            await session.settleAbandonedCashSessionIfNeeded()
         }
     }
 
@@ -215,6 +234,61 @@ struct AppRootView: View {
         }
     }
 
+}
+
+private struct AbandonedCashSessionSettlementView: View {
+    let isSettling: Bool
+    let errorMessage: String?
+    let onRetry: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.68)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+
+            VStack(alignment: .leading, spacing: 16) {
+                Text("正在处理上次牌桌")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(RCTheme.primaryText)
+                Text("完成安全结算并返还剩余娱乐筹码后，即可重新买入。")
+                    .foregroundStyle(RCTheme.secondaryText)
+
+                if isSettling || errorMessage == nil {
+                    ProgressView("正在结算…")
+                        .tint(RCTheme.gold)
+                        .foregroundStyle(RCTheme.primaryText)
+                        .accessibilityIdentifier("abandonedSettlement.progress")
+                } else if let errorMessage {
+                    Label(
+                        errorMessage,
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .foregroundStyle(.orange)
+
+                    Button("重试结算", action: onRetry)
+                        .buttonStyle(.borderedProminent)
+                        .tint(RCTheme.gold)
+                        .foregroundStyle(RCTheme.background)
+                        .accessibilityIdentifier("abandonedSettlement.retry")
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: 440, alignment: .leading)
+            .background(
+                RCTheme.surfaceRaised,
+                in: RoundedRectangle(cornerRadius: RCTheme.corner)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: RCTheme.corner)
+                    .stroke(RCTheme.gold.opacity(0.28), lineWidth: 1)
+            }
+            .padding(24)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)
+        .accessibilityIdentifier("abandonedSettlement.modal")
+    }
 }
 
 private struct TableDepartureConfirmationView: View {
