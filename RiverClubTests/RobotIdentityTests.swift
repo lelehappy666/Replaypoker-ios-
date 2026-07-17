@@ -35,6 +35,52 @@ final class RobotIdentityTests: XCTestCase {
         XCTAssertEqual(first.count, 6)
         XCTAssertEqual(Set(first.map(\.id)).count, 6)
     }
+
+    func testLicenseManifestContainsOnePexelsLicenseForEveryCatalogIdentity() throws {
+        let url = try XCTUnwrap(
+            Bundle.main.url(forResource: "RobotAvatarLicenses", withExtension: "json")
+        )
+        let manifest = try JSONDecoder().decode(
+            RobotAvatarLicenseManifest.self,
+            from: Data(contentsOf: url)
+        )
+
+        XCTAssertEqual(manifest.assets.count, 24)
+        XCTAssertEqual(manifest.assets.filter { $0.license == "Pexels License" }.count, 24)
+        XCTAssertEqual(
+            Set(manifest.assets.map(\.assetName)),
+            Set(RobotIdentityCatalog.all.map(\.avatarAssetName))
+        )
+    }
+
+    func testDrawClampsBoundaryCountsWithoutDuplicatingIdentities() {
+        var generator = SeededIdentityGenerator(seed: 41)
+
+        XCTAssertEqual(RobotIdentityCatalog.draw(count: 0, using: &generator), [])
+        XCTAssertEqual(RobotIdentityCatalog.draw(count: -1, using: &generator), [])
+
+        let values = RobotIdentityCatalog.draw(count: 25, using: &generator)
+        XCTAssertEqual(values.count, 24)
+        XCTAssertEqual(Set(values.map(\.id)).count, 24)
+    }
+
+    func testPreviewClampsBoundaryCountsWithoutDuplicatingIdentities() {
+        XCTAssertEqual(RobotIdentityCatalog.preview(for: "table-001", count: 0), [])
+        XCTAssertEqual(RobotIdentityCatalog.preview(for: "table-001", count: -1), [])
+
+        let values = RobotIdentityCatalog.preview(for: "table-001", count: 25)
+        XCTAssertEqual(values.count, 24)
+        XCTAssertEqual(Set(values.map(\.id)).count, 24)
+    }
+}
+
+private struct RobotAvatarLicenseManifest: Decodable {
+    let assets: [RobotAvatarLicenseEntry]
+}
+
+private struct RobotAvatarLicenseEntry: Decodable {
+    let assetName: String
+    let license: String?
 }
 
 private struct SeededIdentityGenerator: RandomNumberGenerator {

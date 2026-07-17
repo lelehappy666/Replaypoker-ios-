@@ -67,3 +67,35 @@ failedTests: 0
 
 - Pexels 页面和许可状态属于外部服务，后续发布前应再做一次链接可访问性与许可条款复核；当前所有记录保留了可核验的原始页面、摄影师和 Pexels License。
 - `RiverClub.xcodeproj/` 受项目现有 `.gitignore` 忽略，故其手工注册状态在当前共享工作区有效但不会随本次普通 Git 提交入库；`project.yml` 的 `sources: [RiverClub]` 会在重新生成工程时纳入这些新增源和资源。
+
+## 审查修复（许可证逐项记录与边界行为）
+
+### 修复内容
+
+- `RobotAvatarLicenses.json` 的 24 个 `assets` 条目均新增了显式的 `"license": "Pexels License"`；根级许可说明保留。
+- 新增自动化测试，直接从已编译应用资源包读取许可证清单，验证：清单条目数为 24、每条许可均为 `Pexels License`、资产名集合与 `RobotIdentityCatalog.all` 的头像资源名集合完全相同。
+- 新增 `draw(count:using:)` 与 `preview(for:count:)` 的 `0`、负数与大于 24 边界测试：前两者返回空数组，后者最多返回 24 个不重复身份。
+
+### 本次 TDD 记录
+
+先新增上述测试，未改动许可证清单即运行聚焦测试。Xcode 结果包的原始关键失败信息：
+
+```text
+result: Failed
+totalTestCount: 6
+passedTests: 5
+failedTests: 1
+RobotIdentityTests/testLicenseManifestContainsOnePexelsLicenseForEveryCatalogIdentity()
+XCTAssertEqual failed: ("0") is not equal to ("24")
+```
+
+该失败符合预期，证明测试读取的是应用已打包的 JSON，且逐项许可字段确实尚未存在。补齐 24 条许可证字段后，使用相同 Xcode 命令重跑：
+
+```text
+result: Passed
+totalTestCount: 6
+passedTests: 6
+failedTests: 0
+```
+
+本次聚焦测试重新构建并运行应用测试目标，资源清单已由应用资源包成功提供给测试；未改动牌局生产逻辑，因此按要求未重复执行 132 项全量测试。
