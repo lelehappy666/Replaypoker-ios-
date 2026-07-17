@@ -21,7 +21,8 @@ import Testing
             commitments: [seat: try Chips(100)],
             stacks: [seat: try Chips(3_900)],
             currentBet: try Chips(100)
-        )
+        ),
+        dealer: try SeatID(0)
     )
 
     #expect(events.map(\.kind) == [
@@ -40,7 +41,8 @@ import Testing
             commitments: [seat: try Chips(100)],
             stacks: [seat: try Chips(3_900)],
             currentBet: try Chips(350)
-        )
+        ),
+        dealer: try SeatID(0)
     )
 
     #expect(events == [
@@ -60,7 +62,8 @@ import Testing
                 commitments: [seat: try Chips(350)],
                 stacks: [seat: try Chips(3_650)],
                 currentBet: try Chips(100)
-            )
+            ),
+            dealer: try SeatID(0)
         )
     }
 }
@@ -80,7 +83,8 @@ import Testing
         ],
         humanSeat: human,
         humanCards: cards.map(TableCardState.faceUp),
-        beforeAction: nil
+        beforeAction: nil,
+        dealer: try SeatID(0)
     )
 
     #expect(events == [
@@ -97,12 +101,13 @@ import Testing
             [.holeCardsDealt(seat: try SeatID(0))],
             humanSeat: try SeatID(0),
             humanCards: [.faceDown],
-            beforeAction: nil
+            beforeAction: nil,
+            dealer: try SeatID(0)
         )
     }
 }
 
-@Test func 底池分配按座位排序且逐个高亮赢家() throws {
+@Test func 底池分配按庄家后顺时针排序且逐个高亮赢家() throws {
     let low = try SeatID(1)
     let high = try SeatID(7)
     let events = try CashTableAnimationMapper.map(
@@ -113,15 +118,163 @@ import Testing
         )],
         humanSeat: try SeatID(0),
         humanCards: [],
-        beforeAction: nil
+        beforeAction: nil,
+        dealer: try SeatID(0)
     )
 
     #expect(events == [
-        .awardPot(seat: low, amount: try Chips(301), potIndex: 2),
+        .awardPot(seat: low, amount: try Chips(301)),
         .highlightWinner(low),
-        .awardPot(seat: high, amount: try Chips(300), potIndex: 2),
+        .awardPot(seat: high, amount: try Chips(300)),
         .highlightWinner(high),
     ])
+}
+
+@Test func 同一赢家多个底池只产生一次派彩() throws {
+    let winner = try SeatID(4)
+    let events = try CashTableAnimationMapper.map(
+        [
+            .potAwarded(
+                potIndex: 0,
+                winners: [winner],
+                amounts: [winner: try Chips(600)]
+            ),
+            .potAwarded(
+                potIndex: 1,
+                winners: [winner],
+                amounts: [winner: try Chips(200)]
+            ),
+        ],
+        humanSeat: try SeatID(0),
+        humanCards: [],
+        beforeAction: nil,
+        dealer: try SeatID(1)
+    )
+
+    #expect(events == [
+        .awardPot(seat: winner, amount: try Chips(800)),
+        .highlightWinner(winner),
+    ])
+}
+
+@Test func 多赢家跨边池按庄家后顺时针各派彩一次且总额守恒() throws {
+    let dealer = try SeatID(7)
+    let first = try SeatID(8)
+    let second = try SeatID(2)
+    let mapped = try CashTableAnimationMapper.map(
+        [
+            .potAwarded(
+                potIndex: 0,
+                winners: [second, first],
+                amounts: [first: try Chips(600), second: try Chips(100)]
+            ),
+            .potAwarded(
+                potIndex: 1,
+                winners: [first],
+                amounts: [first: try Chips(50)]
+            ),
+        ],
+        humanSeat: try SeatID(0),
+        humanCards: [],
+        beforeAction: nil,
+        dealer: dealer
+    )
+
+    #expect(mapped == [
+        .awardPot(seat: first, amount: try Chips(650)),
+        .highlightWinner(first),
+        .awardPot(seat: second, amount: try Chips(100)),
+        .highlightWinner(second),
+    ])
+    let awardTotal = mapped.reduce(into: 0) { total, event in
+        if case let .awardPot(_, amount) = event {
+            total += amount.rawValue
+        }
+    }
+    #expect(awardTotal == 750)
+}
+
+@Test func 空结算不产生事件且零金额仍按赢家消费一次() throws {
+    let dealer = try SeatID(1)
+    let winner = try SeatID(3)
+    let empty = try CashTableAnimationMapper.map(
+        [],
+        humanSeat: try SeatID(0),
+        humanCards: [],
+        beforeAction: nil,
+        dealer: dealer
+    )
+    let zero = try CashTableAnimationMapper.map(
+        [.potAwarded(
+            potIndex: 0,
+            winners: [winner],
+            amounts: [winner: try Chips(0)]
+        )],
+        humanSeat: try SeatID(0),
+        humanCards: [],
+        beforeAction: nil,
+        dealer: dealer
+    )
+
+    #expect(empty.isEmpty)
+    #expect(zero == [
+        .awardPot(seat: winner, amount: try Chips(0)),
+        .highlightWinner(winner),
+    ])
+}
+
+@Test func 聚合派彩保留未跟注归还在前的结算顺序() throws {
+    let returned = try SeatID(1)
+    let winner = try SeatID(4)
+    let mapped = try CashTableAnimationMapper.map(
+        [
+            .uncalledBetReturned(seat: returned, amount: try Chips(50)),
+            .potAwarded(
+                potIndex: 0,
+                winners: [winner],
+                amounts: [winner: try Chips(600)]
+            ),
+            .potAwarded(
+                potIndex: 1,
+                winners: [winner],
+                amounts: [winner: try Chips(200)]
+            ),
+        ],
+        humanSeat: try SeatID(0),
+        humanCards: [],
+        beforeAction: nil,
+        dealer: try SeatID(1)
+    )
+
+    #expect(mapped == [
+        .returnUncalledBet(seat: returned, amount: try Chips(50)),
+        .awardPot(seat: winner, amount: try Chips(800)),
+        .highlightWinner(winner),
+    ])
+}
+
+@Test func 聚合派彩溢出时拒绝映射() throws {
+    let winner = try SeatID(4)
+    #expect(throws: PokerCoordinatorError.chipArithmeticOverflow) {
+        try CashTableAnimationMapper.map(
+            [
+                .potAwarded(
+                    potIndex: 0,
+                    winners: [winner],
+                    amounts: [winner: try Chips(Int.max)]
+                ),
+                .potAwarded(
+                    potIndex: 1,
+                    winners: [winner],
+                    amounts: [winner: try Chips(1)]
+                ),
+            ],
+            humanSeat: try SeatID(0),
+            humanCards: [],
+            beforeAction: nil,
+            dealer: try SeatID(1)
+        )
+    }
 }
 
 @Test func 换街过牌不移动筹码且继续映射牌面() throws {
@@ -141,7 +294,8 @@ import Testing
             commitments: [seat: try Chips(100)],
             stacks: [seat: try Chips(3_900)],
             currentBet: try Chips(100)
-        )
+        ),
+        dealer: try SeatID(0)
     )
     #expect(mapped.map(\.kind) == [
         .showAction, .streetChanged, .revealCommunityCard,
@@ -158,15 +312,18 @@ import Testing
     )
     let call = try CashTableAnimationMapper.map(
         [.actionApplied(seat: seat, action: .call), .streetChanged(.flop)],
-        humanSeat: try SeatID(0), humanCards: [], beforeAction: base
+        humanSeat: try SeatID(0), humanCards: [], beforeAction: base,
+        dealer: try SeatID(0)
     )
     let raise = try CashTableAnimationMapper.map(
         [.actionApplied(seat: seat, action: .raiseTo(try Chips(600))), .handCompleted],
-        humanSeat: try SeatID(0), humanCards: [], beforeAction: base
+        humanSeat: try SeatID(0), humanCards: [], beforeAction: base,
+        dealer: try SeatID(0)
     )
     let allIn = try CashTableAnimationMapper.map(
         [.actionApplied(seat: seat, action: .allIn), .handCompleted],
-        humanSeat: try SeatID(0), humanCards: [], beforeAction: base
+        humanSeat: try SeatID(0), humanCards: [], beforeAction: base,
+        dealer: try SeatID(0)
     )
 
     #expect(call == [

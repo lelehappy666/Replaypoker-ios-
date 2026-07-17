@@ -133,12 +133,12 @@ struct TableAnimationPresentation: Equatable {
     }
 
     var awardTargetSeat: SeatID? {
-        guard case let .awardPot(seat, _, _)? = event else { return nil }
+        guard case let .awardPot(seat, _)? = event else { return nil }
         return seat
     }
 
     var awardAmount: Chips? {
-        guard case let .awardPot(_, amount, _)? = event else { return nil }
+        guard case let .awardPot(_, amount)? = event else { return nil }
         return amount
     }
 

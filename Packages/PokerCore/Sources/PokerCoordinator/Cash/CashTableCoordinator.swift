@@ -764,11 +764,15 @@ public final class CashTableCoordinator {
         )
         let humanCards = try store.humanObservation()?.ownHoleCards
             .map(TableCardState.faceUp) ?? []
+        guard let dealer = store.cashSession?.dealer else {
+            throw PokerCoordinatorError.missingObservation
+        }
         let animations = try CashTableAnimationMapper.map(
             transition.events,
             humanSeat: humanSeat,
             humanCards: humanCards,
-            beforeAction: beforeAction
+            beforeAction: beforeAction,
+            dealer: dealer
         )
         var animationStreet: Street?
         let startsNewHand = transition.events.contains { event in

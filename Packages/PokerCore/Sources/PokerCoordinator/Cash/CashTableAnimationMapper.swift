@@ -19,7 +19,8 @@ enum CashTableAnimationMapper {
         _ events: [PublicGameEvent],
         humanSeat: SeatID,
         humanCards: [TableCardState],
-        beforeAction: CashTableAnimationSnapshot?
+        beforeAction: CashTableAnimationSnapshot?,
+        dealer: SeatID
     ) throws -> [TableAnimationEvent] {
         let humanDealCount = events.reduce(into: 0) { count, event in
             if case .holeCardsDealt(let seat) = event, seat == humanSeat {
@@ -40,8 +41,13 @@ enum CashTableAnimationMapper {
 
         var nextHumanCard = humanCards
         var mapped: [TableAnimationEvent] = []
+        let awardTotals = try awardTotals(in: events)
+        let lastPotAwardIndex = events.lastIndex { event in
+            if case .potAwarded = event { return true }
+            return false
+        }
 
-        for event in events {
+        for (eventIndex, event) in events.enumerated() {
             switch event {
             case .handStarted, .potCreated, .handCompleted:
                 break
@@ -76,15 +82,56 @@ enum CashTableAnimationMapper {
                 })
             case let .uncalledBetReturned(seat, amount):
                 mapped.append(.returnUncalledBet(seat: seat, amount: amount))
-            case let .potAwarded(index, _, amounts):
-                for seat in amounts.keys.sorted() {
-                    guard let amount = amounts[seat] else { continue }
-                    mapped.append(.awardPot(seat: seat, amount: amount, potIndex: index))
+            case .potAwarded:
+                guard lastPotAwardIndex == eventIndex else { continue }
+                for seat in orderedWinnerSeats(
+                    awardTotals.keys,
+                    dealer: dealer
+                ) {
+                    guard let amount = awardTotals[seat] else { continue }
+                    mapped.append(.awardPot(seat: seat, amount: amount))
                     mapped.append(.highlightWinner(seat))
                 }
             }
         }
         return mapped
+    }
+
+    private static func awardTotals(
+        in events: [PublicGameEvent]
+    ) throws -> [SeatID: Chips] {
+        var totals: [SeatID: Chips] = [:]
+        for event in events {
+            guard case let .potAwarded(_, _, amounts) = event else { continue }
+            for (seat, amount) in amounts {
+                let current = totals[seat]?.rawValue ?? 0
+                let (next, overflow) = current.addingReportingOverflow(amount.rawValue)
+                guard !overflow, let total = Chips(rawValue: next) else {
+                    throw PokerCoordinatorError.chipArithmeticOverflow
+                }
+                totals[seat] = total
+            }
+        }
+        return totals
+    }
+
+    private static func orderedWinnerSeats(
+        _ seats: Dictionary<SeatID, Chips>.Keys,
+        dealer: SeatID
+    ) -> [SeatID] {
+        seats.sorted { left, right in
+            let leftDistance = clockwiseDistance(after: dealer, to: left)
+            let rightDistance = clockwiseDistance(after: dealer, to: right)
+            if leftDistance != rightDistance {
+                return leftDistance < rightDistance
+            }
+            return left.rawValue < right.rawValue
+        }
+    }
+
+    private static func clockwiseDistance(after dealer: SeatID, to seat: SeatID) -> Int {
+        let distance = (seat.rawValue - dealer.rawValue + 9) % 9
+        return distance == 0 ? 9 : distance
     }
 
     private static func contribution(

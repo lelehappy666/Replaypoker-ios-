@@ -113,7 +113,7 @@ final class PokerTableInteractionTests: XCTestCase {
         var presentation = TableAnimationPresentation()
 
         presentation.begin(
-            .awardPot(seat: winner, amount: amount, potIndex: 0),
+            .awardPot(seat: winner, amount: amount),
             token: 9
         )
         presentation.advance(token: 9)
@@ -126,6 +126,23 @@ final class PokerTableInteractionTests: XCTestCase {
         XCTAssertNil(presentation.awardTargetSeat)
         XCTAssertNil(presentation.awardAmount)
         XCTAssertEqual(presentation.awardProgress, 0)
+    }
+
+    func testOlderAwardResetDoesNotClearNewerWinnerAnnouncement() throws {
+        let winner = try SeatID(3)
+        var presentation = TableAnimationPresentation()
+
+        presentation.begin(
+            .awardPot(seat: winner, amount: try Chips(3_600)),
+            token: 9
+        )
+        presentation.advance(token: 9)
+        presentation.begin(.highlightWinner(winner), token: 10)
+        presentation.advance(token: 10)
+        presentation.reset(token: 9)
+
+        XCTAssertEqual(presentation.event, .highlightWinner(winner))
+        XCTAssertTrue(presentation.isWinnerHighlighted(winner))
     }
 
     func testCancelledActionDoesNotPublishFailureAndRestoresSendingState() async throws {

@@ -20,7 +20,7 @@ public enum TableAnimationEvent: Codable, Equatable, Sendable {
     case streetChanged(Street)
     case revealCommunityCard(card: Card, index: Int)
     case returnUncalledBet(seat: SeatID, amount: Chips)
-    case awardPot(seat: SeatID, amount: Chips, potIndex: Int)
+    case awardPot(seat: SeatID, amount: Chips)
     case highlightWinner(SeatID)
 
     public var kind: TableAnimationKind {

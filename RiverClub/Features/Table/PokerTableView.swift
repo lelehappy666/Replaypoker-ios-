@@ -234,23 +234,25 @@ struct PokerTableView: View {
             let center = PokerTableLayout.centerBoardRegion(for: canvas)
             let progress = reduceMotion ? 1 : animationPresentation.awardProgress
 
-            HStack(spacing: -4) {
-                ForEach(0..<5, id: \.self) { _ in
-                    Circle()
-                        .fill(RCTheme.gold)
-                        .frame(width: 12, height: 12)
-                        .overlay {
-                            Circle().stroke(RCTheme.background, lineWidth: 1)
-                        }
+            if !reduceMotion {
+                HStack(spacing: -4) {
+                    ForEach(0..<5, id: \.self) { index in
+                        Circle()
+                            .fill(awardChipColor(at: index))
+                            .frame(width: 12, height: 12)
+                            .overlay {
+                                Circle().stroke(RCTheme.background, lineWidth: 1)
+                            }
+                    }
                 }
+                .position(
+                    x: center.midX + vector.dx * progress,
+                    y: center.midY + 34 + vector.dy * progress
+                )
+                .shadow(color: RCTheme.gold.opacity(0.7), radius: 7)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
             }
-            .position(
-                x: center.midX + vector.dx * progress,
-                y: center.midY + 34 + vector.dy * progress
-            )
-            .shadow(color: RCTheme.gold.opacity(0.7), radius: 7)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
 
             Text("\(displayName(for: targetSeat)) 赢得 \(amount.rawValue.formatted())")
                 .font(.subheadline.weight(.bold))
@@ -265,6 +267,14 @@ struct PokerTableView: View {
 
     private func displayName(for seat: SeatID) -> String {
         state.seats.first(where: { $0.id == seat })?.displayName ?? "玩家"
+    }
+
+    private func awardChipColor(at index: Int) -> Color {
+        switch index % 3 {
+        case 0: RCTheme.gold
+        case 1: Color(red: 0.72, green: 0.16, blue: 0.18)
+        default: Color(red: 0.18, green: 0.42, blue: 0.82)
+        }
     }
 
     private var currentHandText: String? {
@@ -432,12 +442,23 @@ struct PokerTableView: View {
     private func present(_ event: TableAnimationEvent?, sequence: Int) {
         animationResetTask?.cancel()
 
-        guard let event, !reduceMotion else {
+        guard let event else {
             animationPresentation = TableAnimationPresentation()
             return
         }
 
         animationPresentation.begin(event, token: sequence)
+        if reduceMotion {
+            animationPresentation.advance(token: sequence)
+            animationResetTask = Task { @MainActor in
+                try? await Task.sleep(
+                    for: .milliseconds(event.kind == .awardPot ? 560 : 220)
+                )
+                guard !Task.isCancelled else { return }
+                animationPresentation.reset(token: sequence)
+            }
+            return
+        }
         let duration = event.kind == .awardPot ? 0.52 : 0.22
         withAnimation(.easeInOut(duration: duration)) {
             animationPresentation.advance(token: sequence)
