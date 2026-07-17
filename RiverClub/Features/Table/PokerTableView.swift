@@ -21,6 +21,7 @@ struct PokerTableView: View {
         GeometryReader { proxy in
             let positions = PokerTableLayout.positions(for: proxy.size)
             let seatFrameSize = PokerTableLayout.seatFrameSize(for: proxy.size)
+            let betFrames = PokerTableLayout.betFrames(for: proxy.size)
 
             ZStack {
                 Color.clear
@@ -76,7 +77,8 @@ struct PokerTableView: View {
                 ForEach(Array(state.seats.enumerated()), id: \.element.id) { index, seat in
                     if positions.indices.contains(index),
                        seat.committedThisStreet.rawValue > 0,
-                       let betFrame = PokerTableLayout.betFrame(forSeatAt: index, canvas: proxy.size) {
+                       betFrames.indices.contains(index),
+                       let betFrame = betFrames[index] {
                         ZStack {
                             CasinoChipStackView(
                                 amount: seat.committedThisStreet.rawValue,
