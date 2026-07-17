@@ -1,0 +1,30 @@
+{
+  "license": "Pexels License",
+  "licenseURL": "https://www.pexels.com/license/",
+  "assets": [
+    { "assetName": "robot-lin-mo", "sourceURL": "https://www.pexels.com/photo/17824398/", "photographer": "Sandro Tavares", "minimumPixelSize": "512x512", "subject": "成年男性真人肖像" },
+    { "assetName": "robot-qing-yu", "sourceURL": "https://www.pexels.com/photo/17824399/", "photographer": "Sandro Tavares", "minimumPixelSize": "512x512", "subject": "成年男性真人肖像" },
+    { "assetName": "robot-kong-shan", "sourceURL": "https://www.pexels.com/photo/9618120/", "photographer": "Ron Lach", "minimumPixelSize": "512x512", "subject": "成年男性真人肖像" },
+    { "assetName": "robot-yun-que", "sourceURL": "https://www.pexels.com/photo/11357453/", "photographer": "Mehmet Turgut Kirkgoz", "minimumPixelSize": "512x512", "subject": "成年男性真人肖像" },
+    { "assetName": "robot-chen-xing", "sourceURL": "https://www.pexels.com/photo/16645005/", "photographer": "rao qingwei", "minimumPixelSize": "512x512", "subject": "成年男性真人肖像" },
+    { "assetName": "robot-hai-yan", "sourceURL": "https://www.pexels.com/photo/8590404/", "photographer": "Yusron El Jihan", "minimumPixelSize": "512x512", "subject": "成年男性真人肖像" },
+    { "assetName": "robot-jiu-wei", "sourceURL": "https://www.pexels.com/photo/14378609/", "photographer": "Abhishek Shekhawat", "minimumPixelSize": "512x512", "subject": "成年男性真人肖像" },
+    { "assetName": "robot-shen-ye", "sourceURL": "https://www.pexels.com/photo/33323692/", "photographer": "Murat IŞIK", "minimumPixelSize": "512x512", "subject": "成年男性真人肖像" },
+    { "assetName": "robot-mu-chuan", "sourceURL": "https://www.pexels.com/photo/24350758/", "photographer": "Tri Warno", "minimumPixelSize": "512x512", "subject": "成年男性真人肖像" },
+    { "assetName": "robot-su-he", "sourceURL": "https://www.pexels.com/photo/33853466/", "photographer": "Ab Pixels", "minimumPixelSize": "512x512", "subject": "成年男性真人肖像" },
+    { "assetName": "robot-jiang-yu", "sourceURL": "https://www.pexels.com/photo/29292086/", "photographer": "Darkshade Photos", "minimumPixelSize": "512x512", "subject": "成年男性真人肖像" },
+    { "assetName": "robot-ruo-lan", "sourceURL": "https://www.pexels.com/photo/34986918/", "photographer": "Filmy Kashif", "minimumPixelSize": "512x512", "subject": "成年男性真人肖像" },
+    { "assetName": "robot-an-lan", "sourceURL": "https://www.pexels.com/photo/5264739/", "photographer": "cottonbro studio", "minimumPixelSize": "512x512", "subject": "成年女性真人肖像" },
+    { "assetName": "robot-chi-ye", "sourceURL": "https://www.pexels.com/photo/7984817/", "photographer": "AI25.Studio Studio", "minimumPixelSize": "512x512", "subject": "成年女性真人肖像" },
+    { "assetName": "robot-xing-yao", "sourceURL": "https://www.pexels.com/photo/29107543/", "photographer": "Cliff Onsarigo", "minimumPixelSize": "512x512", "subject": "成年女性真人肖像" },
+    { "assetName": "robot-yan-zhou", "sourceURL": "https://www.pexels.com/photo/36825213/", "photographer": "Giovanna Kamimura", "minimumPixelSize": "512x512", "subject": "成年女性真人肖像" },
+    { "assetName": "robot-nan-qiao", "sourceURL": "https://www.pexels.com/photo/14848133/", "photographer": "Alimurat Üral", "minimumPixelSize": "512x512", "subject": "成年女性真人肖像" },
+    { "assetName": "robot-jing-xing", "sourceURL": "https://www.pexels.com/photo/31646743/", "photographer": "Adem Erkoç", "minimumPixelSize": "512x512", "subject": "成年女性真人肖像" },
+    { "assetName": "robot-qing-he", "sourceURL": "https://www.pexels.com/photo/36763514/", "photographer": "Vitaly Gariev", "minimumPixelSize": "512x512", "subject": "成年女性真人肖像" },
+    { "assetName": "robot-zhi-xia", "sourceURL": "https://www.pexels.com/photo/29405854/", "photographer": "Alimi Sandrine", "minimumPixelSize": "512x512", "subject": "成年女性真人肖像" },
+    { "assetName": "robot-gui-wan", "sourceURL": "https://www.pexels.com/photo/7984908/", "photographer": "AI25.Studio Studio", "minimumPixelSize": "512x512", "subject": "成年女性真人肖像" },
+    { "assetName": "robot-yun-chuan", "sourceURL": "https://www.pexels.com/photo/34896898/", "photographer": "Guillermo Berlin", "minimumPixelSize": "512x512", "subject": "成年女性真人肖像" },
+    { "assetName": "robot-zhao-yue", "sourceURL": "https://www.pexels.com/photo/11768461/", "photographer": "Mehmet Turgut Kirkgoz", "minimumPixelSize": "512x512", "subject": "成年女性真人肖像" },
+    { "assetName": "robot-yuan-shan", "sourceURL": "https://www.pexels.com/photo/36838816/", "photographer": "Luriko Yamaguchi", "minimumPixelSize": "512x512", "subject": "成年女性真人肖像" }
+  ]
+}
