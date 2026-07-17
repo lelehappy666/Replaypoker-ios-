@@ -203,7 +203,13 @@ struct AppRootView: View {
                         )
                         buyInError = nil
                         pendingBuyInTable = nil
+                        #if DEBUG
+                        if !uiTestingPayoutScenarioIsActive {
+                            Task { await session.startOrResumeTableHand() }
+                        }
+                        #else
                         Task { await session.startOrResumeTableHand() }
+                        #endif
                     } catch {
                         buyInError = "买入失败，请重试。"
                     }
