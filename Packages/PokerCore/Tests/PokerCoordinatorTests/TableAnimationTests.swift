@@ -253,6 +253,131 @@ import Testing
     ])
 }
 
+@Test func 非连续派彩事件拒绝跨越中间动画聚合() throws {
+    let winner = try SeatID(4)
+    #expect(throws: PokerCoordinatorError.missingObservation) {
+        try CashTableAnimationMapper.map(
+            [
+                .potAwarded(
+                    potIndex: 0,
+                    winners: [winner],
+                    amounts: [winner: try Chips(600)]
+                ),
+                .uncalledBetReturned(seat: try SeatID(1), amount: try Chips(50)),
+                .potAwarded(
+                    potIndex: 1,
+                    winners: [winner],
+                    amounts: [winner: try Chips(200)]
+                ),
+            ],
+            humanSeat: try SeatID(0),
+            humanCards: [],
+            beforeAction: nil,
+            dealer: try SeatID(1)
+        )
+    }
+}
+
+@Test func 连续派彩区块前后动画保持相对顺序() throws {
+    let winner = try SeatID(4)
+    let returnedBefore = try SeatID(1)
+    let returnedAfter = try SeatID(2)
+    let mapped = try CashTableAnimationMapper.map(
+        [
+            .uncalledBetReturned(seat: returnedBefore, amount: try Chips(50)),
+            .potAwarded(
+                potIndex: 0,
+                winners: [winner],
+                amounts: [winner: try Chips(600)]
+            ),
+            .potAwarded(
+                potIndex: 1,
+                winners: [winner],
+                amounts: [winner: try Chips(200)]
+            ),
+            .uncalledBetReturned(seat: returnedAfter, amount: try Chips(25)),
+        ],
+        humanSeat: try SeatID(0),
+        humanCards: [],
+        beforeAction: nil,
+        dealer: try SeatID(1)
+    )
+
+    #expect(mapped == [
+        .returnUncalledBet(seat: returnedBefore, amount: try Chips(50)),
+        .awardPot(seat: winner, amount: try Chips(800)),
+        .highlightWinner(winner),
+        .returnUncalledBet(seat: returnedAfter, amount: try Chips(25)),
+    ])
+}
+
+@Test func 派彩赢家缺少金额时拒绝映射() throws {
+    let winner = try SeatID(4)
+    #expect(throws: PokerCoordinatorError.missingObservation) {
+        try CashTableAnimationMapper.map(
+            [.potAwarded(potIndex: 0, winners: [winner], amounts: [:])],
+            humanSeat: try SeatID(0),
+            humanCards: [],
+            beforeAction: nil,
+            dealer: try SeatID(1)
+        )
+    }
+}
+
+@Test func 派彩金额包含非赢家时拒绝映射() throws {
+    let winner = try SeatID(4)
+    let extra = try SeatID(5)
+    #expect(throws: PokerCoordinatorError.missingObservation) {
+        try CashTableAnimationMapper.map(
+            [.potAwarded(
+                potIndex: 0,
+                winners: [winner],
+                amounts: [winner: try Chips(600), extra: try Chips(200)]
+            )],
+            humanSeat: try SeatID(0),
+            humanCards: [],
+            beforeAction: nil,
+            dealer: try SeatID(1)
+        )
+    }
+}
+
+@Test func 派彩赢家重复时拒绝映射() throws {
+    let winner = try SeatID(4)
+    #expect(throws: PokerCoordinatorError.missingObservation) {
+        try CashTableAnimationMapper.map(
+            [.potAwarded(
+                potIndex: 0,
+                winners: [winner, winner],
+                amounts: [winner: try Chips(600)]
+            )],
+            humanSeat: try SeatID(0),
+            humanCards: [],
+            beforeAction: nil,
+            dealer: try SeatID(1)
+        )
+    }
+}
+
+@Test func 减少动态时派彩保留公告时长而其他结算动画为零() throws {
+    let seat = try SeatID(4)
+    #expect(CashTableAnimationTiming.duration(
+        for: .awardPot(seat: seat, amount: try Chips(800)),
+        street: nil,
+        reduceMotion: true
+    ) == .milliseconds(600))
+    #expect(CashTableAnimationTiming.duration(
+        for: .highlightWinner(seat),
+        street: nil,
+        reduceMotion: true
+    ) == .zero)
+    #expect(CashTableAnimationTiming.duration(
+        for: .returnUncalledBet(seat: seat, amount: try Chips(50)),
+        street: nil,
+        reduceMotion: true
+    ) == .zero)
+}
+
 @Test func 聚合派彩溢出时拒绝映射() throws {
     let winner = try SeatID(4)
     #expect(throws: PokerCoordinatorError.chipArithmeticOverflow) {

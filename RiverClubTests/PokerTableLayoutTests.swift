@@ -195,6 +195,30 @@ final class PokerTableLayoutTests: XCTestCase {
         }
     }
 
+    func test派奖路径从底池中心到目标座位中心() {
+        for canvas in canvases {
+            let pot = PokerTableLayout.potFrame(for: canvas)
+            let seats = PokerTableLayout.positions(for: canvas)
+            for index in seats.indices {
+                guard let start = PokerTableLayout.payoutPosition(
+                    toSeatAt: index,
+                    canvas: canvas,
+                    progress: 0
+                ), let end = PokerTableLayout.payoutPosition(
+                    toSeatAt: index,
+                    canvas: canvas,
+                    progress: 1
+                ) else {
+                    return XCTFail("支持的画布必须提供有效的派彩路径")
+                }
+                XCTAssertEqual(start.x, pot.midX, accuracy: 0.001)
+                XCTAssertEqual(start.y, pot.midY, accuracy: 0.001)
+                XCTAssertEqual(end.x, seats[index].x, accuracy: 0.001)
+                XCTAssertEqual(end.y, seats[index].y, accuracy: 0.001)
+            }
+        }
+    }
+
     func testPlayableTableExposesDepartureControl() throws {
         let source = try String(
             contentsOfFile: #filePath

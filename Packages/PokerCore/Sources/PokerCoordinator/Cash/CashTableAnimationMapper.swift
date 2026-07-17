@@ -41,11 +41,9 @@ enum CashTableAnimationMapper {
 
         var nextHumanCard = humanCards
         var mapped: [TableAnimationEvent] = []
+        let potAwardIndices = try validatedPotAwardIndices(in: events)
         let awardTotals = try awardTotals(in: events)
-        let lastPotAwardIndex = events.lastIndex { event in
-            if case .potAwarded = event { return true }
-            return false
-        }
+        let lastPotAwardIndex = potAwardIndices.last
 
         for (eventIndex, event) in events.enumerated() {
             switch event {
@@ -95,6 +93,31 @@ enum CashTableAnimationMapper {
             }
         }
         return mapped
+    }
+
+    private static func validatedPotAwardIndices(
+        in events: [PublicGameEvent]
+    ) throws -> [Int] {
+        var indices: [Int] = []
+        for (index, event) in events.enumerated() {
+            guard case let .potAwarded(_, winners, amounts) = event else { continue }
+            let winnerSet = Set(winners)
+            guard winnerSet.count == winners.count,
+                  winnerSet == Set(amounts.keys)
+            else {
+                throw PokerCoordinatorError.missingObservation
+            }
+            indices.append(index)
+        }
+        guard let first = indices.first, let last = indices.last else {
+            return indices
+        }
+        for index in first...last {
+            guard case .potAwarded = events[index] else {
+                throw PokerCoordinatorError.missingObservation
+            }
+        }
+        return indices
     }
 
     private static func awardTotals(

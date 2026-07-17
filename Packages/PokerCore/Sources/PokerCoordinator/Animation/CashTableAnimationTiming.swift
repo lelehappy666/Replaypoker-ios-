@@ -7,7 +7,12 @@ enum CashTableAnimationTiming {
         street: Street?,
         reduceMotion: Bool
     ) -> Duration {
-        guard !reduceMotion else { return .zero }
+        if reduceMotion {
+            if case .awardPot = event {
+                return .milliseconds(600)
+            }
+            return .zero
+        }
         switch event {
         case .dealHoleCard:
             return .milliseconds(80)

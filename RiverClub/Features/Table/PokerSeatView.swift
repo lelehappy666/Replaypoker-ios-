@@ -264,10 +264,28 @@ enum PokerTableLayout {
     ) -> CGVector? {
         let positions = positions(for: canvas)
         guard positions.indices.contains(index) else { return nil }
-        let pot = tableCenter(for: canvas)
+        let potFrame = potFrame(for: canvas)
+        let pot = CGPoint(x: potFrame.midX, y: potFrame.midY)
         return CGVector(
             dx: positions[index].x - pot.x,
             dy: positions[index].y - pot.y
+        )
+    }
+
+    static func payoutPosition(
+        toSeatAt index: Int,
+        canvas: CGSize,
+        progress: CGFloat
+    ) -> CGPoint? {
+        let positions = positions(for: canvas)
+        guard positions.indices.contains(index) else { return nil }
+        let potFrame = potFrame(for: canvas)
+        let start = CGPoint(x: potFrame.midX, y: potFrame.midY)
+        let clampedProgress = min(max(progress, 0), 1)
+        let target = positions[index]
+        return CGPoint(
+            x: start.x + (target.x - start.x) * clampedProgress,
+            y: start.y + (target.y - start.y) * clampedProgress
         )
     }
 }
