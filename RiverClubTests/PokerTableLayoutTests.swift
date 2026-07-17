@@ -8,6 +8,7 @@ final class PokerTableLayoutTests: XCTestCase {
         CGSize(width: 780, height: 360),
         CGSize(width: 844, height: 390),
         CGSize(width: 932, height: 424),
+        CGSize(width: 956, height: 440),
     ]
 
     func testNineSeatsAdaptToMultipleSafeCanvasSizes() {
@@ -86,17 +87,23 @@ final class PokerTableLayoutTests: XCTestCase {
             let seatFrames = PokerTableLayout.seatFrames(for: canvas)
             let slots = PokerTableLayout.communityCardFrames(for: canvas)
             let operation = PokerTableLayout.betControlRegion(for: canvas)
+            let hand = PokerTableLayout.currentHandFrame(for: canvas)
+            let pot = PokerTableLayout.potFrame(for: canvas)
+            let betFrames = PokerTableLayout.betFrames(for: canvas)
 
             for index in seatFrames.indices {
-                guard let betFrame = PokerTableLayout.betFrame(forSeatAt: index, canvas: canvas) else {
-                    return XCTFail("支持的画布必须为座位 \(index) 提供安全下注框")
+                guard let betFrame = betFrames[index] else {
+                    return XCTFail(
+                        "支持的画布必须为座位 \(index) 提供安全下注框；候选数 \(PokerTableLayout.betCandidateCounts(for: canvas))"
+                    )
                 }
                 let position = CGPoint(x: betFrame.midX, y: betFrame.midY)
                 let seatCenter = CGPoint(x: seatFrames[index].midX, y: seatFrames[index].midY)
                 let centerVector = CGPoint(x: center.x - seatCenter.x, y: center.y - seatCenter.y)
                 let betVector = CGPoint(x: position.x - seatCenter.x, y: position.y - seatCenter.y)
-                let progress = (centerVector.x * betVector.x + centerVector.y * betVector.y)
-                    / (centerVector.x * centerVector.x + centerVector.y * centerVector.y)
+                let numerator = centerVector.x * betVector.x + centerVector.y * betVector.y
+                let denominator = centerVector.x * centerVector.x + centerVector.y * centerVector.y
+                let progress = numerator / denominator
 
                 XCTAssertLessThan(position.distance(to: center), seatCenter.distance(to: center))
                 XCTAssertGreaterThan(progress, 0)
@@ -115,7 +122,21 @@ final class PokerTableLayoutTests: XCTestCase {
                 XCTAssertTrue(seatFrames.allSatisfy { !$0.intersects(betFrame) })
                 XCTAssertTrue(slots.allSatisfy { !$0.intersects(betFrame) })
                 XCTAssertFalse(operation.intersects(betFrame))
+                XCTAssertFalse(hand.intersects(betFrame))
+                XCTAssertFalse(pot.intersects(betFrame))
             }
+
+            for first in 0..<betFrames.count {
+                for second in (first + 1)..<betFrames.count {
+                    XCTAssertNotNil(betFrames[first])
+                    XCTAssertNotNil(betFrames[second])
+                    XCTAssertFalse(betFrames[first]!.intersects(betFrames[second]!))
+                }
+            }
+
+            XCTAssertFalse(betFrames[8]!.intersects(pot))
+            XCTAssertFalse(betFrames[4]!.intersects(hand))
+            XCTAssertFalse(betFrames[5]!.intersects(hand))
         }
     }
 
@@ -124,17 +145,22 @@ final class PokerTableLayoutTests: XCTestCase {
             let safeCanvas = PokerTableLayout.safeCanvas(for: canvas)
             let seatFrames = PokerTableLayout.seatFrames(for: canvas)
             let operation = PokerTableLayout.betControlRegion(for: canvas)
+            let betFrames = PokerTableLayout.betFrames(for: canvas)
 
             XCTAssertEqual(seatFrames.count, 9)
+            XCTAssertEqual(betFrames.count, 9)
             for frame in seatFrames {
                 XCTAssertTrue(safeCanvas.contains(frame))
                 XCTAssertFalse(frame.intersects(operation))
             }
 
             for index in seatFrames.indices {
-                guard let bet = PokerTableLayout.betFrame(forSeatAt: index, canvas: canvas) else {
-                    return XCTFail("支持的画布必须为座位 \(index) 提供安全下注框")
+                guard let bet = betFrames[index] else {
+                    return XCTFail(
+                        "支持的画布必须为座位 \(index) 提供安全下注框；候选数 \(PokerTableLayout.betCandidateCounts(for: canvas))"
+                    )
                 }
+                XCTAssertEqual(bet, PokerTableLayout.betFrame(forSeatAt: index, canvas: canvas))
                 XCTAssertTrue(safeCanvas.contains(bet))
                 XCTAssertFalse(operation.intersects(bet))
                 XCTAssertTrue(seatFrames.allSatisfy { !$0.intersects(bet) })

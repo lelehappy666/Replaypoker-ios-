@@ -10,7 +10,7 @@ enum PokerTableLayout {
     static let communityCardSize = CGSize(width: 46, height: 62)
     static let humanHoleCardSize = CGSize(width: 46, height: 62)
     static let botHoleCardSize = CGSize(width: 38, height: 52)
-    static let betStackBaseSize = CGSize(width: 68, height: 50)
+    static let betStackBaseSize = CGSize(width: 68, height: 44)
     static let potSize = CGSize(width: 110, height: 34)
     static let currentHandHeight: CGFloat = 14
 
@@ -30,8 +30,8 @@ enum PokerTableLayout {
         let leftX = frameSize.width / 2
         let rightX = canvas.width - frameSize.width / 2
         let sideY = min(canvas.height * 0.59, bottomY - frameSize.height - 8)
-        let topPositions = (0..<6).map { index in
-            let progress = CGFloat(index) / 5
+        let topProgresses: [CGFloat] = [0, 0.16, 0.32, 0.68, 0.84, 1]
+        let topPositions = topProgresses.map { progress in
             return CGPoint(x: leftX + (rightX - leftX) * progress, y: topY)
         }
 
@@ -136,43 +136,126 @@ enum PokerTableLayout {
     }
 
     static func betFrame(forSeatAt index: Int, canvas: CGSize) -> CGRect? {
-        let seatFrames = seatFrames(for: canvas)
+        let frames = betFrames(for: canvas)
+        guard frames.indices.contains(index) else { return nil }
+        return frames[index]
+    }
+
+    static func betFrames(for canvas: CGSize) -> [CGRect?] {
+        let seats = seatFrames(for: canvas)
+        guard seats.count == 9 else { return [] }
+
+        var result = Array<CGRect?>(repeating: nil, count: seats.count)
+        let candidates = seats.indices.map { betCandidates(forSeatAt: $0, canvas: canvas) }
+        var visitedNodes = 0
+        let maximumSearchNodes = 12_000
+        let selectionOrder = seats.indices.sorted {
+            candidates[$0].count == candidates[$1].count ? $0 < $1 : candidates[$0].count < candidates[$1].count
+        }
+
+        func search(_ orderIndex: Int, selected: [CGRect]) -> Bool {
+            guard orderIndex < selectionOrder.count else { return true }
+            let seatIndex = selectionOrder[orderIndex]
+
+            for candidate in candidates[seatIndex] {
+                guard selected.allSatisfy({ !$0.intersects(candidate) }) else { continue }
+                visitedNodes += 1
+                guard visitedNodes <= maximumSearchNodes else { return false }
+
+                let nextSelected = selected + [candidate]
+                let remainingSeatsHaveSpace = selectionOrder.dropFirst(orderIndex + 1).allSatisfy { remainingSeatIndex in
+                    candidates[remainingSeatIndex].contains { futureCandidate in
+                        nextSelected.allSatisfy { !$0.intersects(futureCandidate) }
+                    }
+                }
+                guard remainingSeatsHaveSpace else { continue }
+
+                result[seatIndex] = candidate
+                if search(orderIndex + 1, selected: nextSelected) {
+                    return true
+                }
+                result[seatIndex] = nil
+            }
+            return false
+        }
+
+        return search(0, selected: []) ? result : Array(repeating: nil, count: seats.count)
+    }
+
+    static func betCandidateCounts(for canvas: CGSize) -> [Int] {
+        seatFrames(for: canvas).indices.map { betCandidates(forSeatAt: $0, canvas: canvas).count }
+    }
+
+    private static func betCandidates(forSeatAt index: Int, canvas: CGSize) -> [CGRect] {
+        let seats = seatFrames(for: canvas)
         let scale = betScale(for: canvas)
         let size = CGSize(
             width: betStackBaseSize.width * scale,
             height: betStackBaseSize.height * scale
         )
         let center = tableCenter(for: canvas)
-        guard seatFrames.indices.contains(index) else { return nil }
+        guard seats.indices.contains(index) else { return [] }
 
-        let seat = seatFrames[index]
+        let seat = seats[index]
         let seatCenter = CGPoint(x: seat.midX, y: seat.midY)
-        let candidates: [CGFloat] = [0.52, 0.56, 0.48, 0.60, 0.44]
+        let horizontal = center.x - seatCenter.x
+        let vertical = center.y - seatCenter.y
+        let length = (horizontal * horizontal + vertical * vertical).squareRoot()
+        guard length > 0 else { return [] }
+
+        let perpendicular = CGPoint(x: -vertical / length, y: horizontal / length)
+        let progresses: [CGFloat] = [0.32, 0.40, 0.48, 0.56, 0.64, 0.72]
+        let offsets: [CGFloat] = [
+            0,
+            -betStackBaseSize.width * 0.55,
+            betStackBaseSize.width * 0.55,
+            -betStackBaseSize.width,
+            betStackBaseSize.width,
+            -betStackBaseSize.width * 1.45,
+            betStackBaseSize.width * 1.45,
+            -betStackBaseSize.width * 1.75,
+            betStackBaseSize.width * 1.75,
+        ]
         let slots = communityCardFrames(for: canvas)
         let action = betControlRegion(for: canvas)
         let safeCanvas = safeCanvas(for: canvas)
+        let hand = currentHandFrame(for: canvas)
+        let pot = potFrame(for: canvas)
+        var result: [CGRect] = []
 
-        for progress in candidates {
-            let point = CGPoint(
-                x: seatCenter.x + (center.x - seatCenter.x) * progress,
-                y: seatCenter.y + (center.y - seatCenter.y) * progress
-            )
-            let frame = CGRect(
-                x: point.x - size.width / 2,
-                y: point.y - size.height / 2,
-                width: size.width,
-                height: size.height
-            )
-            guard safeCanvas.contains(frame),
-                  seatFrames.allSatisfy({ !$0.intersects(frame) }),
-                  slots.allSatisfy({ !$0.intersects(frame) }),
-                  !action.intersects(frame) else {
-                continue
+        for progress in progresses {
+            for baseOffset in offsets {
+                let offset = baseOffset * scale
+                let point = CGPoint(
+                    x: seatCenter.x + horizontal * progress + perpendicular.x * offset,
+                    y: seatCenter.y + vertical * progress + perpendicular.y * offset
+                )
+                let centerDistanceX = point.x - center.x
+                let centerDistanceY = point.y - center.y
+                guard centerDistanceX * centerDistanceX + centerDistanceY * centerDistanceY < length * length else {
+                    continue
+                }
+
+                let frame = CGRect(
+                    x: point.x - size.width / 2,
+                    y: point.y - size.height / 2,
+                    width: size.width,
+                    height: size.height
+                )
+                guard safeCanvas.contains(frame),
+                      seats.allSatisfy({ !$0.intersects(frame) }),
+                      slots.allSatisfy({ !$0.intersects(frame) }),
+                      !action.intersects(frame),
+                      !hand.intersects(frame),
+                      !pot.intersects(frame) else {
+                    continue
+                }
+                guard !result.contains(where: { $0.equalTo(frame) }) else { continue }
+                result.append(frame)
             }
-            return frame
         }
 
-        return nil
+        return result
     }
 
     static func vectorFromPot(

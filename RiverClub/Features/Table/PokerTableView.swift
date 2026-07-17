@@ -81,7 +81,7 @@ struct PokerTableView: View {
                             CasinoChipStackView(
                                 amount: seat.committedThisStreet.rawValue,
                                 scale: PokerTableLayout.betScale(for: proxy.size),
-                                maximumVisibleChips: 4
+                                maximumVisibleChips: 3
                             )
                         }
                         .frame(width: betFrame.width, height: betFrame.height)

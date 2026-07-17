@@ -150,6 +150,9 @@ final class LandscapeLayoutUITests: XCTestCase {
             for slotFrame in communitySlotFrames {
                 XCTAssertFalse(indicator.frame.intersects(slotFrame))
             }
+            for otherIndicator in betIndicators where otherIndicator.identifier != indicator.identifier {
+                XCTAssertFalse(indicator.frame.intersects(otherIndicator.frame))
+            }
         }
 
         let currentHand = app.descendants(matching: .any)["table.currentHand"]
@@ -166,6 +169,10 @@ final class LandscapeLayoutUITests: XCTestCase {
         for slotFrame in communitySlotFrames {
             XCTAssertFalse(currentHand.frame.intersects(slotFrame))
             XCTAssertFalse(pot.frame.intersects(slotFrame))
+        }
+        for indicator in betIndicators {
+            XCTAssertFalse(indicator.frame.intersects(currentHand.frame))
+            XCTAssertFalse(indicator.frame.intersects(pot.frame))
         }
 
         let localAvatar = app.descendants(matching: .any)["table.localAvatar"]
