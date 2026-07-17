@@ -93,10 +93,10 @@ struct PokerTableView: View {
                        betFrames.indices.contains(index),
                        let betFrame = betFrames[index] {
                         ZStack {
-                            CasinoChipStackView(
+                            CasinoChipPileView(
                                 amount: seat.committedThisStreet.rawValue,
                                 scale: PokerTableLayout.betScale(for: proxy.size),
-                                maximumVisibleChips: 3
+                                stackCount: seat.committedThisStreet.rawValue >= 500 ? 2 : 1
                             )
                         }
                         .frame(width: betFrame.width, height: betFrame.height)
@@ -182,7 +182,10 @@ struct PokerTableView: View {
                     )
             }
             .shadow(color: .black.opacity(0.5), radius: reduceMotion ? 0 : 18, y: reduceMotion ? 0 : 8)
-            .padding(.horizontal, 70)
+            // 木质桌沿按确认效果图向左延伸，视觉背景可进入刘海区域；
+            // 玩家和按钮仍保留在系统安全画布内。
+            .padding(.leading, -45)
+            .padding(.trailing, 120)
             .padding(.vertical, 34)
             .accessibilityHidden(true)
     }
@@ -239,17 +242,17 @@ struct PokerTableView: View {
                 y: PokerTableLayout.communityCardFrames(for: canvas)[0].midY - board.minY
             )
 
-            HStack(spacing: 4) {
-                Text("底池")
-                    .font(.caption2.monospacedDigit().weight(.bold))
+            VStack(spacing: 1) {
+                Text("底池 \(CasinoChipAmountPresentation.text(for: state.pot.rawValue))")
+                    .font(.caption.monospacedDigit().weight(.bold))
                     .foregroundStyle(RCTheme.primaryText)
                 CasinoChipPileView(
                     amount: state.pot.rawValue,
-                    scale: 0.48,
+                    scale: 0.82,
                     showsAmount: false,
                     stackCount: 5
                 )
-                .frame(width: 64, height: 30)
+                .frame(width: 92, height: 42)
             }
             .frame(width: potFrame.width, height: potFrame.height)
             .accessibilityElement(children: .contain)
@@ -334,13 +337,13 @@ struct PokerTableView: View {
             HStack(spacing: 5) {
                 CasinoChipPileView(
                     amount: balance,
-                    scale: 0.55,
+                    scale: 0.72,
                     showsAmount: false,
                     stackCount: 4
                 )
-                .frame(width: 58, height: 34)
+                .frame(width: 70, height: 36)
                 Text(CasinoChipAmountPresentation.text(for: balance))
-                    .font(.subheadline.monospacedDigit().weight(.bold))
+                    .font(.headline.monospacedDigit().weight(.bold))
                     .foregroundStyle(RCTheme.gold)
             }
             .padding(.horizontal, 10)

@@ -138,14 +138,9 @@ struct AppRootView: View {
                                         )
                                         .clipped()
                                 }
-                                .padding(.leading, max(
-                                    AppSidebar.minimumSafeInset,
-                                    proxy.safeAreaInsets.leading + AppSidebar.minimumSafeInset
-                                ))
-                                .padding(.trailing, max(
-                                    AppSidebar.minimumSafeInset,
-                                    proxy.safeAreaInsets.trailing + AppSidebar.minimumSafeInset
-                                ))
+                                // NavigationStack 已经把内容放进系统安全区，
+                                // 这里只保留固定外边距，避免不同页面重复计算刘海宽度。
+                                .padding(.horizontal, AppSidebar.minimumSafeInset)
                                 .padding(.vertical, AppSidebar.shellVerticalPadding)
                             }
                             .frame(width: proxy.size.width, height: proxy.size.height)

@@ -4,14 +4,14 @@ import SwiftUI
 enum PokerTableLayout {
     static let seatSize = CGSize(width: 126, height: 116)
     static let seatContentSize = CGSize(width: 122, height: 112)
-    static let betControlSize = CGSize(width: 320, height: 144)
+    static let betControlSize = CGSize(width: 280, height: 128)
     static let cardAspectRatio: CGFloat = 34.0 / 46.0
     static let holeCardSpacing: CGFloat = 4
     static let communityCardSize = CGSize(width: 46, height: 62)
     static let humanHoleCardSize = CGSize(width: 46, height: 62)
     static let botHoleCardSize = CGSize(width: 38, height: 52)
     static let betStackBaseSize = CGSize(width: 68, height: 44)
-    static let potSize = CGSize(width: 110, height: 34)
+    static let potSize = CGSize(width: 142, height: 64)
     static let currentHandHeight: CGFloat = 14
 
     static func seatFrameSize(for canvas: CGSize) -> CGSize {
@@ -31,15 +31,15 @@ enum PokerTableLayout {
         // 严格对应横屏效果图：三席在上、两席在左、一席在右、
         // 两席在下，本人位于底部中央；所有机器人座位使用同一尺寸。
         return [
-            .init(x: canvas.width * 0.22, y: canvas.height * 0.19),
-            .init(x: canvas.width * 0.48, y: canvas.height * 0.18),
-            .init(x: canvas.width * 0.73, y: canvas.height * 0.19),
-            .init(x: rightX, y: canvas.height * 0.42),
-            .init(x: leftX, y: canvas.height * 0.36),
-            .init(x: leftX, y: canvas.height * 0.62),
-            .init(x: canvas.width * 0.22, y: canvas.height * 0.81),
-            .init(x: canvas.width * 0.38, y: canvas.height * 0.84),
-            .init(x: canvas.width * 0.52, y: canvas.height * 0.865),
+            .init(x: canvas.width * 0.12, y: canvas.height * 0.15),
+            .init(x: canvas.width * 0.40, y: canvas.height * 0.14),
+            .init(x: canvas.width * 0.68, y: canvas.height * 0.15),
+            .init(x: rightX - 36, y: canvas.height * 0.38),
+            .init(x: leftX, y: canvas.height * 0.30),
+            .init(x: leftX, y: canvas.height * 0.55),
+            .init(x: canvas.width * 0.12, y: canvas.height * 0.72),
+            .init(x: canvas.width * 0.30, y: canvas.height * 0.78),
+            .init(x: canvas.width * 0.46, y: canvas.height * 0.82),
         ]
     }
 
@@ -86,7 +86,7 @@ enum PokerTableLayout {
         let board = centerBoardRegion(for: canvas)
         let totalWidth = communityCardSize.width * 5 + holeCardSpacing * 4
         let startX = board.midX - totalWidth / 2
-        let y = board.minY + 42
+        let y = board.minY + 25
 
         return (0..<5).map { index in
             CGRect(
@@ -119,7 +119,7 @@ enum PokerTableLayout {
         let slotBottom = communityCardFrames(for: canvas).map(\.maxY).max() ?? board.minY
         return CGRect(
             x: board.midX - potSize.width / 2,
-            y: slotBottom + 4,
+            y: slotBottom + 2,
             width: potSize.width,
             height: potSize.height
         )
@@ -309,15 +309,6 @@ struct PokerSeatView: View {
             width: PokerTableLayout.seatSize.width,
             height: PokerTableLayout.seatSize.height
         )
-        .overlay {
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(
-                    isWinner || seat.isCurrentActor
-                        ? RCTheme.gold
-                        : RCTheme.gold.opacity(0.10),
-                    lineWidth: isWinner || seat.isCurrentActor ? 2 : 1
-                )
-        }
         .shadow(
             color: isWinner || seat.isCurrentActor ? RCTheme.gold.opacity(0.30) : .clear,
             radius: 8
@@ -335,6 +326,7 @@ struct PokerSeatView: View {
                 holeCards
                 seatIdentityLine
                 seatChipLine
+                seatStatusLine
             }
         }
         .padding(.horizontal, 3)
@@ -348,6 +340,7 @@ struct PokerSeatView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     seatIdentityLine
                     seatChipLine
+                    seatStatusLine
                 }
             }
         }
@@ -393,27 +386,34 @@ struct PokerSeatView: View {
     }
 
     private var seatChipLine: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 4) {
             CasinoChipPileView(
                 amount: seat.stack.rawValue,
-                scale: 0.40,
+                scale: 0.62,
+                showsAmount: false,
                 stackCount: 2
             )
-            .frame(width: 45, height: 26)
-
-            if showsStatus {
-                Text(statusText)
-                    .font(.system(size: 7.5, weight: .bold))
-                    .foregroundStyle(RCTheme.gold)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.66)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 2)
-                    .background(.black.opacity(0.62), in: Capsule())
-                    .accessibilityIdentifier("table.seatStatus.\(seat.id.rawValue)")
-            }
+            .frame(width: 34, height: 22)
+            Text(CasinoChipAmountPresentation.text(for: seat.stack.rawValue))
+                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .foregroundStyle(RCTheme.primaryText)
+                .lineLimit(1)
         }
-        .frame(height: 27, alignment: .leading)
+        .frame(height: 23, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var seatStatusLine: some View {
+        if showsStatus {
+            Text(statusText)
+                .font(.system(size: 7.5, weight: .bold))
+                .foregroundStyle(RCTheme.gold)
+                .lineLimit(1)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(.black.opacity(0.62), in: Capsule())
+                .accessibilityIdentifier("table.seatStatus.\(seat.id.rawValue)")
+        }
     }
 
     private var holeCardScale: CGFloat {

@@ -647,12 +647,40 @@ final class AppSession {
             throw PokerCoordinatorError.invalidPhase
         }
         if intent == .nextHand {
+            try rebuyBustedHumanIfNeeded()
             try await tableCoordinator.startNextHand(
                 settings: freezeBotSettingsForNextHand()
             )
         } else {
             try await tableCoordinator.send(intent)
         }
+    }
+
+    /// 点击“下一手”代表玩家选择继续；若上一手刚好输光，先从账户余额
+    /// 补充该牌桌允许的最低买入，避免以零筹码启动牌局而弹出通用失败。
+    private func rebuyBustedHumanIfNeeded() throws {
+        guard let session = pokerStore.cashSession,
+              let selectedTable,
+              let human = session.seats.first(where: { $0.id == session.humanSeat }),
+              human.stack.rawValue == 0
+        else {
+            return
+        }
+        let (minimumBuyIn, overflow) = selectedTable.bigBlind.multipliedReportingOverflow(
+            by: SessionEconomy.minimumBuyInBigBlinds
+        )
+        guard !overflow,
+              minimumBuyIn > 0,
+              pokerStore.accountBalance.rawValue >= minimumBuyIn
+        else {
+            throw PokerSessionError.insufficientBalance
+        }
+        _ = try pokerStore.rebuyHuman(
+            amount: try Chips(minimumBuyIn),
+            businessID: try dependencies.nextBusinessID(
+                "next-hand-rebuy:\(session.id.rawValue)"
+            )
+        )
     }
 
     func suspendTableForLifecycle() {

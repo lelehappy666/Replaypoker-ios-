@@ -213,6 +213,12 @@ struct CasinoChipPileView: View {
         if amount >= 1_000 {
             return [.twentyFive, .oneHundred, .five, .fiveHundred, .oneThousand]
         }
+        if amount >= 100 {
+            return [.oneHundred, .twentyFive, .five, .fiveHundred, .one]
+        }
+        if amount >= 25 {
+            return [.twentyFive, .five, .one, .oneHundred, .fiveHundred]
+        }
         return [.one, .five, .twentyFive, .oneHundred, .fiveHundred]
     }
 }

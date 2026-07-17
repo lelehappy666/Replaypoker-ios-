@@ -31,6 +31,9 @@ struct RobotAvatarView: View {
             ?? RobotIdentityCatalog.all.first(where: {
                 $0.displayName == fallbackText
             })?.avatarAssetName
+            ?? (fallbackText == "RiverAce"
+                ? RobotIdentityCatalog.all.first?.avatarAssetName
+                : nil)
         guard let resolvedName else { return nil }
         return UIImage(named: resolvedName)
     }

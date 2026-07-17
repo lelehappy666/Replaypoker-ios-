@@ -191,7 +191,7 @@ struct BetControlBar: View {
                 step: 1
             )
             .tint(RCTheme.gold)
-            .frame(width: 280)
+            .frame(width: 240)
             .accessibilityLabel("下注或加注娱乐筹码")
             .accessibilityIdentifier("action.aggressiveSlider")
         }
