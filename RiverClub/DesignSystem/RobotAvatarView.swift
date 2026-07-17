@@ -8,8 +8,8 @@ struct RobotAvatarView: View {
 
     var body: some View {
         Group {
-            if let imageName, UIImage(named: imageName) != nil {
-                Image(imageName)
+            if let avatarImage {
+                Image(uiImage: avatarImage)
                     .resizable()
                     .scaledToFill()
             } else {
@@ -24,5 +24,14 @@ struct RobotAvatarView: View {
         .clipShape(Circle())
         .overlay { Circle().stroke(RCTheme.gold.opacity(0.72), lineWidth: 1) }
         .accessibilityLabel(fallbackText)
+    }
+
+    private var avatarImage: UIImage? {
+        let resolvedName = imageName
+            ?? RobotIdentityCatalog.all.first(where: {
+                $0.displayName == fallbackText
+            })?.avatarAssetName
+        guard let resolvedName else { return nil }
+        return UIImage(named: resolvedName)
     }
 }

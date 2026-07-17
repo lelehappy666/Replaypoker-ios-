@@ -153,6 +153,70 @@ struct CasinoChipStackView: View {
     }
 }
 
+/// 用于牌桌玩家资产、座位筹码和底池的多色赌场筹码堆。
+/// 金额仍以完整数字展示，筹码颜色用于增强真实牌桌的视觉层次。
+struct CasinoChipPileView: View {
+    let amount: Int
+    let scale: CGFloat
+    let showsAmount: Bool
+    let stackCount: Int
+
+    init(
+        amount: Int,
+        scale: CGFloat = 1,
+        showsAmount: Bool = true,
+        stackCount: Int = 3
+    ) {
+        self.amount = amount
+        self.scale = scale
+        self.showsAmount = showsAmount
+        self.stackCount = min(max(stackCount, 1), 5)
+    }
+
+    var body: some View {
+        VStack(spacing: 2) {
+            HStack(alignment: .bottom, spacing: -7) {
+                ForEach(Array(denominations.prefix(stackCount).enumerated()), id: \.offset) { stackIndex, denomination in
+                    ZStack(alignment: .bottom) {
+                        ForEach(0..<(2 + stackIndex % 3), id: \.self) { chipIndex in
+                            CasinoChipView(denomination: denomination)
+                                .offset(y: -CGFloat(chipIndex) * 3)
+                                .zIndex(Double(chipIndex))
+                        }
+                    }
+                    .frame(width: 30, height: 28)
+                    .zIndex(Double(stackIndex))
+                }
+            }
+
+            if showsAmount {
+                Text(CasinoChipAmountPresentation.text(for: amount))
+                    .font(.caption2.monospacedDigit().weight(.bold))
+                    .foregroundStyle(RCTheme.primaryText)
+                    .lineLimit(1)
+            }
+        }
+        .scaleEffect(max(scale, 0), anchor: .center)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("多色赌场筹码堆")
+        .accessibilityValue("完整金额 \(CasinoChipAmountPresentation.text(for: amount))")
+    }
+
+    private var denominations: [CasinoChipDenomination] {
+        guard amount > 0 else { return [] }
+        if amount >= 20_000 {
+            return [.five, .fiveHundred, .twentyFive, .oneHundred, .oneThousand]
+        }
+        if amount >= 5_000 {
+            return [.oneHundred, .twentyFive, .fiveHundred, .five, .oneThousand]
+        }
+        if amount >= 1_000 {
+            return [.twentyFive, .oneHundred, .five, .fiveHundred, .oneThousand]
+        }
+        return [.one, .five, .twentyFive, .oneHundred, .fiveHundred]
+    }
+}
+
 private struct CasinoChipView: View {
     let denomination: CasinoChipDenomination
 

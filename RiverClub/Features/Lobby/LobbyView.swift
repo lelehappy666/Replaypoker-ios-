@@ -108,7 +108,25 @@ struct LobbyView: View {
     }
 
     private var featuredTable: PokerTableSummary? {
-        loadState.content?.featuredTable
+        let selected = quickBlind.blinds
+        return tables.first {
+            $0.smallBlind == selected.small && $0.bigBlind == selected.big
+        } ?? loadState.content?.featuredTable
+    }
+
+    private var quickBlindOrderedTables: [PokerTableSummary] {
+        guard let featuredTable else { return categoryTables }
+        return [featuredTable] + categoryTables.filter { $0.id != featuredTable.id }
+    }
+
+    private var quickBlindOrderedCategoryTables: [PokerTableSummary] {
+        let selected = quickBlind.blinds
+        guard let selectedTable = categoryTables.first(where: {
+            $0.smallBlind == selected.small && $0.bigBlind == selected.big
+        }) else {
+            return categoryTables
+        }
+        return [selectedTable] + categoryTables.filter { $0.id != selectedTable.id }
     }
 
     private func featuredCard(_ table: PokerTableSummary) -> some View {
@@ -170,7 +188,7 @@ struct LobbyView: View {
                     .controlSize(.small)
                     .accessibilityIdentifier("lobby.allTables")
             }
-            tableGrid(Array(categoryTables.prefix(2)))
+            tableGrid(Array(quickBlindOrderedTables.dropFirst().prefix(2)))
         }
     }
 
@@ -191,7 +209,7 @@ struct LobbyView: View {
                     .tint(RCTheme.gold)
                     .controlSize(.small)
             }
-            tableGrid(categoryTables)
+            tableGrid(quickBlindOrderedCategoryTables)
         }
     }
 

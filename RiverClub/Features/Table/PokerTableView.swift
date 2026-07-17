@@ -129,7 +129,18 @@ struct PokerTableView: View {
         .padding(.vertical, 8)
         .safeAreaPadding(.horizontal, 16)
         .safeAreaPadding(.vertical, 6)
-        .background(RCTheme.background.ignoresSafeArea())
+        .background {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.015, green: 0.075, blue: 0.072),
+                    RCTheme.background,
+                    Color.black,
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+        }
         .onChange(of: state.animationSequence) { _, sequence in
             present(state.animation, sequence: sequence)
         }
@@ -232,14 +243,13 @@ struct PokerTableView: View {
                 Text("底池")
                     .font(.caption2.monospacedDigit().weight(.bold))
                     .foregroundStyle(RCTheme.primaryText)
-                ZStack {
-                    CasinoChipStackView(
-                        amount: state.pot.rawValue,
-                        scale: 0.55,
-                        maximumVisibleChips: 3
-                    )
-                }
-                .frame(width: 44, height: 30)
+                CasinoChipPileView(
+                    amount: state.pot.rawValue,
+                    scale: 0.48,
+                    showsAmount: false,
+                    stackCount: 5
+                )
+                .frame(width: 64, height: 30)
             }
             .frame(width: potFrame.width, height: potFrame.height)
             .accessibilityElement(children: .contain)
@@ -321,14 +331,22 @@ struct PokerTableView: View {
 
             Spacer()
 
-            CasinoChipStackView(
-                amount: balance,
-                scale: 0.62,
-                maximumVisibleChips: 5
-            )
-            .frame(width: 76, height: 42)
-            .padding(.horizontal, 8)
+            HStack(spacing: 5) {
+                CasinoChipPileView(
+                    amount: balance,
+                    scale: 0.55,
+                    showsAmount: false,
+                    stackCount: 4
+                )
+                .frame(width: 58, height: 34)
+                Text(CasinoChipAmountPresentation.text(for: balance))
+                    .font(.subheadline.monospacedDigit().weight(.bold))
+                    .foregroundStyle(RCTheme.gold)
+            }
+            .padding(.horizontal, 10)
+            .frame(minHeight: 42)
             .background(RCTheme.surface.opacity(0.82), in: Capsule())
+            .accessibilityElement(children: .combine)
             .accessibilityIdentifier("table.balance")
 
             Button("设置", systemImage: "gearshape") {}

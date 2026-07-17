@@ -916,6 +916,12 @@ enum TableSeatProfileFactory {
         else {
             throw PokerCoordinatorError.missingObservation
         }
+        let robotAvatarNames = Set(robots.map(\.avatarAssetName))
+        guard let humanAvatarName = RobotIdentityCatalog.all.first(where: {
+            !robotAvatarNames.contains($0.avatarAssetName)
+        })?.avatarAssetName else {
+            throw PokerCoordinatorError.missingObservation
+        }
         var robotIndex = 0
         return try (0..<9).map { index in
             let seat = try SeatID(index)
@@ -923,7 +929,7 @@ enum TableSeatProfileFactory {
                 return try TableSeatProfile(
                     id: seat,
                     displayName: "RiverAce",
-                    avatarAssetName: nil
+                    avatarAssetName: humanAvatarName
                 )
             }
             let identity = robots[robotIndex]

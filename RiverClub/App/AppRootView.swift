@@ -124,15 +124,34 @@ struct AppRootView: View {
                             )
                         }
                     case .lobby, .tournaments, .tables, .tableBrowser, .profile:
-                        ZStack {
-                            AppRouteBackground(route: session.route)
+                        GeometryReader { proxy in
+                            ZStack {
+                                AppRouteBackground(route: session.route)
 
-                            HStack(spacing: AppSidebar.contentGap) {
-                                AppSidebar(selection: session.route, onSelect: session.open)
-                                routedSidebarContent
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                HStack(spacing: AppSidebar.contentGap) {
+                                    AppSidebar(selection: session.route, onSelect: session.open)
+                                    routedSidebarContent
+                                        .frame(
+                                            maxWidth: .infinity,
+                                            maxHeight: .infinity,
+                                            alignment: .topLeading
+                                        )
+                                        .clipped()
+                                }
+                                .padding(.leading, max(
+                                    AppSidebar.minimumSafeInset,
+                                    proxy.safeAreaInsets.leading + AppSidebar.minimumSafeInset
+                                ))
+                                .padding(.trailing, max(
+                                    AppSidebar.minimumSafeInset,
+                                    proxy.safeAreaInsets.trailing + AppSidebar.minimumSafeInset
+                                ))
+                                .padding(.vertical, AppSidebar.shellVerticalPadding)
                             }
-                            .padding(AppSidebar.shellPadding)
+                            .frame(width: proxy.size.width, height: proxy.size.height)
+                        }
+                        .transaction { transaction in
+                            transaction.disablesAnimations = true
                         }
                     }
                 }

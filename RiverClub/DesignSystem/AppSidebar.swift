@@ -53,7 +53,8 @@ struct AppRouteBackground: View {
 
 struct AppSidebar: View {
     static let landscapePhoneWidth: CGFloat = 176
-    static let shellPadding: CGFloat = 14
+    static let shellVerticalPadding: CGFloat = 14
+    static let minimumSafeInset: CGFloat = 10
     static let contentGap: CGFloat = 16
     static let horizontalPadding: CGFloat = 10
 
@@ -86,6 +87,7 @@ struct AppSidebar: View {
         .padding(.horizontal, Self.horizontalPadding)
         .padding(.vertical, 14)
         .frame(width: Self.landscapePhoneWidth)
+        .frame(maxHeight: .infinity)
         .background(
             RCTheme.surface.opacity(0.88),
             in: RoundedRectangle(cornerRadius: 24)

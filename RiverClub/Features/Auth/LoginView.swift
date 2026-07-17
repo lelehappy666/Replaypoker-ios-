@@ -34,12 +34,14 @@ struct LoginView: View {
                 .controlSize(.large)
                 .accessibilityIdentifier("login.apple")
 
-                Button("游客快速体验", action: onGuestLogin)
-                    .buttonStyle(.bordered)
-                    .tint(RCTheme.gold)
-                    .controlSize(.large)
-                    .frame(maxWidth: .infinity)
-                    .accessibilityIdentifier("login.guest")
+                Button(action: onGuestLogin) {
+                    Text("游客快速体验")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(RCTheme.gold)
+                .controlSize(.large)
+                .accessibilityIdentifier("login.guest")
 
                 Text("继续即表示你同意用户协议与隐私政策，并确认已达到适用年龄要求。")
                     .font(.caption)

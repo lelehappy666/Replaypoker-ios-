@@ -2,13 +2,13 @@ import PokerCoordinator
 import SwiftUI
 
 enum PokerTableLayout {
-    static let seatSize = CGSize(width: 120, height: 104)
-    static let seatContentSize = CGSize(width: 116, height: 100)
-    static let betControlSize = CGSize(width: 320, height: 178)
+    static let seatSize = CGSize(width: 126, height: 116)
+    static let seatContentSize = CGSize(width: 122, height: 112)
+    static let betControlSize = CGSize(width: 320, height: 144)
     static let cardAspectRatio: CGFloat = 34.0 / 46.0
     static let holeCardSpacing: CGFloat = 4
     static let communityCardSize = CGSize(width: 46, height: 62)
-    static let humanHoleCardSize = CGSize(width: 38, height: 52)
+    static let humanHoleCardSize = CGSize(width: 46, height: 62)
     static let botHoleCardSize = CGSize(width: 38, height: 52)
     static let betStackBaseSize = CGSize(width: 68, height: 44)
     static let potSize = CGSize(width: 110, height: 34)
@@ -25,22 +25,21 @@ enum PokerTableLayout {
 
     static func positions(for canvas: CGSize) -> [CGPoint] {
         let frameSize = seatFrameSize(for: canvas)
-        let topY = topBarRegion(for: canvas).maxY + frameSize.height / 2 + 4
-        let bottomY = canvas.height - frameSize.height / 2 - 2
         let leftX = frameSize.width / 2 + 2
         let rightX = canvas.width - frameSize.width / 2 - 2
 
-        // 三席在上、两席在左、一席在右、两席在下，本人始终位于底部中央。
+        // 严格对应横屏效果图：三席在上、两席在左、一席在右、
+        // 两席在下，本人位于底部中央；所有机器人座位使用同一尺寸。
         return [
-            .init(x: canvas.width * 0.24, y: topY),
-            .init(x: canvas.width * 0.50, y: topY),
-            .init(x: canvas.width * 0.76, y: topY),
+            .init(x: canvas.width * 0.22, y: canvas.height * 0.19),
+            .init(x: canvas.width * 0.48, y: canvas.height * 0.18),
+            .init(x: canvas.width * 0.73, y: canvas.height * 0.19),
             .init(x: rightX, y: canvas.height * 0.42),
-            .init(x: leftX, y: canvas.height * 0.40),
-            .init(x: leftX, y: canvas.height * 0.69),
-            .init(x: canvas.width * 0.25, y: bottomY),
-            .init(x: canvas.width * 0.40, y: bottomY),
-            .init(x: canvas.width * 0.55, y: bottomY),
+            .init(x: leftX, y: canvas.height * 0.36),
+            .init(x: leftX, y: canvas.height * 0.62),
+            .init(x: canvas.width * 0.22, y: canvas.height * 0.81),
+            .init(x: canvas.width * 0.38, y: canvas.height * 0.84),
+            .init(x: canvas.width * 0.52, y: canvas.height * 0.865),
         ]
     }
 
@@ -68,7 +67,7 @@ enum PokerTableLayout {
         let size = CGSize(width: min(320, canvas.width * 0.40), height: 158)
         return CGRect(
             x: canvas.width * 0.5 - size.width / 2,
-            y: canvas.height * 0.558_333_333_3 - size.height / 2,
+            y: canvas.height * 0.46 - size.height / 2,
             width: size.width,
             height: size.height
         )
@@ -297,84 +296,124 @@ struct PokerSeatView: View {
     let reduceMotion: Bool
     let animation: TableAnimationPresentation
 
-    private var initials: String {
-        String(seat.displayName.prefix(2))
-    }
-
     var body: some View {
-        VStack(spacing: 2) {
-            HStack(alignment: .bottom, spacing: 4) {
-                RobotAvatarView(
-                    imageName: seat.avatarAssetName,
-                    fallbackText: initials,
-                    size: seat.isHuman ? 36 : 38
-                )
-                .opacity(seat.hasFolded ? 0.44 : 1)
-                .accessibilityIdentifier(
-                    seat.isHuman
-                        ? "table.localAvatar"
-                        : "table.botAvatar.\(seat.id.rawValue)"
-                )
-                .accessibilityValue(seat.displayName)
-
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: PokerTableLayout.holeCardSpacing) {
-                        ForEach(Array(seat.cards.enumerated()), id: \.offset) { _, card in
-                            TableCardView(cardState: card)
-                                .frame(
-                                    width: holeCardSize.width,
-                                    height: holeCardSize.height
-                                )
-                                .accessibilityIdentifier(
-                                    seat.isHuman ? "table.localHoleCard" : "table.botHoleCard"
-                                )
-                        }
-                    }
-                    .frame(height: holeCardSize.height)
-                    .scaleEffect(holeCardScale)
-                    .opacity(seat.hasFolded ? 0.44 : 1)
-
-                    Text(seat.displayName)
-                        .font(.system(size: 9, weight: .semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
-                }
+        Group {
+            if seat.isHuman {
+                humanSeatContent
+            } else {
+                robotSeatContent
             }
-
-            HStack(spacing: 4) {
-                CasinoChipStackView(
-                    amount: seat.stack.rawValue,
-                    scale: 0.42,
-                    maximumVisibleChips: 3
-                )
-                .frame(width: 48, height: 24)
-
-                if showsStatus {
-                    Text(statusText)
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(RCTheme.gold)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(.black.opacity(0.40), in: Capsule())
-                        .accessibilityIdentifier("table.seatStatus.\(seat.id.rawValue)")
-                }
-            }
-
         }
         .foregroundStyle(RCTheme.primaryText)
         .frame(
             width: PokerTableLayout.seatSize.width,
             height: PokerTableLayout.seatSize.height
         )
-        .background(.black.opacity(0.24), in: RoundedRectangle(cornerRadius: 10))
         .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(isWinner || seat.isCurrentActor ? RCTheme.gold : .clear, lineWidth: 2)
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(
+                    isWinner || seat.isCurrentActor
+                        ? RCTheme.gold
+                        : RCTheme.gold.opacity(0.10),
+                    lineWidth: isWinner || seat.isCurrentActor ? 2 : 1
+                )
         }
+        .shadow(
+            color: isWinner || seat.isCurrentActor ? RCTheme.gold.opacity(0.30) : .clear,
+            radius: 8
+        )
+        .opacity(seat.hasFolded ? 0.48 : 1)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityDescription)
+    }
+
+    private var robotSeatContent: some View {
+        HStack(alignment: .center, spacing: 4) {
+            avatar(size: 48)
+
+            VStack(alignment: .leading, spacing: 1) {
+                holeCards
+                seatIdentityLine
+                seatChipLine
+            }
+        }
+        .padding(.horizontal, 3)
+    }
+
+    private var humanSeatContent: some View {
+        VStack(spacing: 1) {
+            holeCards
+            HStack(spacing: 4) {
+                avatar(size: 50)
+                VStack(alignment: .leading, spacing: 1) {
+                    seatIdentityLine
+                    seatChipLine
+                }
+            }
+        }
+    }
+
+    private func avatar(size: CGFloat) -> some View {
+        RobotAvatarView(
+            imageName: seat.avatarAssetName,
+            fallbackText: seat.displayName,
+            size: size
+        )
+        .accessibilityIdentifier(
+            seat.isHuman
+                ? "table.localAvatar"
+                : "table.botAvatar.\(seat.id.rawValue)"
+        )
+        .accessibilityValue(seat.displayName)
+    }
+
+    private var holeCards: some View {
+        HStack(spacing: PokerTableLayout.holeCardSpacing) {
+            ForEach(0..<2, id: \.self) { index in
+                TableCardView(
+                    cardState: seat.cards.indices.contains(index)
+                        ? seat.cards[index]
+                        : .faceDown
+                )
+                .frame(width: holeCardSize.width, height: holeCardSize.height)
+                .accessibilityIdentifier(
+                    seat.isHuman ? "table.localHoleCard" : "table.botHoleCard"
+                )
+            }
+        }
+        .frame(height: holeCardSize.height)
+        .scaleEffect(holeCardScale)
+    }
+
+    private var seatIdentityLine: some View {
+        Text(seat.displayName)
+            .font(.system(size: 10, weight: .semibold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
+    }
+
+    private var seatChipLine: some View {
+        HStack(spacing: 2) {
+            CasinoChipPileView(
+                amount: seat.stack.rawValue,
+                scale: 0.40,
+                stackCount: 2
+            )
+            .frame(width: 45, height: 26)
+
+            if showsStatus {
+                Text(statusText)
+                    .font(.system(size: 7.5, weight: .bold))
+                    .foregroundStyle(RCTheme.gold)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.66)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(.black.opacity(0.62), in: Capsule())
+                    .accessibilityIdentifier("table.seatStatus.\(seat.id.rawValue)")
+            }
+        }
+        .frame(height: 27, alignment: .leading)
     }
 
     private var holeCardScale: CGFloat {
@@ -384,7 +423,7 @@ struct PokerSeatView: View {
     private var holeCardSize: CGSize {
         seat.isHuman
             ? PokerTableLayout.humanHoleCardSize
-            : CGSize(width: 34, height: 46)
+            : PokerTableLayout.botHoleCardSize
     }
 
     private var showsStatus: Bool {
