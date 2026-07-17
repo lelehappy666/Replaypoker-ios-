@@ -20,6 +20,18 @@ enum CasinoChipDenomination: Int, CaseIterable {
         }
     }
 
+    /// 供测试和设计语义使用的标准颜色名，避免直接比较 `Color` 实例。
+    var semanticColorName: String {
+        switch self {
+        case .one: "white"
+        case .five: "red"
+        case .twentyFive: "green"
+        case .oneHundred: "black"
+        case .fiveHundred: "purple"
+        case .oneThousand: "orange"
+        }
+    }
+
     fileprivate var edgeColor: Color {
         switch self {
         case .one: .black.opacity(0.72)
@@ -41,17 +53,19 @@ enum CasinoChipDenomination: Int, CaseIterable {
 
 /// 将金额转为从大到小的贪心筹码序列，供视觉展示使用。
 enum CasinoChipBreakdown {
-    /// 限制异常调用的内存与循环次数；视觉上限仍不会超过调用方传入的值。
-    private static let maximumRenderableChips = 64
+    /// 组件支持的最大可见筹码数，用于保证异常输入不会导致巨量分配。
+    static let maximumSupportedVisibleChips = 64
 
     /// 当完整贪心分解超出可见上限时，保留其从最高面额开始的前缀。
     /// 此时返回值仅表示视觉，不承诺其面额和等于 `amount`。
+    /// `maximumVisibleChips` 是调用方请求的上限，结果还会受到
+    /// `maximumSupportedVisibleChips` 这个公开安全上限的约束。
     static func make(amount: Int, maximumVisibleChips: Int) -> [CasinoChipDenomination] {
         guard amount > 0, maximumVisibleChips > 0 else {
             return []
         }
 
-        let visibleLimit = min(maximumVisibleChips, maximumRenderableChips)
+        let visibleLimit = min(maximumVisibleChips, maximumSupportedVisibleChips)
         var remainder = amount
         var remainingSlots = visibleLimit
         var result: [CasinoChipDenomination] = []
@@ -70,6 +84,22 @@ enum CasinoChipBreakdown {
         }
 
         return result
+    }
+}
+
+/// 牌桌筹码金额的固定展示格式；不使用货币符号，也不依赖设备语言区域。
+enum CasinoChipAmountPresentation {
+    static func text(for amount: Int) -> String {
+        var digits = String(amount.magnitude)
+        var grouped = ""
+
+        while digits.count > 3 {
+            let groupStart = digits.index(digits.endIndex, offsetBy: -3)
+            grouped = "," + String(digits[groupStart...]) + grouped
+            digits = String(digits[..<groupStart])
+        }
+
+        return amount < 0 ? "-\(digits)\(grouped)" : "\(digits)\(grouped)"
     }
 }
 
@@ -95,20 +125,30 @@ struct CasinoChipStackView: View {
         max(scale, 0)
     }
 
+    private var displayAmount: String {
+        CasinoChipAmountPresentation.text(for: amount)
+    }
+
     var body: some View {
-        ZStack(alignment: .bottom) {
-            ForEach(Array(chips.enumerated()), id: \.offset) { index, denomination in
-                CasinoChipView(denomination: denomination)
-                    .offset(y: -CGFloat(index) * 3)
-                    .zIndex(Double(index))
-                    .accessibilityHidden(true)
+        VStack(spacing: 2) {
+            ZStack(alignment: .bottom) {
+                ForEach(Array(chips.enumerated()), id: \.offset) { index, denomination in
+                    CasinoChipView(denomination: denomination)
+                        .offset(y: -CGFloat(index) * 3)
+                        .zIndex(Double(index))
+                        .accessibilityHidden(true)
+                }
             }
+            .frame(width: 30, height: 22 + CGFloat(max(chips.count - 1, 0)) * 3)
+            .scaleEffect(effectiveScale, anchor: .bottom)
+
+            Text(displayAmount)
+                .font(.caption2.monospacedDigit().weight(.bold))
+                .foregroundStyle(RCTheme.primaryText)
         }
-        .frame(width: 30, height: 22 + CGFloat(max(chips.count - 1, 0)) * 3)
-        .scaleEffect(effectiveScale, anchor: .bottom)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("赌场筹码堆")
-        .accessibilityValue("完整金额 \(amount.formatted())")
+        .accessibilityValue("完整金额 \(displayAmount)")
     }
 }
 
