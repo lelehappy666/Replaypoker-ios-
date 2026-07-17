@@ -140,12 +140,12 @@ struct CasinoChipStackView: View {
                 }
             }
             .frame(width: 30, height: 22 + CGFloat(max(chips.count - 1, 0)) * 3)
-            .scaleEffect(effectiveScale, anchor: .bottom)
 
             Text(displayAmount)
                 .font(.caption2.monospacedDigit().weight(.bold))
                 .foregroundStyle(RCTheme.primaryText)
         }
+        .scaleEffect(effectiveScale, anchor: .center)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("赌场筹码堆")
         .accessibilityValue("完整金额 \(displayAmount)")

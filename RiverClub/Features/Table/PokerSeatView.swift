@@ -10,6 +10,7 @@ enum PokerTableLayout {
     static let communityCardSize = CGSize(width: 46, height: 62)
     static let humanHoleCardSize = CGSize(width: 46, height: 62)
     static let botHoleCardSize = CGSize(width: 38, height: 52)
+    static let betStackBaseSize = CGSize(width: 68, height: 50)
 
     static func seatFrameSize(for canvas: CGSize) -> CGSize {
         let canvasScale = min(canvas.width / 956, canvas.height / 440)
@@ -62,10 +63,10 @@ enum PokerTableLayout {
     }
 
     static func centerBoardRegion(for canvas: CGSize) -> CGRect {
-        let size = CGSize(width: min(270, canvas.width - 2 * betControlSize.width - 8), height: 142)
+        let size = CGSize(width: min(270, canvas.width - 2 * betControlSize.width - 8), height: 150)
         return CGRect(
             x: canvas.width * 0.5 - size.width / 2,
-            y: canvas.height * 0.55 - size.height / 2,
+            y: canvas.height * 0.558_333_333_3 - size.height / 2,
             width: size.width,
             height: size.height
         )
@@ -84,7 +85,7 @@ enum PokerTableLayout {
         let board = centerBoardRegion(for: canvas)
         let totalWidth = communityCardSize.width * 5 + holeCardSpacing * 4
         let startX = board.midX - totalWidth / 2
-        let y = board.minY + 14
+        let y = board.minY + 42
 
         return (0..<5).map { index in
             CGRect(
@@ -102,15 +103,68 @@ enum PokerTableLayout {
     }
 
     static func betPosition(forSeatAt index: Int, canvas: CGSize) -> CGPoint {
+        let frame = betFrame(forSeatAt: index, canvas: canvas)
+        return CGPoint(x: frame.midX, y: frame.midY)
+    }
+
+    static func betScale(for canvas: CGSize) -> CGFloat {
+        seatFrameSize(for: canvas).width / seatSize.width
+    }
+
+    static func betFrame(forSeatAt index: Int, canvas: CGSize) -> CGRect {
         let seatFrames = seatFrames(for: canvas)
-        guard seatFrames.indices.contains(index) else { return tableCenter(for: canvas) }
+        let scale = betScale(for: canvas)
+        let size = CGSize(
+            width: betStackBaseSize.width * scale,
+            height: betStackBaseSize.height * scale
+        )
+        let center = tableCenter(for: canvas)
+        guard seatFrames.indices.contains(index) else {
+            return CGRect(
+                x: center.x - size.width / 2,
+                y: center.y - size.height / 2,
+                width: size.width,
+                height: size.height
+            )
+        }
 
         let seat = seatFrames[index]
         let seatCenter = CGPoint(x: seat.midX, y: seat.midY)
-        let center = tableCenter(for: canvas)
-        return CGPoint(
-            x: seatCenter.x + (center.x - seatCenter.x) * 0.4,
-            y: seatCenter.y + (center.y - seatCenter.y) * 0.4
+        let candidates: [CGFloat] = [0.52, 0.56, 0.48, 0.60, 0.44]
+        let slots = communityCardFrames(for: canvas)
+        let action = betControlRegion(for: canvas)
+        let safeCanvas = safeCanvas(for: canvas)
+
+        for progress in candidates {
+            let point = CGPoint(
+                x: seatCenter.x + (center.x - seatCenter.x) * progress,
+                y: seatCenter.y + (center.y - seatCenter.y) * progress
+            )
+            let frame = CGRect(
+                x: point.x - size.width / 2,
+                y: point.y - size.height / 2,
+                width: size.width,
+                height: size.height
+            )
+            guard safeCanvas.contains(frame),
+                  seatFrames.allSatisfy({ !$0.intersects(frame) }),
+                  slots.allSatisfy({ !$0.intersects(frame) }),
+                  !action.intersects(frame) else {
+                continue
+            }
+            return frame
+        }
+
+        // 横屏安全画布均有候选空位；此回退仅保护异常尺寸下的 API 总有返回值。
+        let fallback = CGPoint(
+            x: seatCenter.x + (center.x - seatCenter.x) * 0.52,
+            y: seatCenter.y + (center.y - seatCenter.y) * 0.52
+        )
+        return CGRect(
+            x: fallback.x - size.width / 2,
+            y: fallback.y - size.height / 2,
+            width: size.width,
+            height: size.height
         )
     }
 
@@ -190,8 +244,8 @@ struct PokerSeatView: View {
         }
         .foregroundStyle(RCTheme.primaryText)
         .frame(
-            width: PokerTableLayout.seatContentSize.width,
-            height: PokerTableLayout.seatContentSize.height
+            width: PokerTableLayout.seatSize.width,
+            height: PokerTableLayout.seatSize.height
         )
         .background(.black.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
         .overlay {

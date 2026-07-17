@@ -32,7 +32,7 @@ struct PokerTableView: View {
 
                 tableSurface
 
-                centerBoard
+                centerBoard(canvas: proxy.size)
                     .frame(
                         width: PokerTableLayout.centerBoardRegion(for: proxy.size).width,
                         height: PokerTableLayout.centerBoardRegion(for: proxy.size).height
@@ -58,32 +58,35 @@ struct PokerTableView: View {
                                 reduceMotion: reduceMotion,
                                 animation: animationPresentation
                             )
-
-                            Color.clear
-                                .contentShape(Rectangle())
-                                .accessibilityElement()
-                                .accessibilityLabel("第 \(index + 1) 个座位")
-                                .accessibilityIdentifier("table.seat.\(index)")
-                                .allowsHitTesting(false)
                         }
                         .frame(
-                            width: seatFrameSize.width,
-                            height: seatFrameSize.height
+                            width: PokerTableLayout.seatSize.width,
+                            height: PokerTableLayout.seatSize.height
                         )
                         .scaleEffect(seatFrameSize.width / PokerTableLayout.seatSize.width)
+                        .frame(width: seatFrameSize.width, height: seatFrameSize.height)
+                        .contentShape(Rectangle())
+                        .accessibilityElement(children: .contain)
+                        .accessibilityLabel("第 \(index + 1) 个座位")
+                        .accessibilityIdentifier("table.seat.\(index)")
                         .position(x: positions[index].x, y: positions[index].y)
                     }
                 }
 
                 ForEach(Array(state.seats.enumerated()), id: \.element.id) { index, seat in
                     if positions.indices.contains(index), seat.committedThisStreet.rawValue > 0 {
-                        CasinoChipStackView(
-                            amount: seat.committedThisStreet.rawValue,
-                            scale: 0.56,
-                            maximumVisibleChips: 4
-                        )
+                        let betFrame = PokerTableLayout.betFrame(forSeatAt: index, canvas: proxy.size)
+                        ZStack {
+                            CasinoChipStackView(
+                                amount: seat.committedThisStreet.rawValue,
+                                scale: PokerTableLayout.betScale(for: proxy.size),
+                                maximumVisibleChips: 4
+                            )
+                        }
+                        .frame(width: betFrame.width, height: betFrame.height)
+                        .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("table.bet.\(index)")
-                        .position(PokerTableLayout.betPosition(forSeatAt: index, canvas: proxy.size))
+                        .position(x: betFrame.midX, y: betFrame.midY)
                     }
                 }
 
@@ -141,8 +144,10 @@ struct PokerTableView: View {
             .accessibilityHidden(true)
     }
 
-    private var centerBoard: some View {
-        VStack(spacing: 2) {
+    private func centerBoard(canvas: CGSize) -> some View {
+        let board = PokerTableLayout.centerBoardRegion(for: canvas)
+
+        return GeometryReader { proxy in
             if let currentHandText {
                 Text(currentHandText)
                     .font(.caption2.weight(.bold))
@@ -150,6 +155,7 @@ struct PokerTableView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.76)
                     .accessibilityIdentifier("table.currentHand")
+                    .position(x: proxy.size.width / 2, y: 8)
             }
 
             HStack(spacing: PokerTableLayout.holeCardSpacing) {
@@ -179,16 +185,23 @@ struct PokerTableView: View {
                     .accessibilityIdentifier("table.communitySlot.\(index)")
                 }
             }
-
-            Text("底池")
-                .font(.caption2.monospacedDigit().weight(.bold))
-                .foregroundStyle(RCTheme.primaryText)
-            CasinoChipStackView(
-                amount: state.pot.rawValue,
-                scale: reduceMotion ? 0.72 : 0.72 + animationPresentation.chipOffset / 100,
-                maximumVisibleChips: 5
+            .position(
+                x: proxy.size.width / 2,
+                y: PokerTableLayout.communityCardFrames(for: canvas)[0].midY - board.minY
             )
-            .accessibilityIdentifier("table.pot")
+
+            VStack(spacing: 0) {
+                Text("底池")
+                    .font(.caption2.monospacedDigit().weight(.bold))
+                    .foregroundStyle(RCTheme.primaryText)
+                CasinoChipStackView(
+                    amount: state.pot.rawValue,
+                    scale: reduceMotion ? 0.72 : 0.72 + animationPresentation.chipOffset / 100,
+                    maximumVisibleChips: 5
+                )
+                .accessibilityIdentifier("table.pot")
+            }
+            .position(x: proxy.size.width / 2, y: proxy.size.height - 24)
         }
     }
 

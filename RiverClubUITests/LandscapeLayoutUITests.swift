@@ -124,6 +124,7 @@ final class LandscapeLayoutUITests: XCTestCase {
             }
         }
 
+        var communitySlotFrames: [CGRect] = []
         for index in 0..<5 {
             let slot = app.descendants(matching: .any)["table.communitySlot.\(index)"]
             XCTAssertTrue(slot.exists)
@@ -133,6 +134,7 @@ final class LandscapeLayoutUITests: XCTestCase {
             for seatFrame in seatFrames {
                 XCTAssertFalse(slot.frame.intersects(seatFrame))
             }
+            communitySlotFrames.append(slot.frame)
         }
 
         let betIndicators = app.descendants(matching: .any).allElementsBoundByIndex.filter {
@@ -142,6 +144,12 @@ final class LandscapeLayoutUITests: XCTestCase {
         for indicator in betIndicators {
             XCTAssertTrue(windowFrame.contains(indicator.frame))
             XCTAssertFalse(indicator.frame.intersects(app.otherElements["table.betControls"].frame))
+            for seatFrame in seatFrames {
+                XCTAssertFalse(indicator.frame.intersects(seatFrame))
+            }
+            for slotFrame in communitySlotFrames {
+                XCTAssertFalse(indicator.frame.intersects(slotFrame))
+            }
         }
 
         let localAvatar = app.descendants(matching: .any)["table.localAvatar"]

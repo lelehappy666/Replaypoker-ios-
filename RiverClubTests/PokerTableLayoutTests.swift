@@ -88,13 +88,31 @@ final class PokerTableLayoutTests: XCTestCase {
             let operation = PokerTableLayout.betControlRegion(for: canvas)
 
             for index in seatFrames.indices {
-                let position = PokerTableLayout.betPosition(forSeatAt: index, canvas: canvas)
+                let betFrame = PokerTableLayout.betFrame(forSeatAt: index, canvas: canvas)
+                let position = CGPoint(x: betFrame.midX, y: betFrame.midY)
                 let seatCenter = CGPoint(x: seatFrames[index].midX, y: seatFrames[index].midY)
+                let centerVector = CGPoint(x: center.x - seatCenter.x, y: center.y - seatCenter.y)
+                let betVector = CGPoint(x: position.x - seatCenter.x, y: position.y - seatCenter.y)
+                let progress = (centerVector.x * betVector.x + centerVector.y * betVector.y)
+                    / (centerVector.x * centerVector.x + centerVector.y * centerVector.y)
 
                 XCTAssertLessThan(position.distance(to: center), seatCenter.distance(to: center))
-                XCTAssertFalse(seatFrames[index].contains(position))
-                XCTAssertFalse(operation.contains(position))
-                XCTAssertTrue(slots.allSatisfy { !$0.contains(position) })
+                XCTAssertGreaterThan(progress, 0)
+                XCTAssertLessThan(progress, 1)
+                XCTAssertEqual(
+                    betFrame.size.width,
+                    PokerTableLayout.betStackBaseSize.width * PokerTableLayout.betScale(for: canvas),
+                    accuracy: 0.001
+                )
+                XCTAssertEqual(
+                    betFrame.size.height,
+                    PokerTableLayout.betStackBaseSize.height * PokerTableLayout.betScale(for: canvas),
+                    accuracy: 0.001
+                )
+                XCTAssertTrue(PokerTableLayout.safeCanvas(for: canvas).contains(betFrame))
+                XCTAssertTrue(seatFrames.allSatisfy { !$0.intersects(betFrame) })
+                XCTAssertTrue(slots.allSatisfy { !$0.intersects(betFrame) })
+                XCTAssertFalse(operation.intersects(betFrame))
             }
         }
     }
@@ -112,10 +130,10 @@ final class PokerTableLayoutTests: XCTestCase {
             }
 
             for index in seatFrames.indices {
-                let bet = PokerTableLayout.betPosition(forSeatAt: index, canvas: canvas)
+                let bet = PokerTableLayout.betFrame(forSeatAt: index, canvas: canvas)
                 XCTAssertTrue(safeCanvas.contains(bet))
-                XCTAssertFalse(operation.contains(bet))
-                XCTAssertTrue(seatFrames.allSatisfy { !$0.contains(bet) })
+                XCTAssertFalse(operation.intersects(bet))
+                XCTAssertTrue(seatFrames.allSatisfy { !$0.intersects(bet) })
             }
         }
     }
