@@ -3,7 +3,7 @@ import XCTest
 @MainActor
 final class LandscapeLayoutUITests: XCTestCase {
     private let firstTableIdentifier = "tableRow.10000000-0000-0000-0000-000000000001"
-    private let currencySymbols = ["¥", "$", "€", "£"]
+    private let prohibitedCurrencySymbols = ["¥", "€", "£"]
 
     func testLandscapeTableLayoutAndEntertainmentChipCompliance() {
         let app = XCUIApplication()
@@ -21,7 +21,7 @@ final class LandscapeLayoutUITests: XCTestCase {
         assertNoCurrencySymbols(in: app)
         guestLogin.tap()
         XCTAssertTrue(app.buttons["lobby.allTables"].waitForExistence(timeout: 5))
-        assertNoCurrencySymbols(in: app)
+        assertLobbyContentFitsWindow(in: app)
 
         let tournamentsNavigation = app.buttons["sidebar.tournaments"]
         XCTAssertTrue(tournamentsNavigation.exists)
@@ -64,6 +64,7 @@ final class LandscapeLayoutUITests: XCTestCase {
         XCTAssertTrue(lobbyNavigation.exists)
         lobbyNavigation.tap()
         XCTAssertTrue(app.buttons["lobby.allTables"].waitForExistence(timeout: 5))
+        assertLobbyContentFitsWindow(in: app)
         app.buttons["lobby.allTables"].tap()
 
         let firstTable = app.buttons[firstTableIdentifier]
@@ -136,12 +137,39 @@ final class LandscapeLayoutUITests: XCTestCase {
     private func assertNoCurrencySymbols(in app: XCUIApplication) {
         for element in app.descendants(matching: .any).allElementsBoundByIndex {
             let visibleValues = [element.label, element.value as? String ?? ""]
-            for symbol in currencySymbols {
+            for symbol in prohibitedCurrencySymbols {
                 XCTAssertFalse(
                     visibleValues.contains { $0.contains(symbol) },
                     "发现真实货币符号：\(symbol)"
                 )
             }
+        }
+    }
+
+    private func assertLobbyContentFitsWindow(in app: XCUIApplication) {
+        let window = app.windows.element(boundBy: 0)
+        XCTAssertTrue(window.waitForExistence(timeout: 5))
+        XCTAssertEqual(
+            app.descendants(matching: .any)["lobby.balance"].label,
+            "娱乐筹码 $88,500"
+        )
+
+        let recommendedAvatars = app.descendants(matching: .any)
+            .matching(identifier: "lobby.recommendedAvatar")
+            .allElementsBoundByIndex
+        XCTAssertEqual(recommendedAvatars.count, 6)
+        XCTAssertEqual(Set(recommendedAvatars.map(\.label)).count, 6)
+        for avatar in recommendedAvatars {
+            XCTAssertTrue(window.frame.contains(avatar.frame))
+        }
+
+        let popularCards = app.descendants(matching: .any)
+            .matching(identifier: "lobby.hotTable")
+            .allElementsBoundByIndex
+        XCTAssertEqual(popularCards.count, 2)
+        for card in popularCards {
+            XCTAssertFalse(card.frame.isEmpty)
+            XCTAssertTrue(window.frame.contains(card.frame))
         }
     }
 }

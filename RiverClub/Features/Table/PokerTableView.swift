@@ -409,7 +409,11 @@ struct PokerTableView: View {
 
 enum PokerTablePresentation {
     static func title(for table: PokerTableSummary) -> String {
-        "\(table.name) · \(table.smallBlind.formatted()) / \(table.bigBlind.formatted())"
+        "\(table.name) · \(blinds(small: table.smallBlind, big: table.bigBlind))"
+    }
+
+    static func blinds(small: Int, big: Int) -> String {
+        "\(small.formatted()) / \(big.formatted())"
     }
 
     static func status(for phase: TableFlowPhase) -> String {

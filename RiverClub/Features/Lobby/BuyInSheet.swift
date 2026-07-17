@@ -96,7 +96,7 @@ struct BuyInSheet: View {
             HStack {
                 Text("买入娱乐筹码")
                 Spacer()
-                Text(state.amount.formatted())
+                Text(EntertainmentAmountFormatter.string(state.amount))
                     .font(.title3.monospacedDigit().weight(.bold))
                     .foregroundStyle(RCTheme.gold)
             }
@@ -117,9 +117,11 @@ struct BuyInSheet: View {
             .accessibilityIdentifier("buyIn.slider")
 
             HStack {
-                Text("最低 \(state.minimum.formatted())")
+                Text("最低 \(EntertainmentAmountFormatter.string(state.minimum))")
                 Spacer()
-                Text("最高 \(min(state.maximum, state.balance).formatted())")
+                Text(
+                    "最高 \(EntertainmentAmountFormatter.string(min(state.maximum, state.balance)))"
+                )
             }
             .font(.caption.monospacedDigit())
             .foregroundStyle(RCTheme.secondaryText)
@@ -130,7 +132,7 @@ struct BuyInSheet: View {
 
             if state.balance < state.minimum {
                 Label(
-                    "余额不足：可用 \(state.balance.formatted())，本桌最低买入 \(state.minimum.formatted())。",
+                    "余额不足：可用 \(EntertainmentAmountFormatter.string(state.balance))，本桌最低买入 \(EntertainmentAmountFormatter.string(state.minimum))。",
                     systemImage: "exclamationmark.triangle.fill"
                 )
                 .font(.subheadline)

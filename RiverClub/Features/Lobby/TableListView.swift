@@ -130,7 +130,10 @@ struct TableRow: View {
 
                 Metric(label: "盲注", value: "\(table.smallBlind.formatted()) / \(table.bigBlind.formatted())")
                 Metric(label: "玩家", value: "\(table.players) / \(table.capacity)")
-                Metric(label: "平均底池", value: table.averagePot.formatted())
+                Metric(
+                    label: "平均底池",
+                    value: EntertainmentAmountFormatter.string(table.averagePot)
+                )
 
                 Text(table.hasOpenSeat ? "加入" : "候补")
                     .font(.subheadline.weight(.bold))
