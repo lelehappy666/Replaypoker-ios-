@@ -61,9 +61,11 @@ final class PokerTableLayoutTests: XCTestCase {
             XCTAssertLessThan(positions[1].y, positions[0].y)
             XCTAssertLessThan(positions[2].y, positions[1].y)
             for index in 3...7 {
-                XCTAssertLessThanOrEqual(positions[index - 1].x, positions[index].x)
-                XCTAssertLessThanOrEqual(positions[index - 1].y, positions[index].y + 0.001)
+                XCTAssertEqual(positions[index - 1].y, positions[index].y, accuracy: 0.001)
+                XCTAssertLessThan(positions[index - 1].x, positions[index].x)
             }
+            XCTAssertLessThan(positions[7].y, positions[8].y)
+            XCTAssertGreaterThan(positions[7].x, positions[8].x)
             XCTAssertEqual(positions[8].x, canvas.width * 0.5, accuracy: 0.001)
             XCTAssertGreaterThan(positions[8].y, center.y)
             XCTAssertGreaterThan(positions[8].x, positions[0].x)

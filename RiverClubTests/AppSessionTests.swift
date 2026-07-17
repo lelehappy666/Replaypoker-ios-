@@ -58,7 +58,11 @@ final class AppSessionTests: XCTestCase {
             AppSession.uiTestingAnimationSleepDuration(for: .milliseconds(600)),
             .milliseconds(600)
         )
-        XCTAssertNil(AppSession.uiTestingAnimationSleepDuration(for: .seconds(1)))
+        XCTAssertEqual(
+            AppSession.uiTestingAnimationSleepDuration(for: .milliseconds(700)),
+            .milliseconds(700)
+        )
+        XCTAssertNil(AppSession.uiTestingAnimationSleepDuration(for: .milliseconds(701)))
         XCTAssertNil(AppSession.uiTestingAnimationSleepDuration(for: .zero))
     }
 
@@ -72,6 +76,8 @@ final class AppSessionTests: XCTestCase {
         let humanSeat = try SeatID(8)
         let first = try session.uiTestingSeatProfiles(humanSeat: humanSeat)
         let second = try session.uiTestingSeatProfiles(humanSeat: humanSeat)
+        let third = try session.uiTestingSeatProfiles(humanSeat: humanSeat)
+        let fourth = try session.uiTestingSeatProfiles(humanSeat: humanSeat)
 
         let firstBots = first.filter { $0.id != humanSeat }.map { $0.displayName }
         let secondBots = second.filter { $0.id != humanSeat }.map { $0.displayName }
@@ -80,6 +86,10 @@ final class AppSessionTests: XCTestCase {
         XCTAssertEqual(secondBots.count, 8)
         XCTAssertEqual(Set(secondBots).count, 8)
         XCTAssertNotEqual(firstBots, secondBots)
+        XCTAssertEqual(Set(third.filter { $0.id != humanSeat }.map(\.displayName)).count, 8)
+        XCTAssertEqual(Set(fourth.filter { $0.id != humanSeat }.map(\.displayName)).count, 8)
+        XCTAssertNotEqual(secondBots, third.filter { $0.id != humanSeat }.map(\.displayName))
+        XCTAssertEqual(firstBots, fourth.filter { $0.id != humanSeat }.map(\.displayName))
     }
 
     @MainActor

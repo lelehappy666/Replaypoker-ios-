@@ -16,8 +16,6 @@ struct PokerTableView: View {
     @State private var actionTask: Task<Void, Never>?
     @State private var retryTask: Task<Void, Never>?
     @State private var uiTestingWinnerAnnouncements: [String] = []
-    @State private var uiTestingPayoutTask: Task<Void, Never>?
-    @State private var hasStartedUITestingPayoutScenario = false
 
     private var state: TableViewState { coordinator.state }
 
@@ -53,7 +51,9 @@ struct PokerTableView: View {
 
                 if uiTestingWinnerAnnouncementLogEnabled {
                     Color.clear
-                        .frame(width: 0, height: 0)
+                        .frame(width: 1, height: 1)
+                        .opacity(0.001)
+                        .allowsHitTesting(false)
                         .accessibilityElement()
                         .accessibilityLabel("测试派彩公告记录")
                         .accessibilityValue(uiTestingWinnerAnnouncements.joined(separator: ","))
@@ -133,7 +133,6 @@ struct PokerTableView: View {
         .onChange(of: state.animationSequence) { _, sequence in
             present(state.animation, sequence: sequence)
         }
-        .onAppear { startUITestingPayoutScenarioIfNeeded() }
         .onDisappear {
             cancelViewTasks()
         }
@@ -431,11 +430,9 @@ struct PokerTableView: View {
         actionTask?.cancel()
         retryTask?.cancel()
         animationResetTask?.cancel()
-        uiTestingPayoutTask?.cancel()
         actionTask = nil
         retryTask = nil
         animationResetTask = nil
-        uiTestingPayoutTask = nil
     }
 
     private func present(_ event: TableAnimationEvent?, sequence: Int) {
@@ -481,54 +478,13 @@ struct PokerTableView: View {
 
     private var uiTestingWinnerAnnouncementLogEnabled: Bool {
         let arguments = ProcessInfo.processInfo.arguments
+        #if DEBUG
         return arguments.contains("-uiTesting")
             && arguments.contains("-uiTestingPayoutLog")
-            && uiTestingPayoutScenario != nil
-    }
-
-    private var uiTestingPayoutScenario: String? {
-        let arguments = ProcessInfo.processInfo.arguments
-        guard arguments.contains("-uiTesting"),
-              let flag = arguments.firstIndex(of: "-uiTestingPayoutScenario"),
-              arguments.indices.contains(flag + 1)
-        else { return nil }
-        switch arguments[flag + 1] {
-        case "single", "split": return arguments[flag + 1]
-        default: return nil
-        }
-    }
-
-    private func startUITestingPayoutScenarioIfNeeded() {
-        guard let scenario = uiTestingPayoutScenario,
-              !hasStartedUITestingPayoutScenario
-        else { return }
-        hasStartedUITestingPayoutScenario = true
-        uiTestingPayoutTask = Task { @MainActor in
-            do {
-                switch scenario {
-                case "single":
-                    let seat = try SeatID(4)
-                    present(.awardPot(seat: seat, amount: try Chips(800)), sequence: -10_001)
-                    try? await Task.sleep(for: .milliseconds(650))
-                    guard !Task.isCancelled else { return }
-                    present(.highlightWinner(seat), sequence: -10_002)
-                case "split":
-                    let first = try SeatID(8)
-                    let second = try SeatID(2)
-                    present(.awardPot(seat: first, amount: try Chips(500)), sequence: -10_011)
-                    try? await Task.sleep(for: .milliseconds(650))
-                    guard !Task.isCancelled else { return }
-                    present(.awardPot(seat: second, amount: try Chips(250)), sequence: -10_012)
-                    try? await Task.sleep(for: .milliseconds(650))
-                    guard !Task.isCancelled else { return }
-                    present(.highlightWinner(second), sequence: -10_013)
-                default:
-                    return
-                }
-            } catch {
-                return
-            }
-        }
+            && arguments.contains("-uiTestingPayoutScenario")
+        #else
+        return false
+        #endif
     }
 }
 

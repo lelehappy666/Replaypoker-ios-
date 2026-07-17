@@ -124,8 +124,8 @@ final class CoreFlowUITests: XCTestCase {
 
         let records = payoutRecords(in: app, expectedCount: 2)
         XCTAssertEqual(records, [
-            "8|RiverAce|500",
             "2|\(displayName(in: app, forSeat: 2))|250",
+            "8|RiverAce|500",
         ])
         XCTAssertEqual(Set(records).count, 2)
     }

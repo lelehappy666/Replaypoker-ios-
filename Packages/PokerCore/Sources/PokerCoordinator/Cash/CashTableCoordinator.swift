@@ -417,6 +417,53 @@ public final class CashTableCoordinator {
         state = replacingState(phase: .suspended, secondsRemaining: nil)
     }
 
+    #if DEBUG
+    public func presentUITestingPayout(
+        events: [PublicGameEvent]
+    ) async throws {
+        guard state.phase == .awaitingNextHand,
+              let dealer = store.cashSession?.dealer
+        else { throw PokerCoordinatorError.invalidPhase }
+        let animations = try CashTableAnimationMapper.map(
+            events,
+            humanSeat: humanSeat,
+            humanCards: [],
+            beforeAction: nil,
+            dealer: dealer
+        )
+        var street: Street?
+        for animation in animations {
+            let (next, overflow) = animationSequence.addingReportingOverflow(1)
+            guard !overflow else { throw PokerCoordinatorError.animationSequenceOverflow }
+            animationSequence = next
+            if case let .highlightWinner(seat) = animation { winnerSeats.insert(seat) }
+            state = TableViewState(
+                handID: state.handID,
+                stateVersion: stateVersion,
+                animationSequence: animationSequence,
+                phase: .settling,
+                seats: state.seats,
+                communityCards: state.communityCards,
+                pot: state.pot,
+                controls: nil,
+                secondsRemaining: nil,
+                winners: winnerSeats,
+                errorMessage: nil,
+                animation: animation
+            )
+            try await dependencies.sleep(
+                CashTableAnimationTiming.duration(
+                    for: animation,
+                    street: street,
+                    reduceMotion: dependencies.reduceMotion
+                )
+            )
+            if case let .streetChanged(value) = animation { street = value }
+        }
+        state = stateReplacing(phase: .awaitingNextHand, winners: winnerSeats)
+    }
+    #endif
+
     package func runUntilHumanOrSettlement() async throws {
         while store.cashSession?.phase == .handInProgress,
               store.cashSession?.currentActor != humanSeat,

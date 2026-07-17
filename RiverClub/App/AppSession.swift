@@ -307,6 +307,47 @@ final class AppSession {
     func uiTestingSeatProfiles(humanSeat: SeatID) throws -> [TableSeatProfile] {
         try dependencies.makeSeatProfiles(humanSeat)
     }
+
+    func playUITestingPayoutScenarioIfRequested() async {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("-uiTesting"),
+              let flag = arguments.firstIndex(of: "-uiTestingPayoutScenario"),
+              arguments.indices.contains(flag + 1),
+              let coordinator = tableCoordinator
+        else { return }
+        do {
+            let seat2 = try SeatID(2)
+            let seat4 = try SeatID(4)
+            let seat8 = try SeatID(8)
+            let events: [PublicGameEvent]
+            switch arguments[flag + 1] {
+            case "single":
+                events = [.potAwarded(
+                    potIndex: 0,
+                    winners: [seat4],
+                    amounts: [seat4: try Chips(800)]
+                )]
+            case "split":
+                events = [
+                    .potAwarded(
+                        potIndex: 0,
+                        winners: [seat8, seat2],
+                        amounts: [seat8: try Chips(500), seat2: try Chips(250)]
+                    ),
+                    .potAwarded(
+                        potIndex: 1,
+                        winners: [seat8],
+                        amounts: [seat8: try Chips(0)]
+                    ),
+                ]
+            default:
+                return
+            }
+            try await coordinator.presentUITestingPayout(events: events)
+        } catch {
+            return
+        }
+    }
     #endif
 
     func continueAsGuest() { route = .lobby }
