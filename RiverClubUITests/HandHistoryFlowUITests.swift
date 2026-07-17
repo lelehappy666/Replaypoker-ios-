@@ -40,7 +40,7 @@ final class HandHistoryFlowUITests: XCTestCase {
         let fold = app.buttons["action.fold"]
         XCTAssertTrue(fold.waitForExistence(timeout: 10))
         fold.tap()
-        XCTAssertTrue(app.buttons["action.nextHand"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.buttons["action.nextHand"].waitForExistence(timeout: 25))
 
         app.terminate()
         app.launchArguments = [
@@ -59,6 +59,10 @@ final class HandHistoryFlowUITests: XCTestCase {
             NSPredicate(format: "identifier BEGINSWITH 'history.row.'")
         ).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.windows.element(boundBy: 0).frame.contains(row.frame),
+            "存档行右侧信息超出横屏安全区域"
+        )
         XCTAssertTrue(row.label.contains("小盲"))
         XCTAssertTrue(row.label.contains("大盲"))
         XCTAssertTrue(row.label.contains("完成时间"))

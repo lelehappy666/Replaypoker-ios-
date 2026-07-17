@@ -26,6 +26,18 @@ final class LandscapeLayoutUITests: XCTestCase {
         let tournamentsNavigation = app.buttons["sidebar.tournaments"]
         XCTAssertTrue(tournamentsNavigation.exists)
         tournamentsNavigation.tap()
+        let registrationButton = app.buttons["免费报名"]
+        XCTAssertTrue(registrationButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(registrationButton.isEnabled)
+        XCTAssertTrue(
+            registrationButton.label.contains("报名"),
+            "锦标赛报名按钮文案不可读"
+        )
+        XCTAssertTrue(
+            app.windows.element(boundBy: 0).frame.contains(
+                registrationButton.frame
+            )
+        )
         for state in ["upcoming", "registered", "active", "finished"] {
             let tab = app.buttons["tournaments.tab.\(state)"]
             XCTAssertTrue(tab.waitForExistence(timeout: 5))

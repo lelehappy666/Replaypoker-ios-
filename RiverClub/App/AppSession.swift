@@ -238,7 +238,7 @@ final class AppSession {
             at: directory,
             withIntermediateDirectories: true
         )
-        let ids = UITestIDSequence()
+        let ids = UITestIDSequence(namespace: UUID().uuidString)
         let store = try LocalPokerStore.open(
             directory: directory,
             clock: AppSessionClock()
@@ -247,9 +247,13 @@ final class AppSession {
             pokerStore: store,
             botSettingsRepository: MemoryBotSettingsRepository(initial: .recommended),
             dependencies: AppSessionDependencies(
-                nextSessionID: { try SessionID("ui-session") },
+                nextSessionID: {
+                    try SessionID(ids.nextSessionID())
+                },
                 nextBusinessID: { purpose in
-                    try BusinessID("ui:\(purpose)")
+                    try BusinessID(
+                        "ui:\(purpose):\(ids.nextBusinessID())"
+                    )
                 },
                 makeRuntimeDependencies: { _ in
                     TableRuntimeDependencies(
@@ -723,20 +727,33 @@ final class AppSession {
 
 private final class UITestIDSequence: @unchecked Sendable {
     private let lock = NSLock()
+    private let namespace: String
+    private var session = 0
     private var hand = 0
     private var business = 0
+
+    init(namespace: String) {
+        self.namespace = namespace
+    }
+
+    func nextSessionID() -> String {
+        lock.withLock {
+            session += 1
+            return "ui-session-\(namespace)-\(session)"
+        }
+    }
 
     func nextHandID() -> String {
         lock.withLock {
             hand += 1
-            return "ui-hand-\(hand)"
+            return "ui-hand-\(namespace)-\(hand)"
         }
     }
 
-    func nextBusinessID() -> Int {
+    func nextBusinessID() -> String {
         lock.withLock {
             business += 1
-            return business
+            return "\(namespace)-\(business)"
         }
     }
 }
