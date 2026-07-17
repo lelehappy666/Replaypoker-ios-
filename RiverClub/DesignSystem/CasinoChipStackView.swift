@@ -105,6 +105,7 @@ enum CasinoChipAmountPresentation {
 
 struct CasinoChipStackView: View {
     let amount: Int
+    /// 同时缩放筹码与完整金额文本，并以中心为锚点；调用方需预留缩放后的外框。
     let scale: CGFloat
     private let maximumVisibleChips: Int
 

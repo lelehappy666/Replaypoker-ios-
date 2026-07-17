@@ -74,8 +74,9 @@ struct PokerTableView: View {
                 }
 
                 ForEach(Array(state.seats.enumerated()), id: \.element.id) { index, seat in
-                    if positions.indices.contains(index), seat.committedThisStreet.rawValue > 0 {
-                        let betFrame = PokerTableLayout.betFrame(forSeatAt: index, canvas: proxy.size)
+                    if positions.indices.contains(index),
+                       seat.committedThisStreet.rawValue > 0,
+                       let betFrame = PokerTableLayout.betFrame(forSeatAt: index, canvas: proxy.size) {
                         ZStack {
                             CasinoChipStackView(
                                 amount: seat.committedThisStreet.rawValue,
@@ -146,6 +147,8 @@ struct PokerTableView: View {
 
     private func centerBoard(canvas: CGSize) -> some View {
         let board = PokerTableLayout.centerBoardRegion(for: canvas)
+        let currentHandFrame = PokerTableLayout.currentHandFrame(for: canvas)
+        let potFrame = PokerTableLayout.potFrame(for: canvas)
 
         return GeometryReader { proxy in
             if let currentHandText {
@@ -155,7 +158,11 @@ struct PokerTableView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.76)
                     .accessibilityIdentifier("table.currentHand")
-                    .position(x: proxy.size.width / 2, y: 8)
+                    .frame(width: currentHandFrame.width, height: currentHandFrame.height)
+                    .position(
+                        x: currentHandFrame.midX - board.minX,
+                        y: currentHandFrame.midY - board.minY
+                    )
             }
 
             HStack(spacing: PokerTableLayout.holeCardSpacing) {
@@ -190,18 +197,26 @@ struct PokerTableView: View {
                 y: PokerTableLayout.communityCardFrames(for: canvas)[0].midY - board.minY
             )
 
-            VStack(spacing: 0) {
+            HStack(spacing: 4) {
                 Text("底池")
                     .font(.caption2.monospacedDigit().weight(.bold))
                     .foregroundStyle(RCTheme.primaryText)
-                CasinoChipStackView(
-                    amount: state.pot.rawValue,
-                    scale: reduceMotion ? 0.72 : 0.72 + animationPresentation.chipOffset / 100,
-                    maximumVisibleChips: 5
-                )
-                .accessibilityIdentifier("table.pot")
+                ZStack {
+                    CasinoChipStackView(
+                        amount: state.pot.rawValue,
+                        scale: 0.55,
+                        maximumVisibleChips: 3
+                    )
+                }
+                .frame(width: 44, height: 30)
             }
-            .position(x: proxy.size.width / 2, y: proxy.size.height - 24)
+            .frame(width: potFrame.width, height: potFrame.height)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("table.pot")
+            .position(
+                x: potFrame.midX - board.minX,
+                y: potFrame.midY - board.minY
+            )
         }
     }
 

@@ -11,6 +11,8 @@ enum PokerTableLayout {
     static let humanHoleCardSize = CGSize(width: 46, height: 62)
     static let botHoleCardSize = CGSize(width: 38, height: 52)
     static let betStackBaseSize = CGSize(width: 68, height: 50)
+    static let potSize = CGSize(width: 110, height: 34)
+    static let currentHandHeight: CGFloat = 14
 
     static func seatFrameSize(for canvas: CGSize) -> CGSize {
         let canvasScale = min(canvas.width / 956, canvas.height / 440)
@@ -102,8 +104,30 @@ enum PokerTableLayout {
         return CGPoint(x: board.midX, y: board.midY)
     }
 
-    static func betPosition(forSeatAt index: Int, canvas: CGSize) -> CGPoint {
-        let frame = betFrame(forSeatAt: index, canvas: canvas)
+    static func currentHandFrame(for canvas: CGSize) -> CGRect {
+        let board = centerBoardRegion(for: canvas)
+        let width = min(180, board.width - 16)
+        return CGRect(
+            x: board.midX - width / 2,
+            y: board.minY + 6,
+            width: width,
+            height: currentHandHeight
+        )
+    }
+
+    static func potFrame(for canvas: CGSize) -> CGRect {
+        let board = centerBoardRegion(for: canvas)
+        let slotBottom = communityCardFrames(for: canvas).map(\.maxY).max() ?? board.minY
+        return CGRect(
+            x: board.midX - potSize.width / 2,
+            y: slotBottom + 4,
+            width: potSize.width,
+            height: potSize.height
+        )
+    }
+
+    static func betPosition(forSeatAt index: Int, canvas: CGSize) -> CGPoint? {
+        guard let frame = betFrame(forSeatAt: index, canvas: canvas) else { return nil }
         return CGPoint(x: frame.midX, y: frame.midY)
     }
 
@@ -111,7 +135,7 @@ enum PokerTableLayout {
         seatFrameSize(for: canvas).width / seatSize.width
     }
 
-    static func betFrame(forSeatAt index: Int, canvas: CGSize) -> CGRect {
+    static func betFrame(forSeatAt index: Int, canvas: CGSize) -> CGRect? {
         let seatFrames = seatFrames(for: canvas)
         let scale = betScale(for: canvas)
         let size = CGSize(
@@ -119,14 +143,7 @@ enum PokerTableLayout {
             height: betStackBaseSize.height * scale
         )
         let center = tableCenter(for: canvas)
-        guard seatFrames.indices.contains(index) else {
-            return CGRect(
-                x: center.x - size.width / 2,
-                y: center.y - size.height / 2,
-                width: size.width,
-                height: size.height
-            )
-        }
+        guard seatFrames.indices.contains(index) else { return nil }
 
         let seat = seatFrames[index]
         let seatCenter = CGPoint(x: seat.midX, y: seat.midY)
@@ -155,17 +172,7 @@ enum PokerTableLayout {
             return frame
         }
 
-        // 横屏安全画布均有候选空位；此回退仅保护异常尺寸下的 API 总有返回值。
-        let fallback = CGPoint(
-            x: seatCenter.x + (center.x - seatCenter.x) * 0.52,
-            y: seatCenter.y + (center.y - seatCenter.y) * 0.52
-        )
-        return CGRect(
-            x: fallback.x - size.width / 2,
-            y: fallback.y - size.height / 2,
-            width: size.width,
-            height: size.height
-        )
+        return nil
     }
 
     static func vectorFromPot(
@@ -226,20 +233,25 @@ struct PokerSeatView: View {
 
                 VStack(alignment: .leading, spacing: 0) {
                     Text(seat.displayName)
-                        .font(.caption2.weight(.semibold))
+                        .font(.system(size: 9, weight: .semibold))
                         .lineLimit(1)
+                        .minimumScaleFactor(0.72)
                     Text(seat.stack.rawValue.formatted())
-                        .font(.caption2.monospacedDigit())
+                        .font(.system(size: 9, design: .monospaced))
                         .foregroundStyle(RCTheme.gold)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
                     if showsStatus {
                         Text(statusText)
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: 8, weight: .bold))
                             .foregroundStyle(RCTheme.gold)
                             .lineLimit(1)
+                            .minimumScaleFactor(0.72)
                             .accessibilityIdentifier("table.seatStatus.\(seat.id.rawValue)")
                     }
                 }
             }
+            .frame(height: 30)
 
         }
         .foregroundStyle(RCTheme.primaryText)
@@ -252,7 +264,6 @@ struct PokerSeatView: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(isWinner || seat.isCurrentActor ? RCTheme.gold : .clear, lineWidth: 2)
         }
-        .scaleEffect(reduceMotion ? 1 : animation.winnerScale(for: seat.id))
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityDescription)
     }

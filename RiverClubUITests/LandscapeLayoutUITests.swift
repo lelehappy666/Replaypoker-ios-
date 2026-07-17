@@ -152,6 +152,22 @@ final class LandscapeLayoutUITests: XCTestCase {
             }
         }
 
+        let currentHand = app.descendants(matching: .any)["table.currentHand"]
+        let pot = app.descendants(matching: .any)["table.pot"]
+        XCTAssertTrue(currentHand.exists)
+        XCTAssertTrue(pot.exists)
+        XCTAssertTrue(windowFrame.contains(currentHand.frame))
+        XCTAssertTrue(windowFrame.contains(pot.frame))
+        XCTAssertFalse(currentHand.frame.intersects(pot.frame))
+        XCTAssertFalse(pot.frame.intersects(app.otherElements["table.betControls"].frame))
+        for seatFrame in seatFrames {
+            XCTAssertFalse(pot.frame.intersects(seatFrame))
+        }
+        for slotFrame in communitySlotFrames {
+            XCTAssertFalse(currentHand.frame.intersects(slotFrame))
+            XCTAssertFalse(pot.frame.intersects(slotFrame))
+        }
+
         let localAvatar = app.descendants(matching: .any)["table.localAvatar"]
         XCTAssertTrue(localAvatar.waitForExistence(timeout: 5))
         let avatarFrame = localAvatar.frame

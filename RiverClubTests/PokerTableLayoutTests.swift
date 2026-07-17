@@ -88,7 +88,9 @@ final class PokerTableLayoutTests: XCTestCase {
             let operation = PokerTableLayout.betControlRegion(for: canvas)
 
             for index in seatFrames.indices {
-                let betFrame = PokerTableLayout.betFrame(forSeatAt: index, canvas: canvas)
+                guard let betFrame = PokerTableLayout.betFrame(forSeatAt: index, canvas: canvas) else {
+                    return XCTFail("支持的画布必须为座位 \(index) 提供安全下注框")
+                }
                 let position = CGPoint(x: betFrame.midX, y: betFrame.midY)
                 let seatCenter = CGPoint(x: seatFrames[index].midX, y: seatFrames[index].midY)
                 let centerVector = CGPoint(x: center.x - seatCenter.x, y: center.y - seatCenter.y)
@@ -130,10 +132,39 @@ final class PokerTableLayoutTests: XCTestCase {
             }
 
             for index in seatFrames.indices {
-                let bet = PokerTableLayout.betFrame(forSeatAt: index, canvas: canvas)
+                guard let bet = PokerTableLayout.betFrame(forSeatAt: index, canvas: canvas) else {
+                    return XCTFail("支持的画布必须为座位 \(index) 提供安全下注框")
+                }
                 XCTAssertTrue(safeCanvas.contains(bet))
                 XCTAssertFalse(operation.intersects(bet))
                 XCTAssertTrue(seatFrames.allSatisfy { !$0.intersects(bet) })
+            }
+
+            XCTAssertNil(PokerTableLayout.betFrame(forSeatAt: -1, canvas: canvas))
+            XCTAssertNil(PokerTableLayout.betFrame(forSeatAt: seatFrames.count, canvas: canvas))
+        }
+    }
+
+    func testCenterBoardKeepsHandPotAndCommunitySlotsSeparate() {
+        for canvas in canvases {
+            let safeCanvas = PokerTableLayout.safeCanvas(for: canvas)
+            let board = PokerTableLayout.centerBoardRegion(for: canvas)
+            let slots = PokerTableLayout.communityCardFrames(for: canvas)
+            let hand = PokerTableLayout.currentHandFrame(for: canvas)
+            let pot = PokerTableLayout.potFrame(for: canvas)
+            let seats = PokerTableLayout.seatFrames(for: canvas)
+            let action = PokerTableLayout.betControlRegion(for: canvas)
+
+            XCTAssertTrue(board.contains(hand))
+            XCTAssertTrue(board.contains(pot))
+            XCTAssertTrue(safeCanvas.contains(hand))
+            XCTAssertTrue(safeCanvas.contains(pot))
+            XCTAssertFalse(hand.intersects(pot))
+            XCTAssertFalse(action.intersects(pot))
+            XCTAssertTrue(seats.allSatisfy { !$0.intersects(pot) })
+            for slot in slots {
+                XCTAssertFalse(hand.intersects(slot))
+                XCTAssertFalse(pot.intersects(slot))
             }
         }
     }
