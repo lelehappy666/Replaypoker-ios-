@@ -7,6 +7,19 @@ import XCTest
 @testable import RiverClub
 
 final class AppSessionTests: XCTestCase {
+    func testFourMainPagesUseOneStableShellWithoutNavigationStack() throws {
+        let source = try String(
+            contentsOfFile: #filePath.replacingOccurrences(
+                of: "RiverClubTests/AppSessionTests.swift",
+                with: "RiverClub/App/AppRootView.swift"
+            ),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(source.contains("SidebarPageShell"))
+        XCTAssertFalse(source.contains("NavigationStack"))
+    }
+
     func testReducedMotionDisablesBuyInAnimation() {
         XCTAssertFalse(MotionPolicy.shouldAnimate(reduceMotion: true))
         XCTAssertTrue(MotionPolicy.shouldAnimate(reduceMotion: false))

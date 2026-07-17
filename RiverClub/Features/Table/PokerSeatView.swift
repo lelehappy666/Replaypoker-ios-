@@ -2,21 +2,23 @@ import PokerCoordinator
 import SwiftUI
 
 enum PokerTableLayout {
+    /// 以确认效果图 1844 × 853 的一半作为唯一布局坐标系。
+    /// 实际设备只允许整体等比缩放，禁止座位、牌桌和操作区分别自适应。
+    static let referenceCanvas = CGSize(width: 922, height: 426.5)
     static let seatSize = CGSize(width: 126, height: 116)
     static let seatContentSize = CGSize(width: 122, height: 112)
-    static let betControlSize = CGSize(width: 280, height: 128)
+    static let betControlSize = CGSize(width: 265, height: 112)
     static let cardAspectRatio: CGFloat = 34.0 / 46.0
-    static let holeCardSpacing: CGFloat = 4
-    static let communityCardSize = CGSize(width: 46, height: 62)
-    static let humanHoleCardSize = CGSize(width: 46, height: 62)
-    static let botHoleCardSize = CGSize(width: 38, height: 52)
+    static let holeCardSpacing: CGFloat = 7
+    static let communityCardSize = CGSize(width: 50, height: 56)
+    static let humanHoleCardSize = CGSize(width: 38, height: 50)
+    static let botHoleCardSize = CGSize(width: 28, height: 38)
     static let betStackBaseSize = CGSize(width: 68, height: 44)
     static let potSize = CGSize(width: 142, height: 64)
     static let currentHandHeight: CGFloat = 14
 
     static func seatFrameSize(for canvas: CGSize) -> CGSize {
-        let canvasScale = min(canvas.width / 956, canvas.height / 440)
-        let compactScale = min(1, max(0.72, 1 - (1 - canvasScale) * 1.4))
+        let compactScale = referenceScale(for: canvas)
         return CGSize(
             width: seatSize.width * compactScale,
             height: seatSize.height * compactScale
@@ -24,23 +26,52 @@ enum PokerTableLayout {
     }
 
     static func positions(for canvas: CGSize) -> [CGPoint] {
-        let frameSize = seatFrameSize(for: canvas)
-        let leftX = frameSize.width / 2 + 2
-        let rightX = canvas.width - frameSize.width / 2 - 2
+        referenceSeatPositions.map { transform($0, to: canvas) }
+    }
 
-        // 严格对应横屏效果图：三席在上、两席在左、一席在右、
-        // 两席在下，本人位于底部中央；所有机器人座位使用同一尺寸。
-        return [
-            .init(x: canvas.width * 0.12, y: canvas.height * 0.15),
-            .init(x: canvas.width * 0.40, y: canvas.height * 0.14),
-            .init(x: canvas.width * 0.68, y: canvas.height * 0.15),
-            .init(x: rightX - 36, y: canvas.height * 0.38),
-            .init(x: leftX, y: canvas.height * 0.30),
-            .init(x: leftX, y: canvas.height * 0.55),
-            .init(x: canvas.width * 0.12, y: canvas.height * 0.72),
-            .init(x: canvas.width * 0.30, y: canvas.height * 0.78),
-            .init(x: canvas.width * 0.46, y: canvas.height * 0.82),
-        ]
+    private static let referenceSeatPositions: [CGPoint] = [
+        .init(x: 218, y: 75),
+        .init(x: 451, y: 72),
+        .init(x: 670, y: 74),
+        .init(x: 828, y: 202),
+        .init(x: 82, y: 170),
+        .init(x: 82, y: 269),
+        .init(x: 201, y: 340),
+        .init(x: 337, y: 348),
+        .init(x: 476, y: 350),
+    ]
+
+    static func referenceScale(for canvas: CGSize) -> CGFloat {
+        min(canvas.width / referenceCanvas.width, canvas.height / referenceCanvas.height)
+    }
+
+    private static func referenceOrigin(for canvas: CGSize) -> CGPoint {
+        let scale = referenceScale(for: canvas)
+        return CGPoint(
+            x: (canvas.width - referenceCanvas.width * scale) / 2,
+            y: (canvas.height - referenceCanvas.height * scale) / 2
+        )
+    }
+
+    private static func transform(_ point: CGPoint, to canvas: CGSize) -> CGPoint {
+        let scale = referenceScale(for: canvas)
+        let origin = referenceOrigin(for: canvas)
+        return CGPoint(x: origin.x + point.x * scale, y: origin.y + point.y * scale)
+    }
+
+    private static func transform(_ rect: CGRect, to canvas: CGSize) -> CGRect {
+        let scale = referenceScale(for: canvas)
+        let origin = referenceOrigin(for: canvas)
+        return CGRect(
+            x: origin.x + rect.minX * scale,
+            y: origin.y + rect.minY * scale,
+            width: rect.width * scale,
+            height: rect.height * scale
+        )
+    }
+
+    static func tableSurfaceFrame(for canvas: CGSize) -> CGRect {
+        transform(CGRect(x: 65, y: 73, width: 760, height: 292), to: canvas)
     }
 
     static func seatFrames(for canvas: CGSize) -> [CGRect] {
@@ -60,26 +91,15 @@ enum PokerTableLayout {
     }
 
     static func topBarRegion(for canvas: CGSize) -> CGRect {
-        CGRect(x: 0, y: 0, width: canvas.width, height: 48)
+        transform(CGRect(x: 30, y: 10, width: 862, height: 44), to: canvas)
     }
 
     static func centerBoardRegion(for canvas: CGSize) -> CGRect {
-        let size = CGSize(width: min(320, canvas.width * 0.40), height: 158)
-        return CGRect(
-            x: canvas.width * 0.5 - size.width / 2,
-            y: canvas.height * 0.46 - size.height / 2,
-            width: size.width,
-            height: size.height
-        )
+        transform(CGRect(x: 300, y: 140, width: 320, height: 164), to: canvas)
     }
 
     static func betControlRegion(for canvas: CGSize) -> CGRect {
-        CGRect(
-            x: canvas.width - betControlSize.width,
-            y: canvas.height - betControlSize.height,
-            width: betControlSize.width,
-            height: betControlSize.height
-        )
+        transform(CGRect(x: 624, y: 296, width: 265, height: 112), to: canvas)
     }
 
     static func communityCardFrames(for canvas: CGSize) -> [CGRect] {
@@ -105,12 +125,12 @@ enum PokerTableLayout {
 
     static func currentHandFrame(for canvas: CGSize) -> CGRect {
         let board = centerBoardRegion(for: canvas)
-        let width = min(180, board.width - 16)
+        let width = min(180 * referenceScale(for: canvas), board.width - 16)
         return CGRect(
             x: board.midX - width / 2,
-            y: board.minY + 6,
+            y: board.minY + 1,
             width: width,
-            height: currentHandHeight
+            height: currentHandHeight * referenceScale(for: canvas)
         )
     }
 

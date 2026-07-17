@@ -104,50 +104,30 @@ struct AppRootView: View {
 
     private var appShell: some View {
         ZStack {
-            NavigationStack {
-                Group {
-                    switch session.route {
-                    case .login:
-                        LoginView(
-                            onAppleLogin: session.continueAsGuest,
-                            onGuestLogin: session.continueAsGuest
+            Group {
+                switch session.route {
+                case .login:
+                    LoginView(
+                        onAppleLogin: session.continueAsGuest,
+                        onGuestLogin: session.continueAsGuest
+                    )
+                case .table:
+                    if let coordinator = session.tableCoordinator,
+                       let table = session.selectedTable {
+                        PokerTableView(
+                            coordinator: coordinator,
+                            table: table,
+                            balance: session.chipBalance,
+                            sendIntent: session.sendTableIntent,
+                            onRequestLeave: session.requestTableDeparture
                         )
-                    case .table:
-                        if let coordinator = session.tableCoordinator,
-                           let table = session.selectedTable {
-                            PokerTableView(
-                                coordinator: coordinator,
-                                table: table,
-                                balance: session.chipBalance,
-                                sendIntent: session.sendTableIntent,
-                                onRequestLeave: session.requestTableDeparture
-                            )
-                        }
-                    case .lobby, .tournaments, .tables, .tableBrowser, .profile:
-                        GeometryReader { proxy in
-                            ZStack {
-                                AppRouteBackground(route: session.route)
-
-                                HStack(spacing: AppSidebar.contentGap) {
-                                    AppSidebar(selection: session.route, onSelect: session.open)
-                                    routedSidebarContent
-                                        .frame(
-                                            maxWidth: .infinity,
-                                            maxHeight: .infinity,
-                                            alignment: .topLeading
-                                        )
-                                        .clipped()
-                                }
-                                // NavigationStack 已经把内容放进系统安全区，
-                                // 这里只保留固定外边距，避免不同页面重复计算刘海宽度。
-                                .padding(.horizontal, AppSidebar.minimumSafeInset)
-                                .padding(.vertical, AppSidebar.shellVerticalPadding)
-                            }
-                            .frame(width: proxy.size.width, height: proxy.size.height)
-                        }
-                        .transaction { transaction in
-                            transaction.disablesAnimations = true
-                        }
+                    }
+                case .lobby, .tournaments, .tables, .tableBrowser, .profile:
+                    SidebarPageShell(
+                        route: session.route,
+                        onSelect: session.open
+                    ) {
+                        routedSidebarContent
                     }
                 }
             }
@@ -264,6 +244,49 @@ struct AppRootView: View {
         }
     }
 
+}
+
+/// 四个主页面共用同一个固定外壳，切换时只替换右侧内容，避免安全区、
+/// 系统导航容器和页面自身尺寸共同参与布局而产生跳动或缩放。
+private struct SidebarPageShell<Content: View>: View {
+    let route: AppRoute
+    let onSelect: (AppRoute) -> Void
+    private let content: Content
+
+    init(
+        route: AppRoute,
+        onSelect: @escaping (AppRoute) -> Void,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.route = route
+        self.onSelect = onSelect
+        self.content = content()
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack {
+                AppRouteBackground(route: route)
+
+                HStack(spacing: AppSidebar.contentGap) {
+                    AppSidebar(selection: route, onSelect: onSelect)
+                    content
+                        .frame(
+                            maxWidth: .infinity,
+                            maxHeight: .infinity,
+                            alignment: .topLeading
+                        )
+                        .clipped()
+                }
+                .padding(.horizontal, AppSidebar.minimumSafeInset)
+                .padding(.vertical, AppSidebar.shellVerticalPadding)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+        .transaction { transaction in
+            transaction.disablesAnimations = true
+        }
+    }
 }
 
 #if DEBUG

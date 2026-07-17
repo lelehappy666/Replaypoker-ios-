@@ -21,11 +21,52 @@ struct PokerTableView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let positions = PokerTableLayout.positions(for: proxy.size)
-            let seatFrameSize = PokerTableLayout.seatFrameSize(for: proxy.size)
-            let betFrames = PokerTableLayout.betFrames(for: proxy.size)
+            let reference = PokerTableLayout.referenceCanvas
+            let scale = PokerTableLayout.referenceScale(for: proxy.size)
 
-            ZStack {
+            tableCanvas(canvas: reference)
+                .frame(width: reference.width, height: reference.height)
+                .scaleEffect(scale)
+                .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+        }
+        .ignoresSafeArea()
+        .background {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.015, green: 0.075, blue: 0.072),
+                    RCTheme.background,
+                    Color.black,
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+        }
+        .onChange(of: state.animationSequence) { _, sequence in
+            present(state.animation, sequence: sequence)
+        }
+        #if DEBUG
+        .task { await startUITestingPayoutScenarioIfNeeded() }
+        #endif
+        .onDisappear {
+            cancelViewTasks()
+        }
+        .onChange(of: state.phase) { _, phase in
+            if phase == .suspended {
+                actionTask?.cancel()
+                retryTask?.cancel()
+            }
+        }
+    }
+
+    private func tableCanvas(canvas: CGSize) -> some View {
+        let positions = PokerTableLayout.positions(for: canvas)
+        let seatFrameSize = PokerTableLayout.seatFrameSize(for: canvas)
+        let betFrames = PokerTableLayout.betFrames(for: canvas)
+        let surface = PokerTableLayout.tableSurfaceFrame(for: canvas)
+        let action = PokerTableLayout.betControlRegion(for: canvas)
+
+        return ZStack {
                 Color.clear
                     .contentShape(Rectangle())
                     .accessibilityElement()
@@ -34,20 +75,22 @@ struct PokerTableView: View {
                     .accessibilityIdentifier("table.safeCanvas")
 
                 tableSurface
+                    .frame(width: surface.width, height: surface.height)
+                    .position(x: surface.midX, y: surface.midY)
 
-                centerBoard(canvas: proxy.size)
+                centerBoard(canvas: canvas)
                     .frame(
-                        width: PokerTableLayout.centerBoardRegion(for: proxy.size).width,
-                        height: PokerTableLayout.centerBoardRegion(for: proxy.size).height
+                        width: PokerTableLayout.centerBoardRegion(for: canvas).width,
+                        height: PokerTableLayout.centerBoardRegion(for: canvas).height
                     )
                     .position(
-                        x: PokerTableLayout.centerBoardRegion(for: proxy.size).midX,
-                        y: PokerTableLayout.centerBoardRegion(for: proxy.size).midY
+                        x: PokerTableLayout.centerBoardRegion(for: canvas).midX,
+                        y: PokerTableLayout.centerBoardRegion(for: canvas).midY
                     )
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("table.centerBoard")
 
-                awardAnimationLayer(canvas: proxy.size)
+                awardAnimationLayer(canvas: canvas)
 
                 if uiTestingWinnerAnnouncementLogEnabled {
                     Color.clear
@@ -95,7 +138,7 @@ struct PokerTableView: View {
                         ZStack {
                             CasinoChipPileView(
                                 amount: seat.committedThisStreet.rawValue,
-                                scale: PokerTableLayout.betScale(for: proxy.size),
+                                scale: PokerTableLayout.betScale(for: canvas),
                                 stackCount: seat.committedThisStreet.rawValue >= 500 ? 2 : 1
                             )
                         }
@@ -110,52 +153,24 @@ struct PokerTableView: View {
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("table.topBar")
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding(.horizontal, 30)
+                    .padding(.top, 10)
 
                 chatControls
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                    .padding(.leading, 28)
+                    .padding(.bottom, 18)
 
                 phaseControls
                     .frame(
-                        width: PokerTableLayout.betControlSize.width,
-                        height: PokerTableLayout.betControlSize.height,
+                        width: action.width,
+                        height: action.height,
                         alignment: .bottomTrailing
                     )
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("table.betControls")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .position(x: action.midX, y: action.midY)
             }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .safeAreaPadding(.horizontal, 16)
-        .safeAreaPadding(.vertical, 6)
-        .background {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.015, green: 0.075, blue: 0.072),
-                    RCTheme.background,
-                    Color.black,
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-        }
-        .onChange(of: state.animationSequence) { _, sequence in
-            present(state.animation, sequence: sequence)
-        }
-        #if DEBUG
-        .task { await startUITestingPayoutScenarioIfNeeded() }
-        #endif
-        .onDisappear {
-            cancelViewTasks()
-        }
-        .onChange(of: state.phase) { _, phase in
-            if phase == .suspended {
-                actionTask?.cancel()
-                retryTask?.cancel()
-            }
-        }
     }
 
     private var tableSurface: some View {
@@ -182,11 +197,6 @@ struct PokerTableView: View {
                     )
             }
             .shadow(color: .black.opacity(0.5), radius: reduceMotion ? 0 : 18, y: reduceMotion ? 0 : 8)
-            // 木质桌沿按确认效果图向左延伸，视觉背景可进入刘海区域；
-            // 玩家和按钮仍保留在系统安全画布内。
-            .padding(.leading, -45)
-            .padding(.trailing, 120)
-            .padding(.vertical, 34)
             .accessibilityHidden(true)
     }
 
