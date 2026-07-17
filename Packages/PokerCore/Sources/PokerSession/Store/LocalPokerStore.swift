@@ -288,7 +288,10 @@ public final class LocalPokerStore {
             }
             guard Set(archiveMetadata.seatDisplayNames.keys)
                     == Set(session.stacks.keys),
-                  archiveMetadata.humanSeat == session.humanSeat
+                  archiveMetadata.humanSeat == session.humanSeat,
+                  (archiveMetadata.seatAvatarAssetNames.map {
+                      Set($0.keys) == Set(session.stacks.keys)
+                  } ?? true)
             else {
                 throw PokerSessionError.invalidTable
             }

@@ -216,6 +216,7 @@ final class AppSessionFixture {
         let resolvedDependencies = dependencies ?? AppSessionDependencies(
             nextSessionID: liveDependencies.nextSessionID,
             nextBusinessID: liveDependencies.nextBusinessID,
+            makeSeatProfiles: liveDependencies.makeSeatProfiles,
             makeRuntimeDependencies: liveDependencies.makeRuntimeDependencies,
             makeCoordinator: { store, humanSeat, profiles, archiveMetadata, runtime in
                 archiveMetadataCapture.record(archiveMetadata)

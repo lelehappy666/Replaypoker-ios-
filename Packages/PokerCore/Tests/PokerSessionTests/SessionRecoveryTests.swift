@@ -12,6 +12,25 @@ import Testing
     #expect(decoded == legacy)
 }
 
+@Test func 旧存档缺少头像映射会保持为空且重新编码不补写() throws {
+    let metadata = try makeArchiveMetadata()
+    let encoded = try JSONEncoder().encode(metadata)
+    var object = try #require(
+        JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+    )
+    object.removeValue(forKey: "seatAvatarAssetNames")
+    let legacy = try JSONSerialization.data(withJSONObject: object)
+
+    let decoded = try JSONDecoder().decode(HandArchiveMetadata.self, from: legacy)
+    let reencoded = try JSONEncoder().encode(decoded)
+    let reencodedObject = try #require(
+        JSONSerialization.jsonObject(with: reencoded) as? [String: Any]
+    )
+
+    #expect(decoded.seatAvatarAssetNames == nil)
+    #expect(reencodedObject["seatAvatarAssetNames"] == nil)
+}
+
 @Test func 日期范围与牌桌筛选组合并保持稳定倒序() throws {
     let fixture = try HistoryQueryFixture()
     try fixture.save(table: "table-a", day: "2027-01-10", endedAt: 100, hand: 1)

@@ -79,7 +79,13 @@ public final class CashTableCoordinator {
               archiveMetadata.humanSeat == humanSeat,
               archiveMetadata.seatDisplayNames == Dictionary(
                 uniqueKeysWithValues: seatProfiles.map { ($0.id, $0.displayName) }
-              )
+              ),
+              archiveMetadata.seatAvatarAssetNames == nil
+                || archiveMetadata.seatAvatarAssetNames == Dictionary(
+                    uniqueKeysWithValues: seatProfiles.map {
+                        ($0.id, $0.avatarAssetName)
+                    }
+                )
         else {
             throw PokerCoordinatorError.missingObservation
         }
@@ -91,6 +97,7 @@ public final class CashTableCoordinator {
             return TableSeatState(
                 id: seat.id,
                 displayName: profile.displayName,
+                avatarAssetName: profile.avatarAssetName,
                 isHuman: seat.id == humanSeat,
                 stack: seat.stack,
                 committedThisStreet: try Chips(0),
@@ -355,6 +362,7 @@ public final class CashTableCoordinator {
             TableSeatState(
                 id: seat.id,
                 displayName: seat.displayName,
+                avatarAssetName: seat.avatarAssetName,
                 isHuman: seat.isHuman,
                 stack: seat.stack,
                 committedThisStreet: seat.committedThisStreet,
@@ -838,6 +846,7 @@ public final class CashTableCoordinator {
             TableSeatState(
                 id: seat.id,
                 displayName: seat.displayName,
+                avatarAssetName: seat.avatarAssetName,
                 isHuman: seat.isHuman,
                 stack: seat.stack,
                 committedThisStreet: seat.committedThisStreet,
@@ -891,6 +900,7 @@ public final class CashTableCoordinator {
             TableSeatState(
                 id: seat.id,
                 displayName: seat.displayName,
+                avatarAssetName: seat.avatarAssetName,
                 isHuman: seat.isHuman,
                 stack: stacks[seat.id] ?? seat.stack,
                 committedThisStreet: Chips(rawValue: 0)!,

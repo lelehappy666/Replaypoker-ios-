@@ -5,11 +5,13 @@ public struct HandArchiveMetadata: Codable, Equatable, Sendable {
     public let tableDisplayName: String
     public let humanSeat: SeatID
     public let seatDisplayNames: [SeatID: String]
+    public let seatAvatarAssetNames: [SeatID: String?]?
 
     public init(
         tableDisplayName: String,
         humanSeat: SeatID,
-        seatDisplayNames: [SeatID: String]
+        seatDisplayNames: [SeatID: String],
+        seatAvatarAssetNames: [SeatID: String?]? = nil
     ) throws {
         let tableName = tableDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !tableName.isEmpty,
@@ -30,12 +32,32 @@ public struct HandArchiveMetadata: Codable, Equatable, Sendable {
         self.tableDisplayName = tableName
         self.humanSeat = humanSeat
         self.seatDisplayNames = names
+        if let seatAvatarAssetNames {
+            guard Set(seatAvatarAssetNames.keys) == Set(names.keys) else {
+                throw PokerSessionError.invalidTable
+            }
+            self.seatAvatarAssetNames = Dictionary(
+                uniqueKeysWithValues: try names.keys.map { seat in
+                    let avatar = seatAvatarAssetNames[seat] ?? nil
+                    let trimmed = avatar?.trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    )
+                    guard trimmed != "" else {
+                        throw PokerSessionError.invalidTable
+                    }
+                    return (seat, trimmed)
+                }
+            )
+        } else {
+            self.seatAvatarAssetNames = nil
+        }
     }
 
     private enum CodingKeys: String, CodingKey {
         case tableDisplayName
         case humanSeat
         case seatDisplayNames
+        case seatAvatarAssetNames
     }
 
     public init(from decoder: Decoder) throws {
@@ -47,6 +69,10 @@ public struct HandArchiveMetadata: Codable, Equatable, Sendable {
                 seatDisplayNames: container.decode(
                     [SeatID: String].self,
                     forKey: .seatDisplayNames
+                ),
+                seatAvatarAssetNames: container.decodeIfPresent(
+                    [SeatID: String?].self,
+                    forKey: .seatAvatarAssetNames
                 )
             )
         } catch let error as DecodingError {
@@ -65,6 +91,10 @@ public struct HandArchiveMetadata: Codable, Equatable, Sendable {
         try container.encode(tableDisplayName, forKey: .tableDisplayName)
         try container.encode(humanSeat, forKey: .humanSeat)
         try container.encode(seatDisplayNames, forKey: .seatDisplayNames)
+        try container.encodeIfPresent(
+            seatAvatarAssetNames,
+            forKey: .seatAvatarAssetNames
+        )
     }
 }
 

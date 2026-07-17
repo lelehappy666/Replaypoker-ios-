@@ -8,6 +8,108 @@ import XCTest
 
 final class CashTableEntryTests: XCTestCase {
     @MainActor
+    func testNewEntryDrawsProfilesOnceAndStartupRetryReusesThem() async throws {
+        let ids = JoinAttemptIDSpy()
+        var draws = 0
+        var coordinatorCalls = 0
+        let dependencies = makeDependencies(
+            ids: ids,
+            makeSeatProfiles: { humanSeat in
+                draws += 1
+                return try profileFixture(humanSeat: humanSeat, generation: draws)
+            },
+            makeCoordinator: { store, humanSeat, profiles, archiveMetadata, runtime in
+                coordinatorCalls += 1
+                if coordinatorCalls == 1 {
+                    throw CashTableEntryTestError.coordinatorCreation
+                }
+                return try CashTableCoordinator(
+                    store: store,
+                    humanSeat: humanSeat,
+                    seatProfiles: profiles,
+                    archiveMetadata: archiveMetadata,
+                    dependencies: runtime
+                )
+            }
+        )
+        let fixture = try AppSessionFixture(dependencies: dependencies)
+
+        XCTAssertThrowsError(
+            try fixture.session.joinCashTable(
+                fixture.table,
+                buyIn: 16_000,
+                autoTopUp: false,
+                reduceMotion: true
+            )
+        )
+        XCTAssertEqual(draws, 1)
+
+        try fixture.session.joinCashTable(
+            fixture.table,
+            buyIn: 16_000,
+            autoTopUp: false,
+            reduceMotion: true
+        )
+
+        XCTAssertEqual(draws, 1)
+    }
+
+    @MainActor
+    func testSuccessfulDepartureDrawsFreshProfilesForNextEntry() async throws {
+        let ids = JoinAttemptIDSpy()
+        var draws = 0
+        let dependencies = makeDependencies(
+            ids: ids,
+            makeSeatProfiles: { humanSeat in
+                draws += 1
+                return try profileFixture(humanSeat: humanSeat, generation: draws)
+            }
+        )
+        let fixture = try AppSessionFixture(dependencies: dependencies)
+
+        try fixture.session.joinCashTable(
+            fixture.table,
+            buyIn: 16_000,
+            autoTopUp: false,
+            reduceMotion: true
+        )
+        fixture.session.requestTableDeparture()
+        await fixture.session.confirmTableDeparture()
+        try fixture.session.joinCashTable(
+            fixture.table,
+            buyIn: 16_000,
+            autoTopUp: false,
+            reduceMotion: true
+        )
+
+        XCTAssertEqual(draws, 2)
+    }
+
+    @MainActor
+    func testNextHandReusesProfilesFromOriginalEntry() async throws {
+        let ids = JoinAttemptIDSpy()
+        var draws = 0
+        let dependencies = makeDependencies(
+            ids: ids,
+            makeSeatProfiles: { humanSeat in
+                draws += 1
+                return try profileFixture(humanSeat: humanSeat, generation: draws)
+            }
+        )
+        let fixture = try AppSessionFixture(dependencies: dependencies)
+
+        try fixture.session.joinCashTable(
+            fixture.table,
+            buyIn: 16_000,
+            autoTopUp: false,
+            reduceMotion: true
+        )
+        try await fixture.session.sendTableIntent(.nextHand)
+
+        XCTAssertEqual(draws, 1)
+    }
+
+    @MainActor
     func testJoinBuildsArchiveMetadataFromSelectedTableAndFrozenProfiles() throws {
         let fixture = try AppSessionFixture()
         let profiles = try TableSeatProfileFactory.make(humanSeat: SeatID(rawValue: 0)!)
@@ -24,6 +126,12 @@ final class CashTableEntryTests: XCTestCase {
         XCTAssertEqual(
             fixture.capturedArchiveMetadata?.seatDisplayNames,
             Dictionary(uniqueKeysWithValues: profiles.map { ($0.id, $0.displayName) })
+        )
+        XCTAssertEqual(
+            fixture.capturedArchiveMetadata?.seatAvatarAssetNames,
+            Dictionary(uniqueKeysWithValues: profiles.map {
+                ($0.id, $0.avatarAssetName)
+            })
         )
     }
 
@@ -188,6 +296,13 @@ final class CashTableEntryTests: XCTestCase {
         XCTAssertEqual(profiles.count, 9)
         XCTAssertEqual(Set(profiles.map(\.id)), Set(request.stacks.keys))
         XCTAssertEqual(Set(profiles.map(\.displayName)).count, 9)
+        XCTAssertEqual(
+            profiles.first { $0.id == request.humanSeat }?.displayName,
+            "RiverAce"
+        )
+        XCTAssertNil(profiles.first { $0.id == request.humanSeat }?.avatarAssetName)
+        let bots = profiles.filter { $0.id != request.humanSeat }
+        XCTAssertEqual(Set(bots.compactMap(\.avatarAssetName)).count, 8)
     }
 
     @MainActor
@@ -548,6 +663,9 @@ private final class JoinAttemptIDSpy {
 private func makeDependencies(
     ids: JoinAttemptIDSpy,
     sleep: @escaping @Sendable (Duration) async throws -> Void = { _ in },
+    makeSeatProfiles: @escaping (SeatID) throws -> [TableSeatProfile] = {
+        try TableSeatProfileFactory.make(humanSeat: $0)
+    },
     makeCoordinator: (@MainActor (
         LocalPokerStore,
         SeatID,
@@ -559,6 +677,7 @@ private func makeDependencies(
     AppSessionDependencies(
         nextSessionID: ids.nextSessionID,
         nextBusinessID: ids.nextBusinessID,
+        makeSeatProfiles: makeSeatProfiles,
         makeRuntimeDependencies: { _ in
             TableRuntimeDependencies(
                 nextHandID: { try HandID("app-session-hand") },
@@ -579,6 +698,27 @@ private func makeDependencies(
             )
         }
     )
+}
+
+private func profileFixture(
+    humanSeat: SeatID,
+    generation: Int
+) throws -> [TableSeatProfile] {
+    try (0..<9).map { (rawValue: Int) in
+        let seat = try SeatID(rawValue)
+        if seat == humanSeat {
+            return try TableSeatProfile(
+                id: seat,
+                displayName: "RiverAce",
+                avatarAssetName: nil
+            )
+        }
+        return try TableSeatProfile(
+            id: seat,
+            displayName: "机器人\(generation)-\(rawValue)",
+            avatarAssetName: "avatar-\(generation)-\(rawValue)"
+        )
+    }
 }
 
 private func makeTable(smallBlind: Int, bigBlind: Int) -> PokerTableSummary {

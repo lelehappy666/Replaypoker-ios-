@@ -23,6 +23,7 @@ enum AppSessionError: Error, Equatable {
 struct AppSessionDependencies {
     let nextSessionID: () throws -> SessionID
     let nextBusinessID: (_ purpose: String) throws -> BusinessID
+    let makeSeatProfiles: (_ humanSeat: SeatID) throws -> [TableSeatProfile]
     let makeRuntimeDependencies: (_ reduceMotion: Bool) -> TableRuntimeDependencies
     let makeCoordinator: (
         _ store: LocalPokerStore,
@@ -39,6 +40,7 @@ struct AppSessionDependencies {
     init(
         nextSessionID: @escaping () throws -> SessionID,
         nextBusinessID: @escaping (_ purpose: String) throws -> BusinessID,
+        makeSeatProfiles: @escaping (_ humanSeat: SeatID) throws -> [TableSeatProfile],
         makeRuntimeDependencies: @escaping (
             _ reduceMotion: Bool
         ) -> TableRuntimeDependencies,
@@ -68,6 +70,7 @@ struct AppSessionDependencies {
     ) {
         self.nextSessionID = nextSessionID
         self.nextBusinessID = nextBusinessID
+        self.makeSeatProfiles = makeSeatProfiles
         self.makeRuntimeDependencies = makeRuntimeDependencies
         self.makeCoordinator = makeCoordinator
         self.loadHandRecords = loadHandRecords
@@ -82,6 +85,7 @@ struct AppSessionDependencies {
             nextBusinessID: { purpose in
                 try BusinessID("\(purpose):\(UUID().uuidString)")
             },
+            makeSeatProfiles: TableSeatProfileFactory.make,
             makeRuntimeDependencies: TableRuntimeDependencies.live,
             makeCoordinator: { store, humanSeat, profiles, archiveMetadata, runtime in
                 try CashTableCoordinator(
@@ -255,6 +259,7 @@ final class AppSession {
                         "ui:\(purpose):\(ids.nextBusinessID())"
                     )
                 },
+                makeSeatProfiles: TableSeatProfileFactory.make,
                 makeRuntimeDependencies: { _ in
                     TableRuntimeDependencies(
                         nextHandID: { try HandID(ids.nextHandID()) },
@@ -464,7 +469,7 @@ final class AppSession {
                 sessionID: try dependencies.nextSessionID()
             )
             let profiles = try seatProfiles
-                ?? TableSeatProfileFactory.make(humanSeat: request.humanSeat)
+                ?? dependencies.makeSeatProfiles(request.humanSeat)
             try CashTableCoordinator.validateSeatProfiles(
                 profiles,
                 matching: Array(request.stacks.keys),
@@ -491,6 +496,11 @@ final class AppSession {
             humanSeat: attempt.request.humanSeat,
             seatDisplayNames: Dictionary(
                 uniqueKeysWithValues: attempt.profiles.map { ($0.id, $0.displayName) }
+            ),
+            seatAvatarAssetNames: Dictionary(
+                uniqueKeysWithValues: attempt.profiles.map {
+                    ($0.id, $0.avatarAssetName)
+                }
             )
         )
         let coordinator = try dependencies.makeCoordinator(
@@ -537,15 +547,18 @@ final class AppSession {
             guard let attempt = abandonedCashSessionSettlementAttempt else {
                 throw PokerCoordinatorError.saveFailed
             }
-            let profiles = try TableSeatProfileFactory.make(
-                humanSeat: cashSession.humanSeat
-            )
+            let profiles = try dependencies.makeSeatProfiles(cashSession.humanSeat)
             let archiveMetadata = try HandArchiveMetadata(
                 tableDisplayName: "上次牌桌",
                 humanSeat: cashSession.humanSeat,
                 seatDisplayNames: Dictionary(
                     uniqueKeysWithValues: profiles.map {
                         ($0.id, $0.displayName)
+                    }
+                ),
+                seatAvatarAssetNames: Dictionary(
+                    uniqueKeysWithValues: profiles.map {
+                        ($0.id, $0.avatarAssetName)
                     }
                 )
             )
@@ -838,19 +851,33 @@ enum CashTableRequestFactory {
 }
 
 enum TableSeatProfileFactory {
-    private static let botNames = [
-        "林墨", "青屿", "空山", "云雀", "晨星", "海盐", "玖未", "深野",
-    ]
-
     static func make(humanSeat: SeatID) throws -> [TableSeatProfile] {
-        var botIndex = 0
+        var generator = SystemRandomNumberGenerator()
+        return try make(humanSeat: humanSeat, using: &generator)
+    }
+
+    static func make<R: RandomNumberGenerator>(
+        humanSeat: SeatID,
+        using generator: inout R
+    ) throws -> [TableSeatProfile] {
+        let robots = RobotIdentityCatalog.draw(count: 8, using: &generator)
+        var robotIndex = 0
         return try (0..<9).map { index in
             let seat = try SeatID(index)
             if seat == humanSeat {
-                return try TableSeatProfile(id: seat, displayName: "RiverAce")
+                return try TableSeatProfile(
+                    id: seat,
+                    displayName: "RiverAce",
+                    avatarAssetName: nil
+                )
             }
-            defer { botIndex += 1 }
-            return try TableSeatProfile(id: seat, displayName: botNames[botIndex])
+            let identity = robots[robotIndex]
+            robotIndex += 1
+            return try TableSeatProfile(
+                id: seat,
+                displayName: identity.displayName,
+                avatarAssetName: identity.avatarAssetName
+            )
         }
     }
 }

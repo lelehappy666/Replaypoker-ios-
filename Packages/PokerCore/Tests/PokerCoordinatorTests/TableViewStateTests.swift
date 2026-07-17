@@ -39,3 +39,49 @@ import Testing
             == [.faceDown, .faceDown]
     )
 }
+
+@Test func 旧座位资料缺少头像标识仍会解码为空() throws {
+    let profile = try TableSeatProfile(
+        id: try SeatID(0),
+        displayName: "玩家",
+        avatarAssetName: "avatar-player"
+    )
+    var object = try #require(
+        JSONSerialization.jsonObject(with: JSONEncoder().encode(profile))
+            as? [String: Any]
+    )
+    object.removeValue(forKey: "avatarAssetName")
+
+    let decoded = try JSONDecoder().decode(
+        TableSeatProfile.self,
+        from: JSONSerialization.data(withJSONObject: object)
+    )
+
+    #expect(decoded.avatarAssetName == nil)
+
+    let state = TableSeatState(
+        id: try SeatID(0),
+        displayName: "玩家",
+        avatarAssetName: "avatar-player",
+        isHuman: true,
+        stack: try Chips(800),
+        committedThisStreet: try Chips(0),
+        hasFolded: false,
+        isAllIn: false,
+        isDealer: false,
+        isCurrentActor: true,
+        cards: [.faceDown, .faceDown]
+    )
+    var stateObject = try #require(
+        JSONSerialization.jsonObject(with: JSONEncoder().encode(state))
+            as? [String: Any]
+    )
+    stateObject.removeValue(forKey: "avatarAssetName")
+
+    let decodedState = try JSONDecoder().decode(
+        TableSeatState.self,
+        from: JSONSerialization.data(withJSONObject: stateObject)
+    )
+
+    #expect(decodedState.avatarAssetName == nil)
+}
