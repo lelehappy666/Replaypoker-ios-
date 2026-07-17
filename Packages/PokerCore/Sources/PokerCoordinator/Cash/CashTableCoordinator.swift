@@ -22,6 +22,9 @@ public final class CashTableCoordinator {
     package private(set) var completeWinnerSeats: Set<SeatID> = []
     private var stateVersion = 0
     private var animationSequence = 0
+    #if DEBUG
+    private var didPresentUITestingPayout = false
+    #endif
     private nonisolated let countdownTask = CountdownTaskBox()
     private nonisolated let botTask = BotTaskBox()
     private var botCancellationTask: Task<Void, Never>?
@@ -421,9 +424,11 @@ public final class CashTableCoordinator {
     public func presentUITestingPayout(
         events: [PublicGameEvent]
     ) async throws {
-        guard state.phase == .awaitingNextHand,
+        guard !didPresentUITestingPayout,
+              state.phase == .awaitingNextHand,
               let dealer = store.cashSession?.dealer
         else { throw PokerCoordinatorError.invalidPhase }
+        didPresentUITestingPayout = true
         let animations = try CashTableAnimationMapper.map(
             events,
             humanSeat: humanSeat,

@@ -133,6 +133,9 @@ struct PokerTableView: View {
         .onChange(of: state.animationSequence) { _, sequence in
             present(state.animation, sequence: sequence)
         }
+        #if DEBUG
+        .task { await startUITestingPayoutScenarioIfNeeded() }
+        #endif
         .onDisappear {
             cancelViewTasks()
         }
@@ -486,6 +489,35 @@ struct PokerTableView: View {
         return false
         #endif
     }
+
+    #if DEBUG
+    private func startUITestingPayoutScenarioIfNeeded() async {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard arguments.contains("-uiTesting"),
+              let flag = arguments.firstIndex(of: "-uiTestingPayoutScenario"),
+              arguments.indices.contains(flag + 1)
+        else { return }
+        try? await Task.sleep(for: .milliseconds(250))
+        guard !Task.isCancelled else { return }
+        do {
+            let seat2 = try SeatID(2)
+            let seat4 = try SeatID(4)
+            let seat8 = try SeatID(8)
+            let events: [PublicGameEvent]
+            switch arguments[flag + 1] {
+            case "single":
+                events = [.potAwarded(potIndex: 0, winners: [seat4], amounts: [seat4: try Chips(800)])]
+            case "split":
+                events = [
+                    .potAwarded(potIndex: 0, winners: [seat8, seat2], amounts: [seat8: try Chips(500), seat2: try Chips(250)]),
+                    .potAwarded(potIndex: 1, winners: [seat8], amounts: [seat8: try Chips(0)]),
+                ]
+            default: return
+            }
+            try await coordinator.presentUITestingPayout(events: events)
+        } catch { return }
+    }
+    #endif
 }
 
 enum PokerTablePresentation {

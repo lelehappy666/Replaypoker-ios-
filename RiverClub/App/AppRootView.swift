@@ -145,7 +145,13 @@ struct AppRootView: View {
                 TableStartupRecoveryView(
                     presentation: presentation,
                     onRetry: {
+                        #if DEBUG
+                        if !uiTestingPayoutScenarioIsActive {
+                            Task { await session.startOrResumeTableHand() }
+                        }
+                        #else
                         Task { await session.startOrResumeTableHand() }
+                        #endif
                     }
                 )
                 .zIndex(2)
@@ -197,15 +203,7 @@ struct AppRootView: View {
                         )
                         buyInError = nil
                         pendingBuyInTable = nil
-                        #if DEBUG
-                        if uiTestingPayoutScenarioIsActive {
-                            Task { await session.playUITestingPayoutScenarioIfRequested() }
-                        } else {
-                            Task { await session.startOrResumeTableHand() }
-                        }
-                        #else
                         Task { await session.startOrResumeTableHand() }
-                        #endif
                     } catch {
                         buyInError = "买入失败，请重试。"
                     }
@@ -252,6 +250,7 @@ private var uiTestingPayoutScenarioIsActive: Bool {
     return ["single", "split"].contains(arguments[flag + 1])
 }
 #endif
+
 
 private struct AbandonedCashSessionSettlementView: View {
     let isSettling: Bool

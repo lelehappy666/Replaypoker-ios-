@@ -114,20 +114,39 @@ final class CoreFlowUITests: XCTestCase {
         let app = launchPayoutScenario("single", storeID: "payout-single")
         enterFirstTable(in: app)
 
+        let announcement = app.descendants(matching: .any)["table.winnerAnnouncement"]
+        XCTAssertTrue(announcement.waitForExistence(timeout: 5))
+        XCTAssertTrue(announcement.label.contains(displayName(in: app, forSeat: 4)))
+        XCTAssertTrue(announcement.label.contains("800"))
         let records = payoutRecords(in: app, expectedCount: 1)
         XCTAssertEqual(records, ["4|\(displayName(in: app, forSeat: 4))|800"])
+        let before = announcementLogValue(in: app)
+        Thread.sleep(forTimeInterval: 1.3)
+        XCTAssertEqual(announcementLogValue(in: app), before)
     }
 
     func testSplitPayoutAnnouncementsPreserveInputOrderWithoutDuplicates() throws {
         let app = launchPayoutScenario("split", storeID: "payout-split")
         enterFirstTable(in: app)
 
+        let seat2Name = displayName(in: app, forSeat: 2)
+        let announcement = app.descendants(matching: .any)["table.winnerAnnouncement"]
+        XCTAssertTrue(announcement.waitForExistence(timeout: 5))
+        expectation(for: NSPredicate(format: "label CONTAINS %@", seat2Name), evaluatedWith: announcement)
+        waitForExpectations(timeout: 5)
+        XCTAssertTrue(announcement.label.contains("250"))
+        expectation(for: NSPredicate(format: "label CONTAINS %@", "RiverAce"), evaluatedWith: announcement)
+        waitForExpectations(timeout: 5)
+        XCTAssertTrue(announcement.label.contains("500"))
         let records = payoutRecords(in: app, expectedCount: 2)
         XCTAssertEqual(records, [
             "2|\(displayName(in: app, forSeat: 2))|250",
             "8|RiverAce|500",
         ])
         XCTAssertEqual(Set(records).count, 2)
+        let before = announcementLogValue(in: app)
+        Thread.sleep(forTimeInterval: 1.3)
+        XCTAssertEqual(announcementLogValue(in: app), before)
     }
 
     private func enterFirstTable(in app: XCUIApplication) {
@@ -197,5 +216,9 @@ final class CoreFlowUITests: XCTestCase {
         let avatar = app.descendants(matching: .any)["table.botAvatar.\(seat)"]
         XCTAssertTrue(avatar.waitForExistence(timeout: 5))
         return avatar.value as? String ?? ""
+    }
+
+    private func announcementLogValue(in app: XCUIApplication) -> String {
+        app.otherElements["table.uiTestingPayoutLog"].value as? String ?? ""
     }
 }
