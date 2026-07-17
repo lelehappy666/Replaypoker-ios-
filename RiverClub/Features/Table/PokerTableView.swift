@@ -156,7 +156,20 @@ struct PokerTableView: View {
                     endPoint: .bottom
                 )
             )
-            .overlay { Capsule().stroke(Color(red: 0.30, green: 0.16, blue: 0.08), lineWidth: 12) }
+            .overlay {
+                Capsule()
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                Color(red: 0.48, green: 0.27, blue: 0.12),
+                                Color(red: 0.20, green: 0.10, blue: 0.05),
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 12
+                    )
+            }
             .shadow(color: .black.opacity(0.5), radius: reduceMotion ? 0 : 18, y: reduceMotion ? 0 : 8)
             .padding(.horizontal, 70)
             .padding(.vertical, 34)
@@ -308,7 +321,15 @@ struct PokerTableView: View {
 
             Spacer()
 
-            ChipBalancePill(balance: balance)
+            CasinoChipStackView(
+                amount: balance,
+                scale: 0.62,
+                maximumVisibleChips: 5
+            )
+            .frame(width: 76, height: 42)
+            .padding(.horizontal, 8)
+            .background(RCTheme.surface.opacity(0.82), in: Capsule())
+            .accessibilityIdentifier("table.balance")
 
             Button("设置", systemImage: "gearshape") {}
                 .labelStyle(.iconOnly)
@@ -334,12 +355,13 @@ struct PokerTableView: View {
 
     @ViewBuilder
     private var phaseControls: some View {
-        ZStack(alignment: .bottomTrailing) {
-            phaseContent
-
+        VStack(alignment: .trailing, spacing: 6) {
             if let errorMessage = actionRequest.errorMessage {
                 localErrorPanel(message: errorMessage)
             }
+
+            Spacer(minLength: 0)
+            phaseContent
         }
     }
 
@@ -374,25 +396,31 @@ struct PokerTableView: View {
     }
 
     private func localErrorPanel(message: String) -> some View {
-        VStack(spacing: 8) {
+        HStack(spacing: 8) {
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.orange)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
 
-            HStack {
-                Button("关闭") { actionRequest.dismissError() }
-                    .accessibilityIdentifier("action.dismissError")
-                if actionRequest.canRetry(for: state.phase) {
-                    Button("重试") {
-                        retryFailedAction()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityIdentifier("action.retryIntent")
+            Spacer(minLength: 4)
+            Button("关闭") { actionRequest.dismissError() }
+                .accessibilityIdentifier("action.dismissError")
+            if actionRequest.canRetry(for: state.phase) {
+                Button("重试") {
+                    retryFailedAction()
                 }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("action.retryIntent")
             }
         }
-        .padding(12)
-        .background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: RCTheme.corner))
+        .padding(10)
+        .frame(maxWidth: PokerTableLayout.betControlSize.width)
+        .background(.black.opacity(0.86), in: RoundedRectangle(cornerRadius: RCTheme.corner))
+        .overlay {
+            RoundedRectangle(cornerRadius: RCTheme.corner)
+                .stroke(.orange.opacity(0.35), lineWidth: 1)
+        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("table.actionError")
     }

@@ -18,7 +18,7 @@ struct TournamentRegistrationPresentation: Equatable {
         } else {
             title = entryChips == 0
                 ? "免费报名"
-                : "报名 · \(entryChips.formatted()) 筹码"
+                : "报名 · $\(entryChips.formatted())"
             style = .available
             isEnabled = true
         }
@@ -62,25 +62,36 @@ enum TournamentTab: String, CaseIterable, Identifiable, Sendable {
 
 struct TournamentsView: View {
     let repository: any PokerRepository
+    let balance: Int
     @State private var selectedTab: TournamentTab = .upcoming
     @State private var loadState: LoadableState<[TournamentSummary]> = .loading
     @State private var registeredIDs: Set<UUID> = []
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("锦标赛")
-                .font(.largeTitle.bold())
-                .foregroundStyle(RCTheme.primaryText)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("锦标赛")
+                        .font(.title.bold())
+                    Text("参加精彩赛事，赢取娱乐筹码奖励。")
+                        .font(.subheadline)
+                        .foregroundStyle(RCTheme.secondaryText)
+                }
+                Spacer()
+                Button(action: {}) {
+                    Image(systemName: "bell")
+                        .frame(width: 44, height: 44)
+                }
+                ChipBalancePill(balance: balance)
+            }
 
-            HStack(spacing: 8) {
+            Picker("赛事分类", selection: $selectedTab) {
                 ForEach(TournamentTab.allCases) { tab in
-                    Button(tab.rawValue) { selectedTab = tab }
-                        .buttonStyle(.bordered)
-                        .tint(selectedTab == tab ? RCTheme.gold : RCTheme.secondaryText)
-                        .frame(minHeight: 44)
-                        .accessibilityIdentifier("tournaments.tab.\(tab.identifier)")
+                    Text(tab.rawValue).tag(tab)
                 }
             }
+            .pickerStyle(.segmented)
+            .frame(height: 38)
 
             LoadableContent(
                 state: loadState,
@@ -93,8 +104,12 @@ struct TournamentsView: View {
                 onRetry: { Task { await loadTournaments() } },
                 onClearFilters: { selectedTab = .upcoming }
             ) { tournaments in
-                ScrollView(.horizontal) {
-                    LazyHStack(spacing: 16) {
+                GeometryReader { proxy in
+                    let columns = Array(
+                        repeating: GridItem(.flexible(), spacing: 10),
+                        count: 3
+                    )
+                    LazyVGrid(columns: columns, spacing: 10) {
                         ForEach(
                             selectedTab.filtered(tournaments, registeredIDs: registeredIDs)
                         ) { tournament in
@@ -105,11 +120,12 @@ struct TournamentsView: View {
                             )
                         }
                     }
+                    .frame(width: proxy.size.width, alignment: .top)
                 }
             }
         }
-        .padding(24)
-        .background(RCTheme.background)
+        .padding(6)
+        .foregroundStyle(RCTheme.primaryText)
         .task { await loadTournaments() }
     }
 
@@ -151,8 +167,18 @@ private struct TournamentCard: View {
             }
             Text("报名 \(tournament.registered) / \(tournament.capacity)")
                 .monospacedDigit()
-            Text("娱乐筹码奖池 \(tournament.prizePool.formatted())")
+            Text("娱乐筹码奖池 $\(tournament.prizePool.formatted())")
                 .font(.body.monospacedDigit())
+
+            HStack(spacing: -7) {
+                ForEach(RobotIdentityCatalog.preview(for: tournament.id, count: 5)) { identity in
+                    RobotAvatarView(
+                        imageName: identity.avatarAssetName,
+                        fallbackText: identity.displayName,
+                        size: 30
+                    )
+                }
+            }
 
             Spacer()
 
@@ -181,9 +207,13 @@ private struct TournamentCard: View {
             )
         }
         .foregroundStyle(RCTheme.secondaryText)
-        .padding(18)
-        .frame(width: 250, height: 230, alignment: .leading)
-        .background(RCTheme.surface, in: RoundedRectangle(cornerRadius: RCTheme.corner))
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 250, alignment: .leading)
+        .background(RCTheme.surface.opacity(0.90), in: RoundedRectangle(cornerRadius: RCTheme.corner))
+        .overlay {
+            RoundedRectangle(cornerRadius: RCTheme.corner)
+                .stroke(RCTheme.gold.opacity(0.34), lineWidth: 1)
+        }
         .accessibilityIdentifier("tournament.\(tournament.id.uuidString)")
     }
 

@@ -115,7 +115,6 @@ struct HandHistoryView: View {
 
     var body: some View {
         historyContent
-        .background(RCTheme.background.ignoresSafeArea())
     }
 
     @ViewBuilder
@@ -169,7 +168,7 @@ struct HandHistoryView: View {
                 .frame(width: layout.contentWidth)
             }
             .frame(maxHeight: .infinity)
-            .padding(20)
+            .padding(6)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("history.list")
@@ -340,7 +339,7 @@ private struct HandHistoryFilterPanel: View {
             .scrollDisabled(!layout.usesVerticalScrolling)
             .scrollIndicators(layout.usesVerticalScrolling ? .visible : .hidden)
         }
-        .background(RCTheme.surface, in: RoundedRectangle(cornerRadius: RCTheme.corner))
+        .background(RCTheme.surface.opacity(0.90), in: RoundedRectangle(cornerRadius: RCTheme.corner))
         .overlay {
             RoundedRectangle(cornerRadius: RCTheme.corner)
                 .stroke(RCTheme.gold.opacity(0.18), lineWidth: 1)
@@ -353,9 +352,10 @@ private struct HandHistoryFilterPanel: View {
                 Text("牌局存档")
                     .font(.title3.weight(.bold))
                     .foregroundStyle(RCTheme.primaryText)
-                Label("娱乐筹码 \(balance.formatted())", systemImage: "circle.fill")
+                Text("$\(balance.formatted())")
                     .font(.subheadline.monospacedDigit().weight(.semibold))
                     .foregroundStyle(RCTheme.gold)
+                    .accessibilityLabel("娱乐筹码 \(balance.formatted())")
                     .accessibilityIdentifier("history.balance")
             }
 
@@ -594,7 +594,7 @@ private struct HandHistoryContent: View {
             actions()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(RCTheme.surface, in: RoundedRectangle(cornerRadius: RCTheme.corner))
+        .background(RCTheme.surface.opacity(0.90), in: RoundedRectangle(cornerRadius: RCTheme.corner))
     }
 }
 
@@ -651,7 +651,7 @@ private struct HandHistoryRow: View {
             .padding(.horizontal, layout.horizontalPadding)
             .frame(maxWidth: .infinity, minHeight: 88)
             .contentShape(Rectangle())
-            .background(RCTheme.surface, in: RoundedRectangle(cornerRadius: RCTheme.corner))
+            .background(RCTheme.surface.opacity(0.90), in: RoundedRectangle(cornerRadius: RCTheme.corner))
             .overlay {
                 RoundedRectangle(cornerRadius: RCTheme.corner)
                     .stroke(RCTheme.gold.opacity(0.16), lineWidth: 1)

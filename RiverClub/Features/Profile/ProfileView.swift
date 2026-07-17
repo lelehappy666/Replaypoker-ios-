@@ -2,13 +2,14 @@ import SwiftUI
 
 struct ProfileView: View {
     let repository: any PokerRepository
+    let balance: Int
     @State private var loadState: LoadableState<ProfileSummary> = .loading
     @State private var statusMessage: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 10) {
             Text("个人中心")
-                .font(.largeTitle.bold())
+                .font(.title.bold())
                 .foregroundStyle(RCTheme.primaryText)
 
             LoadableContent(
@@ -20,16 +21,13 @@ struct ProfileView: View {
                 onRetry: { Task { await loadProfile() } },
                 onClearFilters: {}
             ) { profile in
-                VStack(alignment: .leading, spacing: 20) {
-                    HStack(spacing: 18) {
-                        Circle()
-                            .fill(RCTheme.gold)
-                            .frame(width: 72, height: 72)
-                            .overlay {
-                                Text(String(profile.nickname.prefix(1)))
-                                    .font(.title.bold())
-                                    .foregroundStyle(RCTheme.background)
-                            }
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 16) {
+                        RobotAvatarView(
+                            imageName: RobotIdentityCatalog.all[0].avatarAssetName,
+                            fallbackText: profile.nickname,
+                            size: 78
+                        )
                         VStack(alignment: .leading, spacing: 6) {
                             Text(profile.nickname)
                                 .font(.title2.bold())
@@ -38,12 +36,26 @@ struct ProfileView: View {
                                 .foregroundStyle(RCTheme.secondaryText)
                             ProgressView(value: min(Double(profile.level) / 30, 1))
                                 .tint(RCTheme.gold)
-                                .frame(width: 220)
+                                .frame(maxWidth: 260)
                         }
                         Spacer()
+                        VStack(alignment: .trailing, spacing: 8) {
+                            Text(EntertainmentAmountFormatter.string(balance))
+                                .font(.title2.monospacedDigit().weight(.bold))
+                                .foregroundStyle(RCTheme.gold)
+                            Button("编辑资料") { statusMessage = "编辑资料暂未开放" }
+                                .buttonStyle(.bordered)
+                                .tint(RCTheme.gold)
+                        }
+                    }
+                    .padding(14)
+                    .background(RCTheme.surface.opacity(0.90), in: RoundedRectangle(cornerRadius: RCTheme.corner))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: RCTheme.corner)
+                            .stroke(RCTheme.gold.opacity(0.32), lineWidth: 1)
                     }
 
-                    HStack(spacing: 14) {
+                    HStack(spacing: 10) {
                         ProfileStatCard(title: "总手数", value: profile.handsPlayed.formatted())
                         ProfileStatCard(
                             title: "入池率",
@@ -52,7 +64,7 @@ struct ProfileView: View {
                         ProfileStatCard(title: "赛事奖励", value: profile.tournamentAwards.formatted())
                     }
 
-                    LazyVGrid(columns: [.init(.flexible()), .init(.flexible())], spacing: 12) {
+                    LazyVGrid(columns: [.init(.flexible()), .init(.flexible())], spacing: 8) {
                         profileLink("牌局记录", icon: "clock.arrow.circlepath")
                         profileLink("成就徽章", icon: "medal")
                         profileLink("账户与安全", icon: "lock.shield")
@@ -68,18 +80,23 @@ struct ProfileView: View {
                 }
             }
         }
-        .padding(24)
+        .padding(6)
         .foregroundStyle(RCTheme.primaryText)
-        .background(RCTheme.background)
         .task { await loadProfile() }
     }
 
     private func profileLink(_ title: String, icon: String) -> some View {
         Button { statusMessage = "\(title)暂未开放" } label: {
-            Label(title, systemImage: icon)
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            HStack {
+                Label(title, systemImage: icon)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+            }
+            .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
         }
         .buttonStyle(.bordered)
+        .tint(RCTheme.gold)
     }
 
     @MainActor
@@ -109,7 +126,11 @@ private struct ProfileStatCard: View {
                 .font(.caption)
                 .foregroundStyle(RCTheme.secondaryText)
         }
-        .frame(maxWidth: .infinity, minHeight: 86)
-        .background(RCTheme.surface, in: RoundedRectangle(cornerRadius: RCTheme.corner))
+        .frame(maxWidth: .infinity, minHeight: 72)
+        .background(RCTheme.surface.opacity(0.90), in: RoundedRectangle(cornerRadius: RCTheme.corner))
+        .overlay {
+            RoundedRectangle(cornerRadius: RCTheme.corner)
+                .stroke(RCTheme.gold.opacity(0.22), lineWidth: 1)
+        }
     }
 }

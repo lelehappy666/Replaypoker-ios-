@@ -124,9 +124,15 @@ struct AppRootView: View {
                             )
                         }
                     case .lobby, .tournaments, .tables, .tableBrowser, .profile:
-                        HStack(spacing: 0) {
-                            AppSidebar(selection: session.route, onSelect: session.open)
-                            routedSidebarContent
+                        ZStack {
+                            AppRouteBackground(route: session.route)
+
+                            HStack(spacing: AppSidebar.contentGap) {
+                                AppSidebar(selection: session.route, onSelect: session.open)
+                                routedSidebarContent
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            }
+                            .padding(AppSidebar.shellPadding)
                         }
                     }
                 }
@@ -174,9 +180,9 @@ struct AppRootView: View {
         case .tableBrowser:
             TableListView(repository: repository, onSelect: openBuyInIfJoinable)
         case .tournaments:
-            TournamentsView(repository: repository)
+            TournamentsView(repository: repository, balance: session.chipBalance)
         case .profile:
-            ProfileView(repository: repository)
+            ProfileView(repository: repository, balance: session.chipBalance)
         case .login, .table:
             EmptyView()
         }

@@ -148,8 +148,12 @@ struct BetControlBar: View {
                 }
             }
         }
-        .padding(8)
-        .background(.black.opacity(0.18), in: RoundedRectangle(cornerRadius: RCTheme.corner))
+        .padding(10)
+        .background(.black.opacity(0.58), in: RoundedRectangle(cornerRadius: RCTheme.corner))
+        .overlay {
+            RoundedRectangle(cornerRadius: RCTheme.corner)
+                .stroke(RCTheme.gold.opacity(0.20), lineWidth: 1)
+        }
         .onChange(of: controls) { _, newControls in
             guard let aggressive = newControls.aggressive else { return }
             aggressiveAmount = BetControlPresentation.range(for: aggressive).lowerBound
@@ -187,7 +191,7 @@ struct BetControlBar: View {
                 step: 1
             )
             .tint(RCTheme.gold)
-            .frame(width: 210)
+            .frame(width: 280)
             .accessibilityLabel("下注或加注娱乐筹码")
             .accessibilityIdentifier("action.aggressiveSlider")
         }
@@ -211,10 +215,12 @@ struct BetControlBar: View {
     ) -> some View {
         Button(title, action: action)
             .font(.subheadline.weight(.bold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
             .buttonStyle(.borderedProminent)
             .tint(tint)
             .foregroundStyle(foreground)
-            .frame(minWidth: 64, minHeight: 40)
+            .frame(maxWidth: .infinity, minHeight: 42)
             .accessibilityIdentifier(identifier)
     }
 }

@@ -1,7 +1,60 @@
 import SwiftUI
 
+struct AppRouteBackground: View {
+    let route: AppRoute
+
+    var body: some View {
+        ZStack {
+            Image(assetName)
+                .resizable()
+                .scaledToFill()
+                .overlay(RCTheme.background.opacity(overlayOpacity))
+                .overlay {
+                    LinearGradient(
+                        colors: [
+                            .black.opacity(0.30),
+                            RCTheme.background.opacity(0.12),
+                            .black.opacity(0.42),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                }
+
+            if route == .tournaments {
+                Image(systemName: "trophy.fill")
+                    .font(.system(size: 210, weight: .ultraLight))
+                    .foregroundStyle(RCTheme.gold.opacity(0.055))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                    .padding(.trailing, 24)
+            }
+        }
+            .ignoresSafeArea()
+            .accessibilityHidden(true)
+    }
+
+    private var assetName: String {
+        switch route {
+        case .tournaments: "tournament-background"
+        case .tables: "history-background"
+        case .profile: "profile-background"
+        case .lobby, .tableBrowser, .table: "lobby-background"
+        case .login: "login-background"
+        }
+    }
+
+    private var overlayOpacity: Double {
+        switch route {
+        case .tables, .profile: 0.42
+        default: 0.34
+        }
+    }
+}
+
 struct AppSidebar: View {
-    static let landscapePhoneWidth: CGFloat = 168
+    static let landscapePhoneWidth: CGFloat = 176
+    static let shellPadding: CGFloat = 14
+    static let contentGap: CGFloat = 16
     static let horizontalPadding: CGFloat = 10
 
     let selection: AppRoute
@@ -31,9 +84,17 @@ struct AppSidebar: View {
             Spacer()
         }
         .padding(.horizontal, Self.horizontalPadding)
-        .padding(.vertical, 16)
+        .padding(.vertical, 14)
         .frame(width: Self.landscapePhoneWidth)
-        .background(RCTheme.surface)
+        .background(
+            RCTheme.surface.opacity(0.88),
+            in: RoundedRectangle(cornerRadius: 24)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 24)
+                .stroke(RCTheme.gold.opacity(0.24), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.34), radius: 18, y: 8)
     }
 }
 

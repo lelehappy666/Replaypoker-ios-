@@ -2,13 +2,13 @@ import PokerCoordinator
 import SwiftUI
 
 enum PokerTableLayout {
-    static let seatSize = CGSize(width: 108, height: 96)
-    static let seatContentSize = CGSize(width: 104, height: 94)
-    static let betControlSize = CGSize(width: 260, height: 128)
+    static let seatSize = CGSize(width: 120, height: 104)
+    static let seatContentSize = CGSize(width: 116, height: 100)
+    static let betControlSize = CGSize(width: 320, height: 178)
     static let cardAspectRatio: CGFloat = 34.0 / 46.0
     static let holeCardSpacing: CGFloat = 4
     static let communityCardSize = CGSize(width: 46, height: 62)
-    static let humanHoleCardSize = CGSize(width: 46, height: 62)
+    static let humanHoleCardSize = CGSize(width: 38, height: 52)
     static let botHoleCardSize = CGSize(width: 38, height: 52)
     static let betStackBaseSize = CGSize(width: 68, height: 44)
     static let potSize = CGSize(width: 110, height: 34)
@@ -27,20 +27,20 @@ enum PokerTableLayout {
         let frameSize = seatFrameSize(for: canvas)
         let topY = topBarRegion(for: canvas).maxY + frameSize.height / 2 + 4
         let bottomY = canvas.height - frameSize.height / 2 - 2
-        let leftX = frameSize.width / 2
-        let rightX = canvas.width - frameSize.width / 2
-        let sideY = min(canvas.height * 0.59, bottomY - frameSize.height - 8)
-        let topProgresses: [CGFloat] = [0, 0.16, 0.32, 0.68, 0.84, 1]
-        let topPositions = topProgresses.map { progress in
-            return CGPoint(x: leftX + (rightX - leftX) * progress, y: topY)
-        }
+        let leftX = frameSize.width / 2 + 2
+        let rightX = canvas.width - frameSize.width / 2 - 2
 
-        // 0...7 沿可用外缘从左下顺时针排开，8 始终是本人底部中央。
+        // 三席在上、两席在左、一席在右、两席在下，本人始终位于底部中央。
         return [
+            .init(x: canvas.width * 0.24, y: topY),
+            .init(x: canvas.width * 0.50, y: topY),
+            .init(x: canvas.width * 0.76, y: topY),
+            .init(x: rightX, y: canvas.height * 0.42),
+            .init(x: leftX, y: canvas.height * 0.40),
+            .init(x: leftX, y: canvas.height * 0.69),
             .init(x: canvas.width * 0.25, y: bottomY),
-            .init(x: leftX, y: sideY),
-        ] + topPositions + [
-            .init(x: canvas.width * 0.50, y: bottomY),
+            .init(x: canvas.width * 0.40, y: bottomY),
+            .init(x: canvas.width * 0.55, y: bottomY),
         ]
     }
 
@@ -65,7 +65,7 @@ enum PokerTableLayout {
     }
 
     static func centerBoardRegion(for canvas: CGSize) -> CGRect {
-        let size = CGSize(width: min(270, canvas.width - 2 * betControlSize.width - 8), height: 150)
+        let size = CGSize(width: min(320, canvas.width * 0.40), height: 158)
         return CGRect(
             x: canvas.width * 0.5 - size.width / 2,
             y: canvas.height * 0.558_333_333_3 - size.height / 2,
@@ -302,58 +302,65 @@ struct PokerSeatView: View {
     }
 
     var body: some View {
-        VStack(spacing: 1) {
-            HStack(spacing: PokerTableLayout.holeCardSpacing) {
-                ForEach(Array(seat.cards.enumerated()), id: \.offset) { _, card in
-                    TableCardView(cardState: card)
-                        .frame(
-                            width: holeCardSize.width,
-                            height: holeCardSize.height
-                        )
-                        .accessibilityIdentifier(
-                            seat.isHuman ? "table.localHoleCard" : "table.botHoleCard"
-                        )
-                }
-            }
-            .frame(height: holeCardSize.height)
-            .scaleEffect(holeCardScale)
-            .opacity(seat.hasFolded ? 0.44 : 1)
-
-            HStack(spacing: 4) {
+        VStack(spacing: 2) {
+            HStack(alignment: .bottom, spacing: 4) {
                 RobotAvatarView(
                     imageName: seat.avatarAssetName,
                     fallbackText: initials,
-                    size: 30
+                    size: seat.isHuman ? 36 : 38
                 )
-                    .opacity(seat.hasFolded ? 0.44 : 1)
-                    .accessibilityIdentifier(
-                        seat.isHuman
-                            ? "table.localAvatar"
-                            : "table.botAvatar.\(seat.id.rawValue)"
-                    )
-                    .accessibilityValue(seat.displayName)
+                .opacity(seat.hasFolded ? 0.44 : 1)
+                .accessibilityIdentifier(
+                    seat.isHuman
+                        ? "table.localAvatar"
+                        : "table.botAvatar.\(seat.id.rawValue)"
+                )
+                .accessibilityValue(seat.displayName)
 
-                VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: PokerTableLayout.holeCardSpacing) {
+                        ForEach(Array(seat.cards.enumerated()), id: \.offset) { _, card in
+                            TableCardView(cardState: card)
+                                .frame(
+                                    width: holeCardSize.width,
+                                    height: holeCardSize.height
+                                )
+                                .accessibilityIdentifier(
+                                    seat.isHuman ? "table.localHoleCard" : "table.botHoleCard"
+                                )
+                        }
+                    }
+                    .frame(height: holeCardSize.height)
+                    .scaleEffect(holeCardScale)
+                    .opacity(seat.hasFolded ? 0.44 : 1)
+
                     Text(seat.displayName)
                         .font(.system(size: 9, weight: .semibold))
                         .lineLimit(1)
                         .minimumScaleFactor(0.72)
-                    Text(seat.stack.rawValue.formatted())
-                        .font(.system(size: 9, design: .monospaced))
+                }
+            }
+
+            HStack(spacing: 4) {
+                CasinoChipStackView(
+                    amount: seat.stack.rawValue,
+                    scale: 0.42,
+                    maximumVisibleChips: 3
+                )
+                .frame(width: 48, height: 24)
+
+                if showsStatus {
+                    Text(statusText)
+                        .font(.system(size: 8, weight: .bold))
                         .foregroundStyle(RCTheme.gold)
                         .lineLimit(1)
                         .minimumScaleFactor(0.72)
-                    if showsStatus {
-                        Text(statusText)
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(RCTheme.gold)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.72)
-                            .accessibilityIdentifier("table.seatStatus.\(seat.id.rawValue)")
-                    }
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(.black.opacity(0.40), in: Capsule())
+                        .accessibilityIdentifier("table.seatStatus.\(seat.id.rawValue)")
                 }
             }
-            .frame(height: 30)
 
         }
         .foregroundStyle(RCTheme.primaryText)
@@ -361,7 +368,7 @@ struct PokerSeatView: View {
             width: PokerTableLayout.seatSize.width,
             height: PokerTableLayout.seatSize.height
         )
-        .background(.black.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+        .background(.black.opacity(0.24), in: RoundedRectangle(cornerRadius: 10))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(isWinner || seat.isCurrentActor ? RCTheme.gold : .clear, lineWidth: 2)
@@ -377,7 +384,7 @@ struct PokerSeatView: View {
     private var holeCardSize: CGSize {
         seat.isHuman
             ? PokerTableLayout.humanHoleCardSize
-            : PokerTableLayout.botHoleCardSize
+            : CGSize(width: 34, height: 46)
     }
 
     private var showsStatus: Bool {

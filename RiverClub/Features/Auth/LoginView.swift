@@ -5,7 +5,10 @@ struct LoginView: View {
     let onGuestLogin: () -> Void
 
     var body: some View {
-        HStack(spacing: 48) {
+        ZStack {
+            AppRouteBackground(route: .login)
+
+            HStack(spacing: 44) {
             VStack(alignment: .leading, spacing: 18) {
                 Text("RIVER CLUB")
                     .font(.caption.weight(.bold))
@@ -42,7 +45,9 @@ struct LoginView: View {
                     .font(.caption)
                     .foregroundStyle(RCTheme.secondaryText)
             }
-            .frame(maxWidth: 420, alignment: .leading)
+            .padding(26)
+            .frame(maxWidth: 430, alignment: .leading)
+            .background(.black.opacity(0.28), in: RoundedRectangle(cornerRadius: 26))
 
             ZStack {
                 RoundedRectangle(cornerRadius: 40)
@@ -64,8 +69,9 @@ struct LoginView: View {
                     .padding(28)
             }
             .frame(maxWidth: .infinity, maxHeight: 300)
+            }
+            .safeAreaPadding(.horizontal, 42)
+            .safeAreaPadding(.vertical, 26)
         }
-        .safeAreaPadding(.horizontal, 42)
-        .safeAreaPadding(.vertical, 26)
     }
 }
