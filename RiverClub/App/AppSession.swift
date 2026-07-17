@@ -129,6 +129,7 @@ private struct TableDepartureAttempt {
 private struct AbandonedCashSessionSettlementAttempt {
     let settlementID: BusinessID
     let cashOutID: BusinessID
+    let profiles: [TableSeatProfile]
 }
 
 @MainActor @Observable
@@ -541,13 +542,16 @@ final class AppSession {
                         ),
                         cashOutID: try dependencies.nextBusinessID(
                             "abandoned-cash-out"
+                        ),
+                        profiles: try dependencies.makeSeatProfiles(
+                            cashSession.humanSeat
                         )
                     )
             }
             guard let attempt = abandonedCashSessionSettlementAttempt else {
                 throw PokerCoordinatorError.saveFailed
             }
-            let profiles = try dependencies.makeSeatProfiles(cashSession.humanSeat)
+            let profiles = attempt.profiles
             let archiveMetadata = try HandArchiveMetadata(
                 tableDisplayName: "上次牌桌",
                 humanSeat: cashSession.humanSeat,

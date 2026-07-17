@@ -213,8 +213,16 @@ final class CashTableEntryTests: XCTestCase {
         )
         let ids = JoinAttemptIDSpy()
         var coordinatorCalls = 0
+        var profileDraws = 0
         let dependencies = makeDependencies(
             ids: ids,
+            makeSeatProfiles: { humanSeat in
+                profileDraws += 1
+                return try profileFixture(
+                    humanSeat: humanSeat,
+                    generation: profileDraws
+                )
+            },
             makeCoordinator: { store, humanSeat, profiles, archiveMetadata, runtime in
                 coordinatorCalls += 1
                 if coordinatorCalls == 1 {
@@ -243,6 +251,7 @@ final class CashTableEntryTests: XCTestCase {
             "上次牌桌结算失败，请重试。"
         )
         XCTAssertEqual(ids.businessIDCalls, 2)
+        XCTAssertEqual(profileDraws, 1)
 
         await recoverySession.retryAbandonedCashSessionSettlement()
 
@@ -250,6 +259,7 @@ final class CashTableEntryTests: XCTestCase {
         XCTAssertNil(recoverySession.abandonedCashSessionError)
         XCTAssertEqual(ids.businessIDCalls, 2)
         XCTAssertEqual(coordinatorCalls, 2)
+        XCTAssertEqual(profileDraws, 1)
     }
 
     @MainActor

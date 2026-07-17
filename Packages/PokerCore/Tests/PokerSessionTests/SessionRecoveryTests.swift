@@ -31,6 +31,41 @@ import Testing
     #expect(reencodedObject["seatAvatarAssetNames"] == nil)
 }
 
+@Test func 头像映射编码解码后保留九座位与真人空头像() throws {
+    let humanSeat = try SeatID(0)
+    let names = Dictionary(uniqueKeysWithValues: try (0..<9).map { index in
+        (try SeatID(index), "玩家\(index + 1)")
+    })
+    let avatars: [SeatID: String?] = Dictionary(
+        uniqueKeysWithValues: try (0..<9).map { index in
+            let seat = try SeatID(index)
+            return (seat, seat == humanSeat ? nil : "avatar-\(index)")
+        }
+    )
+    let metadata = try HandArchiveMetadata(
+        tableDisplayName: "头像往返桌",
+        humanSeat: humanSeat,
+        seatDisplayNames: names,
+        seatAvatarAssetNames: avatars
+    )
+
+    let decoded = try JSONDecoder().decode(
+        HandArchiveMetadata.self,
+        from: JSONEncoder().encode(metadata)
+    )
+    let decodedAvatars = try #require(decoded.seatAvatarAssetNames)
+    let humanAvatar: String? = try #require(decodedAvatars[humanSeat])
+    let robotAvatars = decodedAvatars.compactMapValues { $0 }
+
+    #expect(Set(decodedAvatars.keys) == Set(names.keys))
+    #expect(humanAvatar == nil)
+    #expect(robotAvatars == Dictionary(
+        uniqueKeysWithValues: try (1..<9).map { index in
+            (try SeatID(index), "avatar-\(index)")
+        }
+    ))
+}
+
 @Test func 日期范围与牌桌筛选组合并保持稳定倒序() throws {
     let fixture = try HistoryQueryFixture()
     try fixture.save(table: "table-a", day: "2027-01-10", endedAt: 100, hand: 1)
