@@ -127,3 +127,38 @@ final class MockPokerRepositoryTests: XCTestCase {
         )
     }
 }
+
+final class TournamentPresentationTests: XCTestCase {
+    func testPaidTournamentButtonUsesAvailableHighContrastStyle() {
+        let presentation = TournamentRegistrationPresentation(
+            entryChips: 8_000,
+            isRegistered: false
+        )
+
+        XCTAssertEqual(presentation.title, "报名 · 8,000 筹码")
+        XCTAssertEqual(presentation.style, .available)
+        XCTAssertTrue(presentation.isEnabled)
+    }
+
+    func testFreeTournamentButtonKeepsAvailableHighContrastStyle() {
+        let presentation = TournamentRegistrationPresentation(
+            entryChips: 0,
+            isRegistered: false
+        )
+
+        XCTAssertEqual(presentation.title, "免费报名")
+        XCTAssertEqual(presentation.style, .available)
+        XCTAssertTrue(presentation.isEnabled)
+    }
+
+    func testRegisteredTournamentButtonUsesDistinctDisabledStyle() {
+        let presentation = TournamentRegistrationPresentation(
+            entryChips: 0,
+            isRegistered: true
+        )
+
+        XCTAssertEqual(presentation.title, "已报名")
+        XCTAssertEqual(presentation.style, .registered)
+        XCTAssertFalse(presentation.isEnabled)
+    }
+}

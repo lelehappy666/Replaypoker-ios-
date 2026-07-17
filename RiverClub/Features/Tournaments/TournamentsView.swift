@@ -1,5 +1,30 @@
 import SwiftUI
 
+struct TournamentRegistrationPresentation: Equatable {
+    enum Style: Equatable {
+        case available
+        case registered
+    }
+
+    let title: String
+    let style: Style
+    let isEnabled: Bool
+
+    init(entryChips: Int, isRegistered: Bool) {
+        if isRegistered {
+            title = "已报名"
+            style = .registered
+            isEnabled = false
+        } else {
+            title = entryChips == 0
+                ? "免费报名"
+                : "报名 · \(entryChips.formatted()) 筹码"
+            style = .available
+            isEnabled = true
+        }
+    }
+}
+
 enum TournamentTab: String, CaseIterable, Identifiable, Sendable {
     case upcoming = "即将开始"
     case registered = "已报名"
@@ -108,6 +133,10 @@ private struct TournamentCard: View {
     let onRegister: () -> Void
 
     var body: some View {
+        let registration = TournamentRegistrationPresentation(
+            entryChips: tournament.entryChips,
+            isRegistered: isRegistered
+        )
         VStack(alignment: .leading, spacing: 12) {
             Text(kindTitle)
                 .font(.caption.weight(.semibold))
@@ -127,14 +156,29 @@ private struct TournamentCard: View {
 
             Spacer()
 
-            Button(buttonTitle) {
-                guard !isRegistered else { return }
+            Button(registration.title) {
+                guard registration.isEnabled else { return }
                 onRegister()
             }
-            .buttonStyle(.borderedProminent)
-            .tint(RCTheme.gold)
+            .font(.body.weight(.semibold))
+            .foregroundStyle(
+                registration.style == .available
+                    ? RCTheme.background
+                    : RCTheme.primaryText
+            )
+            .padding(.horizontal, 14)
             .frame(minHeight: 44)
-            .disabled(isRegistered)
+            .background(
+                registration.style == .available
+                    ? RCTheme.gold
+                    : RCTheme.surfaceRaised,
+                in: Capsule()
+            )
+            .buttonStyle(.plain)
+            .disabled(!registration.isEnabled)
+            .accessibilityIdentifier(
+                "tournament.register.\(tournament.id.uuidString)"
+            )
         }
         .foregroundStyle(RCTheme.secondaryText)
         .padding(18)
@@ -151,9 +195,4 @@ private struct TournamentCard: View {
         }
     }
 
-    private var buttonTitle: String {
-        if isRegistered { return "已报名" }
-        if tournament.entryChips == 0 { return "免费报名" }
-        return "报名 · \(tournament.entryChips.formatted()) 筹码"
-    }
 }
