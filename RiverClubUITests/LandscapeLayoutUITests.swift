@@ -124,6 +124,26 @@ final class LandscapeLayoutUITests: XCTestCase {
             }
         }
 
+        for index in 0..<5 {
+            let slot = app.descendants(matching: .any)["table.communitySlot.\(index)"]
+            XCTAssertTrue(slot.exists)
+            XCTAssertFalse(slot.frame.isEmpty)
+            XCTAssertTrue(windowFrame.contains(slot.frame))
+            XCTAssertFalse(slot.frame.intersects(app.otherElements["table.betControls"].frame))
+            for seatFrame in seatFrames {
+                XCTAssertFalse(slot.frame.intersects(seatFrame))
+            }
+        }
+
+        let betIndicators = app.descendants(matching: .any).allElementsBoundByIndex.filter {
+            $0.identifier.hasPrefix("table.bet.") && !$0.frame.isEmpty
+        }
+        XCTAssertFalse(betIndicators.isEmpty, "盲注或当前下注应显示筹码堆")
+        for indicator in betIndicators {
+            XCTAssertTrue(windowFrame.contains(indicator.frame))
+            XCTAssertFalse(indicator.frame.intersects(app.otherElements["table.betControls"].frame))
+        }
+
         let localAvatar = app.descendants(matching: .any)["table.localAvatar"]
         XCTAssertTrue(localAvatar.waitForExistence(timeout: 5))
         let avatarFrame = localAvatar.frame
@@ -131,6 +151,8 @@ final class LandscapeLayoutUITests: XCTestCase {
         XCTAssertGreaterThan(avatarFrame.width, 0)
         XCTAssertGreaterThan(avatarFrame.height, 0)
         XCTAssertLessThanOrEqual(abs(avatarFrame.width - avatarFrame.height), 1)
+        XCTAssertTrue(windowFrame.contains(app.buttons["table.leave"].frame))
+        XCTAssertTrue(windowFrame.contains(app.buttons["牌桌设置"].frame))
         assertNoCurrencySymbols(in: app)
     }
 

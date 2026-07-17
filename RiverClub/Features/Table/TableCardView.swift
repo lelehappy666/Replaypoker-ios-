@@ -41,7 +41,7 @@ struct TableCardView: View {
                 .background(.white, in: RoundedRectangle(cornerRadius: 5))
             }
         }
-        .aspectRatio(34 / 46, contentMode: .fit)
+        .aspectRatio(PokerTableLayout.cardAspectRatio, contentMode: .fit)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
     }

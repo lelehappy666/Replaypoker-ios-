@@ -50,18 +50,74 @@ final class PokerTableLayoutTests: XCTestCase {
     func testActionRegionKeepsApprovedLandscapeFootprint() {
         XCTAssertEqual(PokerTableLayout.seatSize.width, 108)
         XCTAssertEqual(PokerTableLayout.seatSize.height, 96)
-        XCTAssertEqual(PokerTableLayout.betControlSize.width, 330)
-        XCTAssertEqual(PokerTableLayout.betControlSize.height, 164)
+        XCTAssertEqual(PokerTableLayout.betControlSize.width, 260)
+        XCTAssertEqual(PokerTableLayout.betControlSize.height, 128)
     }
 
     func testApprovedLandscapeCardAndSidebarMetrics() {
-        XCTAssertEqual(AppSidebar.landscapePhoneWidth, 168)
-        XCTAssertGreaterThanOrEqual(PokerTableLayout.communityCardSize.width, 46)
-        XCTAssertGreaterThanOrEqual(PokerTableLayout.communityCardSize.height, 62)
-        XCTAssertGreaterThanOrEqual(PokerTableLayout.humanHoleCardSize.width, 42)
-        XCTAssertGreaterThanOrEqual(PokerTableLayout.humanHoleCardSize.height, 57)
-        XCTAssertGreaterThanOrEqual(PokerTableLayout.botHoleCardSize.width, 34)
-        XCTAssertGreaterThanOrEqual(PokerTableLayout.botHoleCardSize.height, 46)
+        XCTAssertLessThanOrEqual(AppSidebar.landscapePhoneWidth, 168)
+        XCTAssertEqual(PokerTableLayout.communityCardSize, CGSize(width: 46, height: 62))
+        XCTAssertEqual(PokerTableLayout.humanHoleCardSize, CGSize(width: 46, height: 62))
+        XCTAssertEqual(PokerTableLayout.botHoleCardSize, CGSize(width: 38, height: 52))
+    }
+
+    func testCardsUsePokerRatioAndPositiveGap() {
+        XCTAssertEqual(PokerTableLayout.cardAspectRatio, 34.0 / 46.0, accuracy: 0.001)
+        XCTAssertGreaterThanOrEqual(PokerTableLayout.holeCardSpacing, 4)
+    }
+
+    func testFiveCommunitySlotsRemainClear() {
+        for canvas in canvases {
+            let slots = PokerTableLayout.communityCardFrames(for: canvas)
+            XCTAssertEqual(slots.count, 5)
+
+            for seat in PokerTableLayout.seatFrames(for: canvas) {
+                XCTAssertTrue(slots.allSatisfy { !$0.intersects(seat) })
+            }
+
+            let operation = PokerTableLayout.betControlRegion(for: canvas)
+            XCTAssertTrue(slots.allSatisfy { !$0.intersects(operation) })
+        }
+    }
+
+    func testBetPositionsStayBetweenSeatAndTableCenterWithoutInvadingReservedAreas() {
+        for canvas in canvases {
+            let center = PokerTableLayout.tableCenter(for: canvas)
+            let seatFrames = PokerTableLayout.seatFrames(for: canvas)
+            let slots = PokerTableLayout.communityCardFrames(for: canvas)
+            let operation = PokerTableLayout.betControlRegion(for: canvas)
+
+            for index in seatFrames.indices {
+                let position = PokerTableLayout.betPosition(forSeatAt: index, canvas: canvas)
+                let seatCenter = CGPoint(x: seatFrames[index].midX, y: seatFrames[index].midY)
+
+                XCTAssertLessThan(position.distance(to: center), seatCenter.distance(to: center))
+                XCTAssertFalse(seatFrames[index].contains(position))
+                XCTAssertFalse(operation.contains(position))
+                XCTAssertTrue(slots.allSatisfy { !$0.contains(position) })
+            }
+        }
+    }
+
+    func testSeatsBetsAndOperationRegionRemainInBoundsAndSeparate() {
+        for canvas in canvases {
+            let safeCanvas = PokerTableLayout.safeCanvas(for: canvas)
+            let seatFrames = PokerTableLayout.seatFrames(for: canvas)
+            let operation = PokerTableLayout.betControlRegion(for: canvas)
+
+            XCTAssertEqual(seatFrames.count, 9)
+            for frame in seatFrames {
+                XCTAssertTrue(safeCanvas.contains(frame))
+                XCTAssertFalse(frame.intersects(operation))
+            }
+
+            for index in seatFrames.indices {
+                let bet = PokerTableLayout.betPosition(forSeatAt: index, canvas: canvas)
+                XCTAssertTrue(safeCanvas.contains(bet))
+                XCTAssertFalse(operation.contains(bet))
+                XCTAssertTrue(seatFrames.allSatisfy { !$0.contains(bet) })
+            }
+        }
     }
 
     func testPlayableTableExposesDepartureControl() throws {
@@ -72,5 +128,13 @@ final class PokerTableLayoutTests: XCTestCase {
         )
         XCTAssertTrue(source.contains("table.leave"))
         XCTAssertTrue(source.contains("onRequestLeave"))
+    }
+}
+
+private extension CGPoint {
+    func distance(to other: CGPoint) -> CGFloat {
+        let horizontal = x - other.x
+        let vertical = y - other.y
+        return (horizontal * horizontal + vertical * vertical).squareRoot()
     }
 }

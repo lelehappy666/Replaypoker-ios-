@@ -20,6 +20,7 @@ struct PokerTableView: View {
     var body: some View {
         GeometryReader { proxy in
             let positions = PokerTableLayout.positions(for: proxy.size)
+            let seatFrameSize = PokerTableLayout.seatFrameSize(for: proxy.size)
 
             ZStack {
                 Color.clear
@@ -66,10 +67,23 @@ struct PokerTableView: View {
                                 .allowsHitTesting(false)
                         }
                         .frame(
-                            width: PokerTableLayout.seatSize.width,
-                            height: PokerTableLayout.seatSize.height
+                            width: seatFrameSize.width,
+                            height: seatFrameSize.height
                         )
+                        .scaleEffect(seatFrameSize.width / PokerTableLayout.seatSize.width)
                         .position(x: positions[index].x, y: positions[index].y)
+                    }
+                }
+
+                ForEach(Array(state.seats.enumerated()), id: \.element.id) { index, seat in
+                    if positions.indices.contains(index), seat.committedThisStreet.rawValue > 0 {
+                        CasinoChipStackView(
+                            amount: seat.committedThisStreet.rawValue,
+                            scale: 0.56,
+                            maximumVisibleChips: 4
+                        )
+                        .accessibilityIdentifier("table.bet.\(index)")
+                        .position(PokerTableLayout.betPosition(forSeatAt: index, canvas: proxy.size))
                     }
                 }
 
@@ -129,22 +143,6 @@ struct PokerTableView: View {
 
     private var centerBoard: some View {
         VStack(spacing: 2) {
-            HStack(spacing: 5) {
-                ForEach(Array(state.communityCards.enumerated()), id: \.offset) { index, card in
-                    TableCardView(card: card)
-                        .frame(
-                            width: PokerTableLayout.communityCardSize.width,
-                            height: PokerTableLayout.communityCardSize.height
-                        )
-                        .scaleEffect(
-                            reduceMotion ? 1 : animationPresentation.communityCardScale(at: index)
-                        )
-                        .opacity(
-                            reduceMotion ? 1 : animationPresentation.communityCardOpacity(at: index)
-                        )
-                }
-            }
-
             if let currentHandText {
                 Text(currentHandText)
                     .font(.caption2.weight(.bold))
@@ -154,26 +152,44 @@ struct PokerTableView: View {
                     .accessibilityIdentifier("table.currentHand")
             }
 
-            Text("底池 \(state.pot.rawValue.formatted())")
-                .font(.caption2.monospacedDigit().weight(.bold))
-                .foregroundStyle(RCTheme.primaryText)
-                .accessibilityIdentifier("table.pot")
-
-            HStack(spacing: -5) {
-                ForEach(0..<chipCount, id: \.self) { _ in
-                    Circle()
-                        .fill(RCTheme.gold)
-                        .frame(width: 10, height: 10)
-                        .overlay { Circle().stroke(RCTheme.background, lineWidth: 1) }
+            HStack(spacing: PokerTableLayout.holeCardSpacing) {
+                ForEach(0..<5, id: \.self) { index in
+                    Group {
+                        if state.communityCards.indices.contains(index) {
+                            TableCardView(card: state.communityCards[index])
+                                .scaleEffect(
+                                    reduceMotion ? 1 : animationPresentation.communityCardScale(at: index)
+                                )
+                                .opacity(
+                                    reduceMotion ? 1 : animationPresentation.communityCardOpacity(at: index)
+                                )
+                        } else {
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(
+                                    RCTheme.gold.opacity(0.24),
+                                    style: StrokeStyle(lineWidth: 1, dash: [4])
+                                )
+                                .accessibilityLabel("未发公共牌槽")
+                        }
+                    }
+                    .frame(
+                        width: PokerTableLayout.communityCardSize.width,
+                        height: PokerTableLayout.communityCardSize.height
+                    )
+                    .accessibilityIdentifier("table.communitySlot.\(index)")
                 }
             }
-            .offset(y: reduceMotion ? 0 : animationPresentation.chipOffset)
-            .accessibilityLabel("底池筹码堆")
-        }
-    }
 
-    private var chipCount: Int {
-        state.pot.rawValue == 0 ? 0 : min(6, max(1, state.pot.rawValue / 200))
+            Text("底池")
+                .font(.caption2.monospacedDigit().weight(.bold))
+                .foregroundStyle(RCTheme.primaryText)
+            CasinoChipStackView(
+                amount: state.pot.rawValue,
+                scale: reduceMotion ? 0.72 : 0.72 + animationPresentation.chipOffset / 100,
+                maximumVisibleChips: 5
+            )
+            .accessibilityIdentifier("table.pot")
+        }
     }
 
     @ViewBuilder
@@ -264,14 +280,15 @@ struct PokerTableView: View {
     }
 
     private var chatControls: some View {
-        HStack(spacing: 8) {
+        VStack(spacing: 4) {
             Button("聊天", systemImage: "bubble.left.fill") {}
             Button("表情", systemImage: "face.smiling") {}
         }
         .labelStyle(.iconOnly)
         .buttonStyle(.bordered)
         .tint(RCTheme.gold)
-        .controlSize(.large)
+        .controlSize(.regular)
+        .frame(width: 40)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("牌桌聊天和表情")
     }

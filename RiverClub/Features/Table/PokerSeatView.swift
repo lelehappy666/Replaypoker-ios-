@@ -3,40 +3,52 @@ import SwiftUI
 
 enum PokerTableLayout {
     static let seatSize = CGSize(width: 108, height: 96)
-    static let seatContentSize = CGSize(width: 104, height: 92)
-    static let betControlSize = CGSize(width: 330, height: 164)
+    static let seatContentSize = CGSize(width: 104, height: 94)
+    static let betControlSize = CGSize(width: 260, height: 128)
+    static let cardAspectRatio: CGFloat = 34.0 / 46.0
+    static let holeCardSpacing: CGFloat = 4
     static let communityCardSize = CGSize(width: 46, height: 62)
-    static let humanHoleCardSize = CGSize(width: 42, height: 57)
-    static let botHoleCardSize = CGSize(width: 34, height: 46)
+    static let humanHoleCardSize = CGSize(width: 46, height: 62)
+    static let botHoleCardSize = CGSize(width: 38, height: 52)
+
+    static func seatFrameSize(for canvas: CGSize) -> CGSize {
+        let canvasScale = min(canvas.width / 956, canvas.height / 440)
+        let compactScale = min(1, max(0.72, 1 - (1 - canvasScale) * 1.4))
+        return CGSize(
+            width: seatSize.width * compactScale,
+            height: seatSize.height * compactScale
+        )
+    }
 
     static func positions(for canvas: CGSize) -> [CGPoint] {
-        let topY = topBarRegion(for: canvas).maxY + seatSize.height / 2 + 2
-        let bottomY = canvas.height - seatSize.height / 2 - 2
-        let leftX = seatSize.width / 2 + 2
-        let rightX = canvas.width - seatSize.width / 2 - 2
-        let sideTopY = max(canvas.height * 0.52, topY + seatSize.height + 4)
-        let sideBottomY = min(bottomY - 16, sideTopY + seatSize.height)
+        let frameSize = seatFrameSize(for: canvas)
+        let topY = topBarRegion(for: canvas).maxY + frameSize.height / 2 + 4
+        let bottomY = canvas.height - frameSize.height / 2 - 2
+        let leftX = frameSize.width / 2
+        let rightX = canvas.width - frameSize.width / 2
+        let sideY = min(canvas.height * 0.59, bottomY - frameSize.height - 8)
+        let topPositions = (0..<6).map { index in
+            let progress = CGFloat(index) / 5
+            return CGPoint(x: leftX + (rightX - leftX) * progress, y: topY)
+        }
 
+        // 0...7 沿可用外缘从左下顺时针排开，8 始终是本人底部中央。
         return [
-            .init(x: canvas.width * 0.20, y: topY),
-            .init(x: canvas.width * 0.50, y: topY),
-            .init(x: canvas.width * 0.70, y: topY),
-            .init(x: rightX, y: topY + seatSize.height / 2 + 2),
-            .init(x: leftX, y: sideTopY),
-            .init(x: leftX, y: sideBottomY),
-            .init(x: canvas.width * 0.22, y: bottomY),
-            .init(x: canvas.width * 0.36, y: bottomY),
+            .init(x: canvas.width * 0.25, y: bottomY),
+            .init(x: leftX, y: sideY),
+        ] + topPositions + [
             .init(x: canvas.width * 0.50, y: bottomY),
         ]
     }
 
     static func seatFrames(for canvas: CGSize) -> [CGRect] {
-        positions(for: canvas).map {
+        let frameSize = seatFrameSize(for: canvas)
+        return positions(for: canvas).map {
             CGRect(
-                x: $0.x - seatSize.width / 2,
-                y: $0.y - seatSize.height / 2,
-                width: seatSize.width,
-                height: seatSize.height
+                x: $0.x - frameSize.width / 2,
+                y: $0.y - frameSize.height / 2,
+                width: frameSize.width,
+                height: frameSize.height
             )
         }
     }
@@ -50,10 +62,10 @@ enum PokerTableLayout {
     }
 
     static func centerBoardRegion(for canvas: CGSize) -> CGRect {
-        let size = CGSize(width: min(270, canvas.width * 0.36), height: 104)
+        let size = CGSize(width: min(270, canvas.width - 2 * betControlSize.width - 8), height: 142)
         return CGRect(
             x: canvas.width * 0.5 - size.width / 2,
-            y: canvas.height * 0.565 - size.height / 2,
+            y: canvas.height * 0.55 - size.height / 2,
             width: size.width,
             height: size.height
         )
@@ -68,16 +80,47 @@ enum PokerTableLayout {
         )
     }
 
+    static func communityCardFrames(for canvas: CGSize) -> [CGRect] {
+        let board = centerBoardRegion(for: canvas)
+        let totalWidth = communityCardSize.width * 5 + holeCardSpacing * 4
+        let startX = board.midX - totalWidth / 2
+        let y = board.minY + 14
+
+        return (0..<5).map { index in
+            CGRect(
+                x: startX + CGFloat(index) * (communityCardSize.width + holeCardSpacing),
+                y: y,
+                width: communityCardSize.width,
+                height: communityCardSize.height
+            )
+        }
+    }
+
+    static func tableCenter(for canvas: CGSize) -> CGPoint {
+        let board = centerBoardRegion(for: canvas)
+        return CGPoint(x: board.midX, y: board.midY)
+    }
+
+    static func betPosition(forSeatAt index: Int, canvas: CGSize) -> CGPoint {
+        let seatFrames = seatFrames(for: canvas)
+        guard seatFrames.indices.contains(index) else { return tableCenter(for: canvas) }
+
+        let seat = seatFrames[index]
+        let seatCenter = CGPoint(x: seat.midX, y: seat.midY)
+        let center = tableCenter(for: canvas)
+        return CGPoint(
+            x: seatCenter.x + (center.x - seatCenter.x) * 0.4,
+            y: seatCenter.y + (center.y - seatCenter.y) * 0.4
+        )
+    }
+
     static func vectorFromPot(
         toSeatAt index: Int,
         canvas: CGSize
     ) -> CGVector? {
         let positions = positions(for: canvas)
         guard positions.indices.contains(index) else { return nil }
-        let pot = CGPoint(
-            x: centerBoardRegion(for: canvas).midX,
-            y: centerBoardRegion(for: canvas).midY + 34
-        )
+        let pot = tableCenter(for: canvas)
         return CGVector(
             dx: positions[index].x - pot.x,
             dy: positions[index].y - pot.y
@@ -98,7 +141,7 @@ struct PokerSeatView: View {
 
     var body: some View {
         VStack(spacing: 1) {
-            HStack(spacing: -6) {
+            HStack(spacing: PokerTableLayout.holeCardSpacing) {
                 ForEach(Array(seat.cards.enumerated()), id: \.offset) { _, card in
                     TableCardView(cardState: card)
                         .frame(
@@ -112,23 +155,15 @@ struct PokerSeatView: View {
             }
             .frame(height: holeCardSize.height)
             .scaleEffect(holeCardScale)
+            .opacity(seat.hasFolded ? 0.44 : 1)
 
             HStack(spacing: 4) {
-                Text(initials)
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(seat.isHuman ? RCTheme.gold : RCTheme.primaryText)
-                    .frame(width: 30, height: 30)
-                    .background(
-                        seat.isHuman ? RCTheme.gold.opacity(0.24) : RCTheme.surfaceRaised,
-                        in: Circle()
-                    )
-                    .overlay {
-                        Circle()
-                            .stroke(
-                                seat.isHuman ? RCTheme.gold.opacity(0.72) : RCTheme.primaryText.opacity(0.24),
-                                lineWidth: 1
-                            )
-                    }
+                RobotAvatarView(
+                    imageName: seat.avatarAssetName,
+                    fallbackText: initials,
+                    size: 30
+                )
+                    .opacity(seat.hasFolded ? 0.44 : 1)
                     .accessibilityIdentifier(
                         seat.isHuman
                             ? "table.localAvatar"
@@ -142,34 +177,28 @@ struct PokerSeatView: View {
                     Text(seat.stack.rawValue.formatted())
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(RCTheme.gold)
+                    if showsStatus {
+                        Text(statusText)
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(RCTheme.gold)
+                            .lineLimit(1)
+                            .accessibilityIdentifier("table.seatStatus.\(seat.id.rawValue)")
+                    }
                 }
             }
 
-        }
-        .overlay(alignment: .bottomTrailing) {
-            if showsStatus {
-                Text(statusText)
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(RCTheme.background)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
-                    .background(RCTheme.gold, in: Capsule())
-                    .offset(y: 3)
-            }
         }
         .foregroundStyle(RCTheme.primaryText)
         .frame(
             width: PokerTableLayout.seatContentSize.width,
             height: PokerTableLayout.seatContentSize.height
         )
-        .padding(2)
-        .background(.black.opacity(0.16), in: RoundedRectangle(cornerRadius: 8))
+        .background(.black.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(isWinner || seat.isCurrentActor ? RCTheme.gold : .clear, lineWidth: 2)
         }
         .scaleEffect(reduceMotion ? 1 : animation.winnerScale(for: seat.id))
-        .opacity(seat.hasFolded ? 0.58 : 1)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityDescription)
     }
