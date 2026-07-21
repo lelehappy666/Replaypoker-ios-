@@ -5,48 +5,53 @@ struct AppRouteBackground: View {
 
     var body: some View {
         ZStack {
-            Image(assetName)
-                .resizable()
-                .scaledToFill()
-                .overlay(RCTheme.background.opacity(overlayOpacity))
-                .overlay {
-                    LinearGradient(
-                        colors: [
-                            .black.opacity(0.30),
-                            RCTheme.background.opacity(0.12),
-                            .black.opacity(0.42),
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                }
+            backgroundLayer(assetName: "lobby-background", overlayOpacity: 0.34)
+                .opacity(backgroundRoute == .lobby ? 1 : 0)
+            backgroundLayer(assetName: "tournament-background", overlayOpacity: 0.34)
+                .overlay { tournamentWatermark }
+                .opacity(backgroundRoute == .tournaments ? 1 : 0)
+            backgroundLayer(assetName: "history-background", overlayOpacity: 0.42)
+                .opacity(backgroundRoute == .tables ? 1 : 0)
+            backgroundLayer(assetName: "profile-background", overlayOpacity: 0.42)
+                .opacity(backgroundRoute == .profile ? 1 : 0)
+        }
+        .ignoresSafeArea()
+        .accessibilityHidden(true)
+    }
 
-            if route == .tournaments {
-                Image(systemName: "trophy.fill")
-                    .font(.system(size: 210, weight: .ultraLight))
-                    .foregroundStyle(RCTheme.gold.opacity(0.055))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-                    .padding(.trailing, 24)
+    private func backgroundLayer(
+        assetName: String,
+        overlayOpacity: Double
+    ) -> some View {
+        Image(assetName)
+            .resizable()
+            .scaledToFill()
+            .overlay(RCTheme.background.opacity(overlayOpacity))
+            .overlay {
+                LinearGradient(
+                    colors: [
+                        .black.opacity(0.30),
+                        RCTheme.background.opacity(0.12),
+                        .black.opacity(0.42),
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
             }
-        }
-            .ignoresSafeArea()
-            .accessibilityHidden(true)
     }
 
-    private var assetName: String {
-        switch route {
-        case .tournaments: "tournament-background"
-        case .tables: "history-background"
-        case .profile: "profile-background"
-        case .lobby, .tableBrowser, .table: "lobby-background"
-        case .login: "login-background"
-        }
+    private var tournamentWatermark: some View {
+        Image(systemName: "trophy.fill")
+            .font(.system(size: 210, weight: .ultraLight))
+            .foregroundStyle(RCTheme.gold.opacity(0.055))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+            .padding(.trailing, 24)
     }
 
-    private var overlayOpacity: Double {
+    private var backgroundRoute: AppRoute {
         switch route {
-        case .tables, .profile: 0.42
-        default: 0.34
+        case .tableBrowser, .table, .login: .lobby
+        default: route
         }
     }
 }

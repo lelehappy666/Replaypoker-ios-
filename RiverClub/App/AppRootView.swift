@@ -127,7 +127,7 @@ struct AppRootView: View {
                         route: session.route,
                         onSelect: session.open
                     ) {
-                        routedSidebarContent
+                        stableSidebarContent
                     }
                 }
             }
@@ -159,26 +159,27 @@ struct AppRootView: View {
         }
     }
 
-    @ViewBuilder
-    private var routedSidebarContent: some View {
-        switch session.route {
-        case .lobby:
+    private var stableSidebarContent: some View {
+        ZStack {
             LobbyView(
                 repository: repository,
                 balance: session.chipBalance,
                 onQuickJoin: openBuyInIfJoinable,
                 onAllTables: { session.open(.tableBrowser) }
             )
-        case .tables:
-            HandHistoryView(session: session)
-        case .tableBrowser:
-            TableListView(repository: repository, onSelect: openBuyInIfJoinable)
-        case .tournaments:
+            .stableSidebarPage(isActive: session.route == .lobby)
+
             TournamentsView(repository: repository, balance: session.chipBalance)
-        case .profile:
+                .stableSidebarPage(isActive: session.route == .tournaments)
+
+            HandHistoryView(session: session)
+                .stableSidebarPage(isActive: session.route == .tables)
+
             ProfileView(repository: repository, balance: session.chipBalance)
-        case .login, .table:
-            EmptyView()
+                .stableSidebarPage(isActive: session.route == .profile)
+
+            TableListView(repository: repository, onSelect: openBuyInIfJoinable)
+                .stableSidebarPage(isActive: session.route == .tableBrowser)
         }
     }
 
@@ -249,20 +250,31 @@ struct AppRootView: View {
 /// 四个主页面共用同一个固定外壳，切换时只替换右侧内容，避免安全区、
 /// 系统导航容器和页面自身尺寸共同参与布局而产生跳动或缩放。
 @MainActor enum SidebarPageShellLayout {
-    static func frames(in canvas: CGSize) -> (sidebar: CGRect, content: CGRect) {
-        let horizontalInset = AppSidebar.minimumSafeInset
-        let verticalInset = AppSidebar.shellVerticalPadding
+    static func frames(
+        in canvas: CGSize,
+        displayScale: CGFloat = 1
+    ) -> (sidebar: CGRect, content: CGRect) {
+        let scale = max(displayScale, 1)
+        func pixelAligned(_ value: CGFloat) -> CGFloat {
+            (value * scale).rounded() / scale
+        }
+        let horizontalInset = pixelAligned(AppSidebar.minimumSafeInset)
+        let verticalInset = pixelAligned(AppSidebar.shellVerticalPadding)
+        let sidebarMinX = horizontalInset
+        let sidebarMaxX = pixelAligned(sidebarMinX + AppSidebar.landscapePhoneWidth)
+        let sidebarMaxY = pixelAligned(max(canvas.height - verticalInset, verticalInset))
         let sidebar = CGRect(
-            x: horizontalInset,
+            x: sidebarMinX,
             y: verticalInset,
-            width: AppSidebar.landscapePhoneWidth,
-            height: max(canvas.height - verticalInset * 2, 0)
+            width: max(sidebarMaxX - sidebarMinX, 0),
+            height: max(sidebarMaxY - verticalInset, 0)
         )
-        let contentX = sidebar.maxX + AppSidebar.contentGap
+        let contentX = pixelAligned(sidebar.maxX + AppSidebar.contentGap)
+        let contentMaxX = pixelAligned(max(canvas.width - horizontalInset, contentX))
         let content = CGRect(
             x: contentX,
             y: verticalInset,
-            width: max(canvas.width - horizontalInset - contentX, 0),
+            width: max(contentMaxX - contentX, 0),
             height: sidebar.height
         )
         return (sidebar, content)
@@ -273,6 +285,7 @@ private struct SidebarPageShell<Content: View>: View {
     let route: AppRoute
     let onSelect: (AppRoute) -> Void
     private let content: Content
+    @Environment(\.displayScale) private var displayScale
 
     init(
         route: AppRoute,
@@ -286,7 +299,10 @@ private struct SidebarPageShell<Content: View>: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let frames = SidebarPageShellLayout.frames(in: proxy.size)
+            let frames = SidebarPageShellLayout.frames(
+                in: proxy.size,
+                displayScale: displayScale
+            )
 
             ZStack(alignment: .topLeading) {
                 AppRouteBackground(route: route)
@@ -309,6 +325,16 @@ private struct SidebarPageShell<Content: View>: View {
         .transaction { transaction in
             transaction.disablesAnimations = true
         }
+    }
+}
+
+private extension View {
+    func stableSidebarPage(isActive: Bool) -> some View {
+        frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .opacity(isActive ? 1 : 0)
+            .allowsHitTesting(isActive)
+            .accessibilityHidden(!isActive)
+            .zIndex(isActive ? 1 : 0)
     }
 }
 

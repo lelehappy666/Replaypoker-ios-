@@ -27,6 +27,31 @@ final class AppSessionTests: XCTestCase {
         XCTAssertEqual(first.content.minX, first.sidebar.maxX + AppSidebar.contentGap)
     }
 
+    @MainActor
+    func testSidebarFramesArePixelAligned() {
+        let frames = SidebarPageShellLayout.frames(
+            in: CGSize(width: 932.5, height: 430.5),
+            displayScale: 3
+        )
+        let values = [
+            frames.sidebar.minX,
+            frames.sidebar.minY,
+            frames.sidebar.maxX,
+            frames.sidebar.maxY,
+            frames.content.minX,
+            frames.content.minY,
+            frames.content.maxX,
+            frames.content.maxY,
+        ]
+        for value in values {
+            XCTAssertEqual(
+                (value * 3).rounded(),
+                value * 3,
+                accuracy: 0.0001
+            )
+        }
+    }
+
     func testFourMainPagesUseOneStableShellWithoutNavigationStack() throws {
         let source = try String(
             contentsOfFile: #filePath.replacingOccurrences(
@@ -37,6 +62,8 @@ final class AppSessionTests: XCTestCase {
         )
 
         XCTAssertTrue(source.contains("SidebarPageShell"))
+        XCTAssertTrue(source.contains("stableSidebarContent"))
+        XCTAssertFalse(source.contains("routedSidebarContent"))
         XCTAssertFalse(source.contains("NavigationStack"))
     }
 
