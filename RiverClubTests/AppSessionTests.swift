@@ -7,6 +7,26 @@ import XCTest
 @testable import RiverClub
 
 final class AppSessionTests: XCTestCase {
+    @MainActor
+    func testSidebarShellUsesStableExplicitFrames() {
+        let canvas = CGSize(width: 932, height: 430)
+        let first = SidebarPageShellLayout.frames(in: canvas)
+        let second = SidebarPageShellLayout.frames(in: canvas)
+
+        XCTAssertEqual(first.sidebar, second.sidebar)
+        XCTAssertEqual(first.content, second.content)
+        XCTAssertEqual(first.sidebar.width, AppSidebar.landscapePhoneWidth)
+        XCTAssertEqual(
+            first.content.width,
+            canvas.width
+                - AppSidebar.minimumSafeInset * 2
+                - AppSidebar.landscapePhoneWidth
+                - AppSidebar.contentGap
+        )
+        XCTAssertEqual(first.sidebar.minX, AppSidebar.minimumSafeInset)
+        XCTAssertEqual(first.content.minX, first.sidebar.maxX + AppSidebar.contentGap)
+    }
+
     func testFourMainPagesUseOneStableShellWithoutNavigationStack() throws {
         let source = try String(
             contentsOfFile: #filePath.replacingOccurrences(

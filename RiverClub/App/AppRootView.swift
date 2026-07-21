@@ -248,6 +248,27 @@ struct AppRootView: View {
 
 /// 四个主页面共用同一个固定外壳，切换时只替换右侧内容，避免安全区、
 /// 系统导航容器和页面自身尺寸共同参与布局而产生跳动或缩放。
+@MainActor enum SidebarPageShellLayout {
+    static func frames(in canvas: CGSize) -> (sidebar: CGRect, content: CGRect) {
+        let horizontalInset = AppSidebar.minimumSafeInset
+        let verticalInset = AppSidebar.shellVerticalPadding
+        let sidebar = CGRect(
+            x: horizontalInset,
+            y: verticalInset,
+            width: AppSidebar.landscapePhoneWidth,
+            height: max(canvas.height - verticalInset * 2, 0)
+        )
+        let contentX = sidebar.maxX + AppSidebar.contentGap
+        let content = CGRect(
+            x: contentX,
+            y: verticalInset,
+            width: max(canvas.width - horizontalInset - contentX, 0),
+            height: sidebar.height
+        )
+        return (sidebar, content)
+    }
+}
+
 private struct SidebarPageShell<Content: View>: View {
     let route: AppRoute
     let onSelect: (AppRoute) -> Void
@@ -265,21 +286,23 @@ private struct SidebarPageShell<Content: View>: View {
 
     var body: some View {
         GeometryReader { proxy in
-            ZStack {
+            let frames = SidebarPageShellLayout.frames(in: proxy.size)
+
+            ZStack(alignment: .topLeading) {
                 AppRouteBackground(route: route)
 
-                HStack(spacing: AppSidebar.contentGap) {
-                    AppSidebar(selection: route, onSelect: onSelect)
-                    content
-                        .frame(
-                            maxWidth: .infinity,
-                            maxHeight: .infinity,
-                            alignment: .topLeading
-                        )
-                        .clipped()
-                }
-                .padding(.horizontal, AppSidebar.minimumSafeInset)
-                .padding(.vertical, AppSidebar.shellVerticalPadding)
+                AppSidebar(selection: route, onSelect: onSelect)
+                    .frame(width: frames.sidebar.width, height: frames.sidebar.height)
+                    .position(x: frames.sidebar.midX, y: frames.sidebar.midY)
+
+                content
+                    .frame(
+                        width: frames.content.width,
+                        height: frames.content.height,
+                        alignment: .topLeading
+                    )
+                    .clipped()
+                    .position(x: frames.content.midX, y: frames.content.midY)
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
