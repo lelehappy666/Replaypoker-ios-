@@ -157,7 +157,7 @@ public struct FixedSessionClock: SessionClock {
 }
 
 public enum SessionEconomy {
-    public static let initialBalance = Chips(rawValue: 128_500)!
+    public static let initialBalance = Chips(rawValue: 1_000_000)!
     public static let dailyGift = Chips(rawValue: 10_000)!
     public static let reliefThreshold = Chips(rawValue: 2_000)!
     public static let reliefTarget = Chips(rawValue: 20_000)!

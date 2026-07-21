@@ -26,6 +26,35 @@ import Testing
     #expect(repository.fileURL.lastPathComponent == "river-club-state-v1.json")
 }
 
+@Test func versionThreeSnapshotUpgradesToCurrentVersion() throws {
+    let oldState = try persistedStateWithLedgerAndSession()
+    var object = try persistedStateJSONObject(oldState)
+    object["version"] = 3
+    let data = try JSONSerialization.data(withJSONObject: object)
+
+    let upgraded = try JSONDecoder().decode(PersistedAppState.self, from: data)
+
+    #expect(upgraded.version == 4)
+    #expect(upgraded.ledger == oldState.ledger)
+    #expect(upgraded.activeCashSession?.view == oldState.activeCashSession?.view)
+}
+
+@Test func versionFourWelcomeTopUpSnapshotRoundTrips() throws {
+    var ledger = EntertainmentChipLedger(balance: try Chips(87_779))
+    _ = try ledger.claimWelcomeBalanceTopUp(
+        id: try BusinessID("welcome-v4-round-trip"),
+        version: 1,
+        target: try Chips(1_000_000),
+        at: .distantPast
+    )
+    let state = PersistedAppState(ledger: ledger)
+    let data = try JSONEncoder().encode(state)
+    let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+    #expect(object["version"] as? Int == 4)
+    #expect(try JSONDecoder().decode(PersistedAppState.self, from: data) == state)
+}
+
 @Test func savingAgainAtomicallyReplacesExistingCommittedFile() throws {
     let directory = try TemporaryDirectory()
     let repository = FileSessionRepository(directory: directory.url)

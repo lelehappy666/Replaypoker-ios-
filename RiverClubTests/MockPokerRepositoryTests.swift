@@ -135,7 +135,7 @@ final class TournamentPresentationTests: XCTestCase {
             isRegistered: false
         )
 
-        XCTAssertEqual(presentation.title, "报名 · 8,000 筹码")
+        XCTAssertEqual(presentation.title, "报名 · $8,000")
         XCTAssertEqual(presentation.style, .available)
         XCTAssertTrue(presentation.isEnabled)
     }

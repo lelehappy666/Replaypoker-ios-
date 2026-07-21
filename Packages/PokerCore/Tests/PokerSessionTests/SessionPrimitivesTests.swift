@@ -4,7 +4,7 @@ import Testing
 @testable import PokerSession
 
 @Test func economyConstantsMatchApprovedDesign() throws {
-    #expect(SessionEconomy.initialBalance == (try Chips(128_500)))
+    #expect(SessionEconomy.initialBalance == (try Chips(1_000_000)))
     #expect(SessionEconomy.dailyGift == (try Chips(10_000)))
     #expect(SessionEconomy.reliefThreshold == (try Chips(2_000)))
     #expect(SessionEconomy.reliefTarget == (try Chips(20_000)))

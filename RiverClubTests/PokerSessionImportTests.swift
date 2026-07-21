@@ -5,7 +5,7 @@ import PokerCore
 
 final class PokerSessionImportTests: XCTestCase {
     func testApprovedEconomyConstantsAreAvailableToApplication() throws {
-        XCTAssertEqual(SessionEconomy.initialBalance, try Chips(128_500))
+        XCTAssertEqual(SessionEconomy.initialBalance, try Chips(1_000_000))
     }
 
     func testCoordinatorPublicStateIsAvailableToApplication() {

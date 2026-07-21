@@ -3,6 +3,24 @@ import PokerCore
 import Testing
 @testable import PokerSession
 
+@Test func welcomeTopUpPersistsAndRetryDoesNotSaveAgain() throws {
+    let ledger = EntertainmentChipLedger(balance: try Chips(87_779))
+    let repository = InMemorySessionRepository(
+        state: PersistedAppState(ledger: ledger)
+    )
+    let store = try LocalPokerStore(repository: repository, clock: storeClock)
+    let id = try BusinessID("welcome-balance-top-up-v1-store")
+
+    let first = try store.claimWelcomeBalanceTopUp(version: 1, businessID: id)
+    let savedCount = repository.saveCount
+    let second = try store.claimWelcomeBalanceTopUp(version: 1, businessID: id)
+
+    #expect(first == second)
+    #expect(store.accountBalance == (try Chips(1_000_000)))
+    #expect(repository.saveCount == savedCount)
+    #expect(try repository.load().ledger.entries.last == first)
+}
+
 @Test func sittingDownDebitsOnlyHumanBuyInAndPersistsTheWholeSession() throws {
     let repository = InMemorySessionRepository()
     let store = try LocalPokerStore(repository: repository, clock: storeClock)
@@ -14,7 +32,7 @@ import Testing
 
     #expect(view.phase == .readyForHand)
     #expect(view.seats.count == 9)
-    #expect(store.accountBalance == (try Chips(124_500)))
+    #expect(store.accountBalance == (try Chips(996_000)))
     #expect(repository.saveCount == 1)
     #expect(try repository.load().activeCashSession?.view == view)
 }
@@ -29,7 +47,7 @@ import Testing
     let second = try store.sitDown(request: request, businessID: id)
 
     #expect(second == first)
-    #expect(store.accountBalance == (try Chips(124_500)))
+    #expect(store.accountBalance == (try Chips(996_000)))
     #expect(throws: PokerSessionError.businessIDConflict) {
         try store.sitDown(
             request: cashTableRequest(human: 5_000),
@@ -669,7 +687,7 @@ import Testing
     try store.leave(businessID: id)
     try store.leave(businessID: id)
 
-    #expect(store.accountBalance == (try Chips(128_500)))
+    #expect(store.accountBalance == (try Chips(1_000_000)))
     #expect(store.cashSession == nil)
     #expect(throws: PokerSessionError.businessIDConflict) {
         try store.claimDailyGift(businessID: id)
@@ -750,7 +768,7 @@ import Testing
     let firstGift = try giftStore.claimDailyGift(businessID: giftID)
     let secondGift = try giftStore.claimDailyGift(businessID: giftID)
     #expect(secondGift == firstGift)
-    #expect(giftStore.accountBalance == (try Chips(138_500)))
+    #expect(giftStore.accountBalance == (try Chips(1_010_000)))
 
     let lowLedger = EntertainmentChipLedger(balance: try Chips(5_500))
     let reliefRepository = InMemorySessionRepository(state: PersistedAppState(ledger: lowLedger))
@@ -934,7 +952,7 @@ private func savedLegacyGenericVersionTwoState(
             oldState.commandReceipts[entry.businessID] = .legacyLedgerOnly(
                 reason: entry.reason
             )
-        case .dailyGift, .bankruptcyRelief:
+        case .dailyGift, .bankruptcyRelief, .welcomeBalanceTopUp:
             break
         }
     }

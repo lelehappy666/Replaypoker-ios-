@@ -134,6 +134,10 @@ private struct AbandonedCashSessionSettlementAttempt {
 
 @MainActor @Observable
 final class AppSession {
+    private static let currentWelcomeBalanceTopUpVersion = 1
+    private static let currentWelcomeBalanceTopUpBusinessID =
+        "river-club:welcome-balance-top-up:v1"
+
     var route: AppRoute = .login
     @ObservationIgnored let pokerStore: LocalPokerStore
     private(set) var tableCoordinator: CashTableCoordinator?
@@ -199,14 +203,38 @@ final class AppSession {
             at: sessionDirectory,
             withIntermediateDirectories: true
         )
-        let store = try LocalPokerStore.open(
+        return try openPersistedSession(
             directory: sessionDirectory,
-            clock: AppSessionClock()
-        )
-        return AppSession(
-            pokerStore: store,
+            clock: AppSessionClock(),
             botSettingsRepository: try BotSettingsRepository.applicationSupport(),
             dependencies: .live
+        )
+    }
+
+    static func openPersistedSession(
+        directory: URL,
+        clock: any SessionClock,
+        botSettingsRepository: any BotSettingsPersisting,
+        dependencies: AppSessionDependencies
+    ) throws -> AppSession {
+        let store = try LocalPokerStore.open(
+            directory: directory,
+            clock: clock
+        )
+        _ = try applyCurrentWelcomeBalanceTopUp(to: store)
+        return AppSession(
+            pokerStore: store,
+            botSettingsRepository: botSettingsRepository,
+            dependencies: dependencies
+        )
+    }
+
+    static func applyCurrentWelcomeBalanceTopUp(
+        to store: LocalPokerStore
+    ) throws -> LedgerEntry {
+        try store.claimWelcomeBalanceTopUp(
+            version: currentWelcomeBalanceTopUpVersion,
+            businessID: try BusinessID(currentWelcomeBalanceTopUpBusinessID)
         )
     }
 
@@ -246,12 +274,9 @@ final class AppSession {
         )
         let ids = UITestIDSequence(namespace: UUID().uuidString)
         let identitySequence = identitySeed.map(UITestIdentityProfileSequence.init)
-        let store = try LocalPokerStore.open(
+        return try openPersistedSession(
             directory: directory,
-            clock: AppSessionClock()
-        )
-        return AppSession(
-            pokerStore: store,
+            clock: AppSessionClock(),
             botSettingsRepository: MemoryBotSettingsRepository(initial: .recommended),
             dependencies: AppSessionDependencies(
                 nextSessionID: {

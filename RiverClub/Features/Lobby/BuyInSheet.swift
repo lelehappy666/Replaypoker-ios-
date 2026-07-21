@@ -32,6 +32,21 @@ struct BuyInState: Equatable {
         balance >= minimum && amount >= minimum && amount <= min(maximum, balance)
     }
 
+    var sliderRange: ClosedRange<Int>? {
+        let upperBound = min(maximum, balance)
+        guard upperBound > minimum else { return nil }
+        return minimum...upperBound
+    }
+
+    func sliderRange(step: Int) -> ClosedRange<Int>? {
+        guard let sliderRange,
+              sliderRange.upperBound - sliderRange.lowerBound >= max(step, 1)
+        else {
+            return nil
+        }
+        return sliderRange
+    }
+
     mutating func normalize() {
         let upperBound = min(maximum, balance)
         amount = upperBound < minimum
@@ -101,20 +116,7 @@ struct BuyInSheet: View {
                     .foregroundStyle(RCTheme.gold)
             }
 
-            Slider(
-                value: Binding(
-                    get: { Double(state.amount) },
-                    set: {
-                        state.amount = Int($0.rounded())
-                        state.normalize()
-                    }
-                ),
-                in: Double(state.minimum)...Double(max(state.minimum, min(state.maximum, state.balance))),
-                step: Double(max(table.bigBlind, 1))
-            )
-            .tint(RCTheme.gold)
-            .disabled(state.balance < state.minimum)
-            .accessibilityIdentifier("buyIn.slider")
+            buyInSlider
 
             HStack {
                 Text("最低 \(EntertainmentAmountFormatter.string(state.minimum))")
@@ -171,5 +173,31 @@ struct BuyInSheet: View {
                 .stroke(RCTheme.gold.opacity(0.24), lineWidth: 1)
         }
         .shadow(color: .black.opacity(0.38), radius: 24, y: 10)
+    }
+
+    @ViewBuilder
+    private var buyInSlider: some View {
+        let step = max(table.bigBlind, 1)
+        if let range = state.sliderRange(step: step) {
+            Slider(
+                value: Binding(
+                    get: { Double(state.amount) },
+                    set: {
+                        state.amount = Int($0.rounded())
+                        state.normalize()
+                    }
+                ),
+                in: Double(range.lowerBound)...Double(range.upperBound),
+                step: Double(step)
+            )
+            .tint(RCTheme.gold)
+            .accessibilityIdentifier("buyIn.slider")
+        } else {
+            Capsule()
+                .fill(RCTheme.secondaryText.opacity(0.28))
+                .frame(height: 4)
+                .frame(maxWidth: .infinity, minHeight: 28)
+                .accessibilityHidden(true)
+        }
     }
 }

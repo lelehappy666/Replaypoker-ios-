@@ -497,6 +497,31 @@ public final class LocalPokerStore {
         }
     }
 
+    public func claimWelcomeBalanceTopUp(
+        version: Int,
+        businessID: BusinessID
+    ) throws -> LedgerEntry {
+        try requireAvailableForLedgerCommand(businessID)
+        let reason = LedgerReason.welcomeBalanceTopUp(
+            version: version,
+            target: SessionEconomy.initialBalance
+        )
+        if let existing = ledgerEntry(for: businessID) {
+            guard existing.reason == reason else {
+                throw PokerSessionError.businessIDConflict
+            }
+            return existing
+        }
+        return try transact { state in
+            try state.ledger.claimWelcomeBalanceTopUp(
+                id: businessID,
+                version: version,
+                target: SessionEconomy.initialBalance,
+                at: clock.now
+            )
+        }
+    }
+
     public func claimRelief(businessID: BusinessID) throws -> LedgerEntry {
         try requireAvailableForLedgerCommand(businessID)
         if let existing = ledgerEntry(for: businessID) {

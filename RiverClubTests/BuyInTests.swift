@@ -29,6 +29,25 @@ final class BuyInTests: XCTestCase {
         XCTAssertFalse(state.canConfirm)
     }
 
+    func testInsufficientBalanceDoesNotProduceSliderRange() {
+        let state = BuyInState(minimum: 8_000, maximum: 5_000, balance: 5_000)
+
+        XCTAssertNil(state.sliderRange)
+    }
+
+    func testExactMinimumUsesStaticTrackInsteadOfZeroLengthSlider() {
+        let state = BuyInState(minimum: 8_000, maximum: 8_000, balance: 8_000)
+
+        XCTAssertNil(state.sliderRange)
+        XCTAssertTrue(state.canConfirm)
+    }
+
+    func testRangeShorterThanBlindStepUsesStaticTrack() {
+        let state = BuyInState(minimum: 8_000, maximum: 8_100, balance: 8_100)
+
+        XCTAssertNil(state.sliderRange(step: 200))
+    }
+
     func testQuickJoinMatchesSelectedBlindWithAnOpenSeat() {
         let fullMatch = makeTable(name: "满桌", smallBlind: 100, bigBlind: 200, players: 9)
         let wrongBlind = makeTable(name: "其他盲注", smallBlind: 200, bigBlind: 400, players: 4)

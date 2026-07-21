@@ -116,6 +116,104 @@ final class AppSessionTests: XCTestCase {
     }
 
     @MainActor
+    func testWelcomeBalanceTopUpRestoresExistingAccountOnceWithoutChangingTable() throws {
+        let fixture = try AppSessionFixture()
+        let request = CashTableRequest(
+            sessionID: try SessionID("welcome-top-up-active-session"),
+            table: try TableID("welcome-top-up-table"),
+            config: try HandConfig(
+                smallBlind: try Chips(100),
+                bigBlind: try Chips(200),
+                dealer: try SeatID(0)
+            ),
+            humanSeat: try SeatID(8),
+            stacks: try Dictionary(uniqueKeysWithValues: (0..<9).map { index in
+                (try SeatID(index), try Chips(index == 8 ? 16_000 : 20_000))
+            })
+        )
+        _ = try fixture.store.sitDown(
+            request: request,
+            businessID: try BusinessID("welcome-top-up-existing-buy-in")
+        )
+        let sessionBefore = fixture.store.cashSession
+
+        let first = try AppSession.applyCurrentWelcomeBalanceTopUp(to: fixture.store)
+        let second = try AppSession.applyCurrentWelcomeBalanceTopUp(to: fixture.store)
+
+        XCTAssertEqual(first, second)
+        XCTAssertEqual(fixture.store.accountBalance, try Chips(1_000_000))
+        XCTAssertEqual(fixture.store.cashSession, sessionBefore)
+    }
+
+    @MainActor
+    func testOpeningVersionThreeStoreAutomaticallyTopUpsOnceAndPreservesData() throws {
+        let fixture = try HandHistoryAppFixture.withActiveReadySessionAndRecords()
+        try fixture.store.leave(
+            businessID: try BusinessID("welcome-top-up-old-store-leave")
+        )
+        let targetBalance = 87_779
+        let buyIn = fixture.store.accountBalance.rawValue - targetBalance
+        XCTAssertGreaterThan(buyIn, 0)
+        let humanSeat = try SeatID(8)
+        let request = CashTableRequest(
+            sessionID: try SessionID("welcome-top-up-old-session"),
+            table: try TableID("welcome-top-up-old-table"),
+            config: try HandConfig(
+                smallBlind: try Chips(5_000),
+                bigBlind: try Chips(10_000),
+                dealer: try SeatID(0)
+            ),
+            humanSeat: humanSeat,
+            stacks: try Dictionary(uniqueKeysWithValues: (0..<9).map { index in
+                (try SeatID(index), try Chips(index == 8 ? buyIn : 20_000))
+            })
+        )
+        _ = try fixture.store.sitDown(
+            request: request,
+            businessID: try BusinessID("welcome-top-up-old-store-buy-in")
+        )
+        let cashSessionBefore = fixture.store.cashSession
+        let recordsBefore = fixture.store.handRecords()
+        let fileURL = fixture.directory.appendingPathComponent("river-club-state-v1.json")
+        var legacyObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: fileURL)) as? [String: Any]
+        )
+        legacyObject["version"] = 3
+        try JSONSerialization.data(withJSONObject: legacyObject).write(
+            to: fileURL,
+            options: .atomic
+        )
+
+        let first = try AppSession.openPersistedSession(
+            directory: fixture.directory,
+            clock: FixedSessionClock(
+                now: Date(timeIntervalSince1970: 1_800_000_100),
+                day: try LocalDay("2027-01-12")
+            ),
+            botSettingsRepository: MemoryBotSettingsRepository(initial: .recommended),
+            dependencies: .live
+        )
+        let dataAfterFirstOpen = try Data(contentsOf: fileURL)
+        let second = try AppSession.openPersistedSession(
+            directory: fixture.directory,
+            clock: FixedSessionClock(
+                now: Date(timeIntervalSince1970: 1_800_000_200),
+                day: try LocalDay("2027-01-12")
+            ),
+            botSettingsRepository: MemoryBotSettingsRepository(initial: .recommended),
+            dependencies: .live
+        )
+
+        XCTAssertEqual(first.chipBalance, 1_000_000)
+        XCTAssertEqual(second.chipBalance, 1_000_000)
+        XCTAssertEqual(first.pokerStore.cashSession, cashSessionBefore)
+        XCTAssertEqual(second.pokerStore.cashSession, cashSessionBefore)
+        XCTAssertEqual(first.pokerStore.handRecords(), recordsBefore)
+        XCTAssertEqual(second.pokerStore.handRecords(), recordsBefore)
+        XCTAssertEqual(try Data(contentsOf: fileURL), dataAfterFirstOpen)
+    }
+
+    @MainActor
     func testJoiningTableStoresSelectedTable() throws {
         let fixture = try AppSessionFixture()
         let session = fixture.session

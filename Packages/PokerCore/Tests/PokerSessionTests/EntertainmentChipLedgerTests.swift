@@ -3,6 +3,68 @@ import PokerCore
 import Testing
 @testable import PokerSession
 
+@Test func welcomeTopUpReachesTargetOnceAndKeepsOriginalReceipt() throws {
+    var ledger = EntertainmentChipLedger(balance: try Chips(87_779))
+    let id = try BusinessID("welcome-balance-top-up-v1")
+
+    let first = try ledger.claimWelcomeBalanceTopUp(
+        id: id,
+        version: 1,
+        target: try Chips(1_000_000),
+        at: .distantPast
+    )
+    let second = try ledger.claimWelcomeBalanceTopUp(
+        id: id,
+        version: 1,
+        target: try Chips(1_000_000),
+        at: .distantFuture
+    )
+
+    #expect(first == second)
+    #expect(first.delta == 912_221)
+    #expect(ledger.balance == (try Chips(1_000_000)))
+    #expect(ledger.entries.count == 1)
+}
+
+@Test func welcomeTopUpMarksHighBalanceWithoutReducingIt() throws {
+    var ledger = EntertainmentChipLedger(balance: try Chips(1_200_000))
+
+    let entry = try ledger.claimWelcomeBalanceTopUp(
+        id: try BusinessID("welcome-balance-top-up-v1-high"),
+        version: 1,
+        target: try Chips(1_000_000),
+        at: .distantPast
+    )
+
+    #expect(entry.delta == 0)
+    #expect(ledger.balance == (try Chips(1_200_000)))
+    #expect(ledger.entries.count == 1)
+}
+
+@Test func welcomeTopUpSurvivesEncodingAndRemainsIdempotent() throws {
+    var original = EntertainmentChipLedger(balance: try Chips(87_779))
+    let id = try BusinessID("welcome-balance-top-up-v1-round-trip")
+    let first = try original.claimWelcomeBalanceTopUp(
+        id: id,
+        version: 1,
+        target: try Chips(1_000_000),
+        at: .distantPast
+    )
+    let data = try JSONEncoder().encode(original)
+    var reopened = try JSONDecoder().decode(EntertainmentChipLedger.self, from: data)
+
+    let retry = try reopened.claimWelcomeBalanceTopUp(
+        id: id,
+        version: 1,
+        target: try Chips(1_000_000),
+        at: .distantFuture
+    )
+
+    #expect(retry == first)
+    #expect(reopened.balance == (try Chips(1_000_000)))
+    #expect(reopened.entries.count == 1)
+}
+
 @Test func buyInAndCashOutCreateAuditableEntries() throws {
     var ledger = EntertainmentChipLedger()
     let table = try TableID("jade")
@@ -12,9 +74,9 @@ import Testing
         id: try BusinessID("buy-1"),
         at: Date(timeIntervalSince1970: 1)
     )
-    #expect(bought.balanceBefore == (try Chips(128_500)))
+    #expect(bought.balanceBefore == (try Chips(1_000_000)))
     #expect(bought.delta == -5_000)
-    #expect(ledger.balance == (try Chips(123_500)))
+    #expect(ledger.balance == (try Chips(995_000)))
 
     let returned = try ledger.cashOut(
         amount: try Chips(6_250),
@@ -23,7 +85,7 @@ import Testing
         at: Date(timeIntervalSince1970: 2)
     )
     #expect(returned.delta == 6_250)
-    #expect(ledger.balance == (try Chips(129_750)))
+    #expect(ledger.balance == (try Chips(1_001_250)))
 }
 
 @Test func repeatingSameBusinessCommandIsIdempotentAndKeepsOriginalTimestamp() throws {
@@ -34,7 +96,7 @@ import Testing
     let second = try ledger.claimDailyGift(id: id, day: day, at: .distantFuture)
     #expect(first == second)
     #expect(second.timestamp == .distantPast)
-    #expect(ledger.balance == (try Chips(138_500)))
+    #expect(ledger.balance == (try Chips(1_010_000)))
     #expect(ledger.entries.count == 1)
 }
 
@@ -112,7 +174,7 @@ import Testing
         day: try LocalDay("2026-07-15"),
         at: .distantFuture
     )
-    #expect(ledger.balance == (try Chips(148_500)))
+    #expect(ledger.balance == (try Chips(1_020_000)))
     #expect(ledger.entries.count == 2)
 }
 

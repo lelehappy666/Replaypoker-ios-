@@ -2,7 +2,7 @@ import Foundation
 import PokerCore
 
 package struct PersistedAppState: Codable, Equatable, Sendable {
-    package static let currentVersion = 3
+    package static let currentVersion = 4
 
     package var version: Int
     package var ledger: EntertainmentChipLedger
@@ -234,7 +234,7 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
                     }
                     segmentHasBuyIn = false
                     openMigratedBuyInIDs.removeAll()
-                case .dailyGift, .bankruptcyRelief:
+                case .dailyGift, .bankruptcyRelief, .welcomeBalanceTopUp:
                     break
                 }
             }
@@ -400,7 +400,7 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
             case .cashOut:
                 segmentHasBuyIn = false
                 openLegacyBuyInIDs.removeAll()
-            case .dailyGift, .bankruptcyRelief:
+            case .dailyGift, .bankruptcyRelief, .welcomeBalanceTopUp:
                 break
             }
         }
@@ -493,7 +493,7 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
                 guard commandReceipts[entry.businessID] != nil else {
                     throw PokerSessionError.corruptSnapshot
                 }
-            case .dailyGift, .bankruptcyRelief:
+            case .dailyGift, .bankruptcyRelief, .welcomeBalanceTopUp:
                 break
             }
         }

@@ -310,9 +310,10 @@ final class CashTableEntryTests: XCTestCase {
             profiles.first { $0.id == request.humanSeat }?.displayName,
             "RiverAce"
         )
-        XCTAssertNil(profiles.first { $0.id == request.humanSeat }?.avatarAssetName)
+        XCTAssertNotNil(profiles.first { $0.id == request.humanSeat }?.avatarAssetName)
         let bots = profiles.filter { $0.id != request.humanSeat }
         XCTAssertEqual(Set(bots.compactMap(\.avatarAssetName)).count, 8)
+        XCTAssertEqual(Set(profiles.compactMap(\.avatarAssetName)).count, 9)
     }
 
     @MainActor
@@ -362,7 +363,7 @@ final class CashTableEntryTests: XCTestCase {
         let invalidCases: [(PokerTableSummary, Int)] = [
             (AppSessionFixture.makeTable(), 15_600),
             (AppSessionFixture.makeTable(), 40_400),
-            (makeTable(smallBlind: 2_000, bigBlind: 4_000), 160_000),
+            (makeTable(smallBlind: 2_000, bigBlind: 4_000), 400_400),
         ]
 
         for (table, buyIn) in invalidCases {
@@ -410,8 +411,8 @@ final class CashTableEntryTests: XCTestCase {
         )
         let fixture = try AppSessionFixture(dependencies: dependencies)
         fixture.session.continueAsGuest()
-        let table = makeTable(smallBlind: 642, bigBlind: 1_285)
-        let buyIn = 128_500
+        let table = makeTable(smallBlind: 5_000, bigBlind: 10_000)
+        let buyIn = 1_000_000
         let before = fixture.session.chipBalance
 
         XCTAssertThrowsError(
@@ -428,7 +429,7 @@ final class CashTableEntryTests: XCTestCase {
         XCTAssertThrowsError(
             try fixture.session.joinCashTable(
                 table,
-                buyIn: 102_800,
+                buyIn: 800_000,
                 autoTopUp: false,
                 reduceMotion: true
             )

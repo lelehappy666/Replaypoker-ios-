@@ -6,6 +6,7 @@ public enum LedgerReason: Codable, Equatable, Sendable {
     case cashOut(table: TableID)
     case dailyGift(day: LocalDay)
     case bankruptcyRelief(day: LocalDay)
+    case welcomeBalanceTopUp(version: Int, target: Chips)
 }
 
 public struct LedgerEntry: Codable, Equatable, Sendable {
@@ -115,6 +116,49 @@ public struct EntertainmentChipLedger: Codable, Equatable, Sendable {
         return try apply(id: id, reason: reason, delta: delta, at: timestamp)
     }
 
+    public mutating func claimWelcomeBalanceTopUp(
+        id: BusinessID,
+        version: Int,
+        target: Chips,
+        at timestamp: Date
+    ) throws -> LedgerEntry {
+        let reason = LedgerReason.welcomeBalanceTopUp(version: version, target: target)
+
+        if let existing = entriesByBusinessID[id] {
+            return try apply(
+                id: id,
+                reason: reason,
+                delta: existing.delta,
+                at: timestamp
+            )
+        }
+
+        guard version > 0, target.rawValue > 0 else {
+            throw PokerSessionError.invalidBuyIn
+        }
+        guard !entries.contains(where: {
+            if case let .welcomeBalanceTopUp(existingVersion, _) = $0.reason {
+                return existingVersion == version
+            }
+            return false
+        }) else {
+            throw PokerSessionError.businessIDConflict
+        }
+
+        let delta: Int
+        if balance >= target {
+            delta = 0
+        } else {
+            let result = target.rawValue.subtractingReportingOverflow(balance.rawValue)
+            guard !result.overflow else {
+                throw PokerSessionError.chipArithmeticOverflow
+            }
+            delta = result.partialValue
+        }
+
+        return try apply(id: id, reason: reason, delta: delta, at: timestamp)
+    }
+
     private mutating func apply(
         id: BusinessID,
         reason: LedgerReason,
@@ -161,6 +205,7 @@ public struct EntertainmentChipLedger: Codable, Equatable, Sendable {
         var previousBalanceAfter: Chips?
         var giftDays: Set<LocalDay> = []
         var reliefDays: Set<LocalDay> = []
+        var welcomeTopUpVersions: Set<Int> = []
 
         for entry in decodedEntries {
             guard rebuiltIndex.updateValue(entry, forKey: entry.businessID) == nil else {
@@ -203,6 +248,17 @@ public struct EntertainmentChipLedger: Codable, Equatable, Sendable {
                       reliefDays.insert(day).inserted
                 else {
                     throw Self.corruptLedger(decoder, "Invalid relief entry")
+                }
+            case let .welcomeBalanceTopUp(version, target):
+                let expectedAfter = max(entry.balanceBefore.rawValue, target.rawValue)
+                let expectedDelta = expectedAfter - entry.balanceBefore.rawValue
+                guard version > 0,
+                      target.rawValue > 0,
+                      entry.delta == expectedDelta,
+                      entry.balanceAfter.rawValue == expectedAfter,
+                      welcomeTopUpVersions.insert(version).inserted
+                else {
+                    throw Self.corruptLedger(decoder, "Invalid welcome balance top-up entry")
                 }
             }
 
