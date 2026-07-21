@@ -327,13 +327,12 @@ struct PokerTableView: View {
                         arcOffset: arcOffsets[index] * (reduceMotion ? 0.55 : 1)
                     )
 
-                    CasinoChipPileView(
+                    CasinoFlyingChipClusterView(
                         amount: amount.rawValue,
-                        scale: 0.38 + CGFloat(index) * 0.025,
-                        showsAmount: false,
-                        stackCount: index.isMultiple(of: 2) ? 2 : 1
+                        clusterIndex: index
                     )
-                    .frame(width: 38, height: 28)
+                    .equatable()
+                    .frame(width: 34, height: 24)
                     .rotationEffect(.degrees(Double(index - 1) * 4 * progress))
                     .position(position)
                     .opacity(progress > 0.001 ? 1 : 0)

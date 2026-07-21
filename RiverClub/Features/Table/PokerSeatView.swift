@@ -454,6 +454,8 @@ struct PokerSeatView: View {
                 .font(.system(size: 9, weight: .semibold, design: .monospaced))
                 .foregroundStyle(RCTheme.primaryText)
                 .lineLimit(1)
+                .minimumScaleFactor(0.5)
+                .allowsTightening(true)
         }
         .frame(height: 23, alignment: .leading)
     }

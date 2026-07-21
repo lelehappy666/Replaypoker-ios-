@@ -213,10 +213,14 @@ struct BetControlBar: View {
         identifier: String,
         action: @escaping () -> Void
     ) -> some View {
-        Button(title, action: action)
-            .font(.subheadline.weight(.bold))
-            .lineLimit(1)
-            .minimumScaleFactor(0.72)
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 13, weight: .bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+                .allowsTightening(true)
+                .frame(maxWidth: .infinity)
+        }
             .buttonStyle(.borderedProminent)
             .tint(tint)
             .foregroundStyle(foreground)

@@ -234,6 +234,8 @@ struct CasinoChipPileView: View, @preconcurrency Animatable {
                     .font(.caption2.monospacedDigit().weight(.bold))
                     .foregroundStyle(RCTheme.primaryText)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.48)
+                    .allowsTightening(true)
             }
         }
         .scaleEffect(max(scale, 0), anchor: .center)
@@ -260,6 +262,73 @@ struct CasinoChipPileView: View, @preconcurrency Animatable {
             return [.twentyFive, .five, .one, .oneHundred, .fiveHundred]
         }
         return [.one, .five, .twentyFive, .oneHundred, .fiveHundred]
+    }
+}
+
+/// 飞行动画专用的轻量筹码组。
+/// 使用单个 Canvas 代替多层视图、文字和阴影，避免四组筹码同时移动时反复布局。
+struct CasinoFlyingChipClusterView: View, Equatable {
+    let amount: Int
+    let clusterIndex: Int
+
+    var body: some View {
+        Canvas { context, size in
+            let chipDenomination = self.denomination
+            let visibleChips = clusterIndex.isMultiple(of: 2) ? 3 : 2
+            let chipWidth = min(size.width - 4, 30)
+            let chipHeight = min(size.height * 0.38, 10)
+            let originX = (size.width - chipWidth) / 2
+            let baseY = size.height - chipHeight - 2
+
+            for layer in 0..<visibleChips {
+                let y = baseY - CGFloat(layer) * 3.2
+                let rect = CGRect(
+                    x: originX,
+                    y: y,
+                    width: chipWidth,
+                    height: chipHeight
+                )
+                let shadow = rect.offsetBy(dx: 0, dy: 1.6)
+                context.fill(
+                    Path(ellipseIn: shadow),
+                    with: .color(.black.opacity(0.42))
+                )
+                context.fill(
+                    Path(ellipseIn: rect),
+                    with: .color(chipDenomination.color)
+                )
+                context.stroke(
+                    Path(ellipseIn: rect),
+                    with: .color(chipDenomination.edgeColor.opacity(0.92)),
+                    lineWidth: 1
+                )
+                context.stroke(
+                    Path(ellipseIn: rect.insetBy(dx: 4.2, dy: 2)),
+                    with: .color(chipDenomination.ringColor),
+                    lineWidth: 0.8
+                )
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    private var denomination: CasinoChipDenomination {
+        let palette: [CasinoChipDenomination]
+        switch amount {
+        case 20_000...:
+            palette = [.five, .fiveHundred, .twentyFive, .oneHundred]
+        case 5_000...:
+            palette = [.oneHundred, .twentyFive, .fiveHundred, .five]
+        case 1_000...:
+            palette = [.twentyFive, .oneHundred, .five, .fiveHundred]
+        case 100...:
+            palette = [.oneHundred, .twentyFive, .five, .one]
+        case 25...:
+            palette = [.twentyFive, .five, .one, .oneHundred]
+        default:
+            palette = [.one, .five, .twentyFive, .oneHundred]
+        }
+        return palette[clusterIndex % palette.count]
     }
 }
 
