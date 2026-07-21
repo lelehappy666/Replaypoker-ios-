@@ -151,6 +151,50 @@ final class PokerTableInteractionTests: XCTestCase {
         XCTAssertEqual(presentation.chipFlightAmount, try Chips(600))
     }
 
+    func testChipFlightDisplayAmountsConserveChipsDuringBetAndAward() throws {
+        let seat = try SeatID(2)
+        var presentation = TableAnimationPresentation()
+
+        presentation.begin(
+            .postBlind(seat: seat, amount: try Chips(600)),
+            token: 21
+        )
+        presentation.advance(token: 21, progress: 0.5)
+
+        let stack = presentation.displayedStack(
+            finalAmount: 9_400,
+            seat: seat,
+            reduceMotion: false
+        )
+        let commitment = presentation.displayedCommitment(
+            finalAmount: 600,
+            seat: seat,
+            reduceMotion: false
+        )
+        XCTAssertEqual(stack + commitment, 10_000)
+        XCTAssertGreaterThan(stack, 9_400)
+        XCTAssertLessThan(commitment, 600)
+
+        presentation.begin(
+            .awardPot(seat: seat, amount: try Chips(2_400)),
+            token: 22
+        )
+        presentation.advance(token: 22, progress: 0.5)
+
+        let winnerStack = presentation.displayedStack(
+            finalAmount: 12_400,
+            seat: seat,
+            reduceMotion: false
+        )
+        let pot = presentation.displayedPot(
+            finalAmount: 0,
+            reduceMotion: false
+        )
+        XCTAssertEqual(winnerStack + pot, 12_400)
+        XCTAssertLessThan(winnerStack, 12_400)
+        XCTAssertGreaterThan(pot, 0)
+    }
+
     func testOlderAwardResetDoesNotClearNewerWinnerAnnouncement() throws {
         let winner = try SeatID(3)
         var presentation = TableAnimationPresentation()

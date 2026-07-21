@@ -186,6 +186,77 @@ struct TableAnimationPresentation: Equatable {
         return min(max((progress - delay) / availableProgress, 0), 1)
     }
 
+    func chipArrivalProgress(reduceMotion: Bool) -> CGFloat {
+        guard chipFlightSeat != nil else { return 1 }
+        let total = (0..<4).reduce(CGFloat.zero) {
+            $0 + chipFlightProgress(at: $1, reduceMotion: reduceMotion)
+        }
+        return min(max(total / 4, 0), 1)
+    }
+
+    func displayedStack(
+        finalAmount: Int,
+        seat: SeatID,
+        reduceMotion: Bool
+    ) -> Int {
+        guard seat == chipFlightSeat,
+              let event,
+              let amount = chipFlightAmount?.rawValue
+        else { return max(finalAmount, 0) }
+
+        let remaining = remainingFlightAmount(amount, reduceMotion: reduceMotion)
+        switch event.kind {
+        case .postBlind:
+            return max(finalAmount + remaining, 0)
+        case .returnUncalledBet, .awardPot:
+            return max(finalAmount - remaining, 0)
+        default:
+            return max(finalAmount, 0)
+        }
+    }
+
+    func displayedCommitment(
+        finalAmount: Int,
+        seat: SeatID,
+        reduceMotion: Bool
+    ) -> Int {
+        guard seat == chipFlightSeat,
+              let event,
+              let amount = chipFlightAmount?.rawValue
+        else { return max(finalAmount, 0) }
+
+        let remaining = remainingFlightAmount(amount, reduceMotion: reduceMotion)
+        switch event.kind {
+        case .postBlind:
+            return max(finalAmount - remaining, 0)
+        case .moveCommitmentToPot, .returnUncalledBet:
+            return max(finalAmount + remaining, 0)
+        default:
+            return max(finalAmount, 0)
+        }
+    }
+
+    func displayedPot(finalAmount: Int, reduceMotion: Bool) -> Int {
+        guard let event,
+              let amount = chipFlightAmount?.rawValue
+        else { return max(finalAmount, 0) }
+
+        let remaining = remainingFlightAmount(amount, reduceMotion: reduceMotion)
+        switch event.kind {
+        case .moveCommitmentToPot:
+            return max(finalAmount - remaining, 0)
+        case .awardPot:
+            return max(finalAmount + remaining, 0)
+        default:
+            return max(finalAmount, 0)
+        }
+    }
+
+    private func remainingFlightAmount(_ amount: Int, reduceMotion: Bool) -> Int {
+        let remainingProgress = 1 - chipArrivalProgress(reduceMotion: reduceMotion)
+        return Int((CGFloat(amount) * remainingProgress).rounded())
+    }
+
     func winnerScale(for seat: SeatID) -> CGFloat {
         isWinnerEvent(seat) ? 1 + 0.08 * progress : 1
     }
