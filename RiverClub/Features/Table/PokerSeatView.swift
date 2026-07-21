@@ -86,6 +86,14 @@ enum PokerTableLayout {
         }
     }
 
+    static func walletFrame(for canvas: CGSize) -> CGRect {
+        transform(CGRect(x: 736, y: 8, width: 134, height: 46), to: canvas)
+    }
+
+    static func settingsFrame(for canvas: CGSize) -> CGRect {
+        transform(CGRect(x: 876, y: 9, width: 40, height: 44), to: canvas)
+    }
+
     static func safeCanvas(for canvas: CGSize) -> CGRect {
         CGRect(origin: .zero, size: canvas)
     }

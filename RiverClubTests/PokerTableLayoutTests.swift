@@ -4,6 +4,16 @@ import XCTest
 
 @MainActor
 final class PokerTableLayoutTests: XCTestCase {
+    func testWalletFrameStaysInsideCanvasAndClearOfTopSeats() {
+        let canvas = PokerTableLayout.referenceCanvas
+        let wallet = PokerTableLayout.walletFrame(for: canvas)
+        let topSeats = Array(PokerTableLayout.seatFrames(for: canvas).prefix(3))
+
+        XCTAssertTrue(CGRect(origin: .zero, size: canvas).contains(wallet))
+        XCTAssertTrue(topSeats.allSatisfy { !$0.intersects(wallet) })
+        XCTAssertGreaterThanOrEqual(wallet.minX, topSeats.map(\.maxX).max() ?? 0)
+    }
+
     func testApprovedDesignUsesSingleReferenceCanvasAndExactSeatAnchors() {
         XCTAssertEqual(PokerTableLayout.referenceCanvas, CGSize(width: 922, height: 426.5))
         XCTAssertEqual(

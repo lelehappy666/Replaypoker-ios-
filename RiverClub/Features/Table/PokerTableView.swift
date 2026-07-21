@@ -166,6 +166,8 @@ struct PokerTableView: View {
                     .padding(.horizontal, 30)
                     .padding(.top, 10)
 
+                walletControls(canvas: canvas)
+
                 chatControls
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                     .padding(.leading, 28)
@@ -439,35 +441,43 @@ struct PokerTableView: View {
                 .foregroundStyle(RCTheme.primaryText)
 
             Spacer()
+        }
+    }
 
+    private func walletControls(canvas: CGSize) -> some View {
+        let wallet = PokerTableLayout.walletFrame(for: canvas)
+        let settings = PokerTableLayout.settingsFrame(for: canvas)
+        return ZStack {
             HStack(spacing: 2) {
                 CasinoWalletChipPileView()
-                    .frame(width: 86, height: 48)
-
+                    .frame(width: 54, height: 40)
                 Text(CasinoChipAmountPresentation.text(for: balance))
-                    .font(.headline.monospacedDigit().weight(.bold))
+                    .font(.subheadline.monospacedDigit().weight(.bold))
                     .foregroundStyle(RCTheme.gold)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.78)
-                    .frame(width: 76, alignment: .trailing)
+                    .minimumScaleFactor(0.68)
+                    .frame(width: 68, alignment: .trailing)
             }
-            .padding(.horizontal, 8)
-            .frame(width: 178, height: 50)
-            .background(RCTheme.surface.opacity(0.82), in: Capsule())
+            .padding(.horizontal, 5)
+            .frame(width: wallet.width, height: wallet.height)
+            .background(RCTheme.surface.opacity(0.88), in: Capsule())
             .overlay {
                 Capsule()
-                    .stroke(RCTheme.primaryText.opacity(0.13), lineWidth: 1)
+                    .stroke(RCTheme.primaryText.opacity(0.14), lineWidth: 1)
             }
             .clipped()
+            .position(x: wallet.midX, y: wallet.midY)
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("table.balance")
 
             Button("设置", systemImage: "gearshape") {}
                 .labelStyle(.iconOnly)
-                .frame(width: 44, height: 44)
+                .frame(width: settings.width, height: settings.height)
                 .foregroundStyle(RCTheme.primaryText)
                 .accessibilityLabel("牌桌设置")
+                .position(x: settings.midX, y: settings.midY)
         }
+        .frame(width: canvas.width, height: canvas.height)
     }
 
     private var chatControls: some View {

@@ -268,20 +268,18 @@ struct CasinoChipPileView: View, @preconcurrency Animatable {
 struct CasinoWalletChipPileView: View {
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            walletStack(.five, count: 5)
-                .offset(x: 1, y: -5)
+            walletStack(.five, count: 4)
+                .offset(x: 0, y: -3)
                 .zIndex(1)
-            walletStack(.fiveHundred, count: 5)
-                .offset(x: 22, y: -8)
+            walletStack(.fiveHundred, count: 4)
+                .offset(x: 17, y: -6)
                 .zIndex(2)
             walletStack(.twentyFive, count: 3)
-                .offset(x: 40, y: 2)
+                .offset(x: 34, y: 1)
                 .zIndex(4)
-            walletStack(.oneHundred, count: 4)
-                .offset(x: 57, y: -1)
-                .zIndex(3)
         }
-        .frame(width: 86, height: 48, alignment: .bottomLeading)
+        .scaleEffect(0.82, anchor: .bottomLeading)
+        .frame(width: 54, height: 40, alignment: .bottomLeading)
         .clipped()
         .accessibilityHidden(true)
     }
@@ -297,7 +295,7 @@ struct CasinoWalletChipPileView: View {
                     .zIndex(Double(index))
             }
         }
-        .frame(width: 30, height: 38, alignment: .bottom)
+        .frame(width: 30, height: 36, alignment: .bottom)
     }
 }
 
