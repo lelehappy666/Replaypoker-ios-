@@ -72,6 +72,38 @@ final class PokerTableLayoutTests: XCTestCase {
         }
     }
 
+    func testChipFlightPathKeepsEndpointsAndAddsArcAtMidpoint() {
+        let start = CGPoint(x: 100, y: 100)
+        let end = CGPoint(x: 300, y: 180)
+
+        XCTAssertEqual(
+            PokerTableLayout.chipFlightPosition(
+                from: start,
+                to: end,
+                progress: 0,
+                arcOffset: 18
+            ),
+            start
+        )
+        XCTAssertEqual(
+            PokerTableLayout.chipFlightPosition(
+                from: start,
+                to: end,
+                progress: 1,
+                arcOffset: 18
+            ),
+            end
+        )
+
+        let midpoint = PokerTableLayout.chipFlightPosition(
+            from: start,
+            to: end,
+            progress: 0.5,
+            arcOffset: 18
+        )
+        XCTAssertNotEqual(midpoint, CGPoint(x: 200, y: 140))
+    }
+
     func testPlayableTableExposesDepartureControl() throws {
         let source = try String(
             contentsOfFile: #filePath.replacingOccurrences(

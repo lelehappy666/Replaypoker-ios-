@@ -90,7 +90,7 @@ struct PokerTableView: View {
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("table.centerBoard")
 
-                awardAnimationLayer(canvas: canvas)
+                chipFlightAnimationLayer(canvas: canvas, betFrames: betFrames)
 
                 if uiTestingWinnerAnnouncementLogEnabled {
                     Color.clear
@@ -275,36 +275,118 @@ struct PokerTableView: View {
     }
 
     @ViewBuilder
-    private func awardAnimationLayer(canvas: CGSize) -> some View {
-        if let targetSeat = animationPresentation.awardTargetSeat,
-           let amount = animationPresentation.awardAmount,
+    private func chipFlightAnimationLayer(
+        canvas: CGSize,
+        betFrames: [CGRect?]
+    ) -> some View {
+        if let targetSeat = animationPresentation.chipFlightSeat,
+           let amount = animationPresentation.chipFlightAmount,
+           amount.rawValue > 0,
            let seatIndex = state.seats.firstIndex(where: { $0.id == targetSeat }),
-           let payoutPosition = PokerTableLayout.payoutPosition(
-               toSeatAt: seatIndex,
+           let endpoints = chipFlightEndpoints(
+               forSeatAt: seatIndex,
                canvas: canvas,
-               progress: reduceMotion ? 1 : animationPresentation.awardProgress
+               betFrames: betFrames
            ) {
             let center = PokerTableLayout.centerBoardRegion(for: canvas)
+            let arcOffsets: [CGFloat] = [-10, -4, 5, 11]
+            let flightDuration = reduceMotion ? 0.30 : 0.46
 
-            CasinoChipStackView(
-                amount: amount.rawValue,
-                scale: 1,
-                maximumVisibleChips: 3
-            )
-            .frame(width: 68, height: 44)
-            .position(x: payoutPosition.x, y: payoutPosition.y)
+            ZStack {
+                ForEach(0..<4, id: \.self) { index in
+                    let progress = animationPresentation.chipFlightProgress(
+                        at: index,
+                        reduceMotion: reduceMotion
+                    )
+                    let position = PokerTableLayout.chipFlightPosition(
+                        from: endpoints.start,
+                        to: endpoints.end,
+                        progress: progress,
+                        arcOffset: arcOffsets[index] * (reduceMotion ? 0.55 : 1)
+                    )
+
+                    CasinoChipPileView(
+                        amount: amount.rawValue,
+                        scale: 0.38 + CGFloat(index) * 0.025,
+                        showsAmount: false,
+                        stackCount: index.isMultiple(of: 2) ? 2 : 1
+                    )
+                    .frame(width: 38, height: 28)
+                    .rotationEffect(.degrees(Double(index - 1) * 4 * progress))
+                    .position(position)
+                    .opacity(progress > 0.001 ? 1 : 0)
+                    .animation(
+                        .easeInOut(duration: flightDuration)
+                            .delay(Double(index) * (reduceMotion ? 0.025 : 0.05)),
+                        value: progress
+                    )
+                }
+
+                let amountProgress = animationPresentation.chipFlightProgress(
+                    at: 1,
+                    reduceMotion: reduceMotion
+                )
+                Text(CasinoChipAmountPresentation.text(for: amount.rawValue))
+                    .font(.caption2.monospacedDigit().weight(.bold))
+                    .foregroundStyle(RCTheme.primaryText)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(.black.opacity(0.62), in: Capsule())
+                    .position(
+                        PokerTableLayout.chipFlightPosition(
+                            from: endpoints.start,
+                            to: endpoints.end,
+                            progress: amountProgress,
+                            arcOffset: reduceMotion ? -2 : -4
+                        )
+                    )
+                    .opacity(amountProgress > 0.001 ? 1 : 0)
+                    .animation(
+                        .easeInOut(duration: flightDuration).delay(reduceMotion ? 0.025 : 0.05),
+                        value: amountProgress
+                    )
+            }
             .allowsHitTesting(false)
             .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("table.awardChips")
+            .accessibilityIdentifier("table.flyingChips")
 
-            Text("\(displayName(for: targetSeat)) 赢得 \(amount.rawValue.formatted())")
-                .font(.subheadline.weight(.bold))
-                .foregroundStyle(RCTheme.gold)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .background(.black.opacity(0.72), in: Capsule())
-                .position(x: center.midX, y: max(72, center.minY - 12))
-                .accessibilityIdentifier("table.winnerAnnouncement")
+            if animationPresentation.event?.kind == .awardPot {
+                Text("\(displayName(for: targetSeat)) 赢得 \(amount.rawValue.formatted())")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(RCTheme.gold)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(.black.opacity(0.72), in: Capsule())
+                    .position(x: center.midX, y: max(72, center.minY - 12))
+                    .accessibilityIdentifier("table.winnerAnnouncement")
+            }
+        }
+    }
+
+    private func chipFlightEndpoints(
+        forSeatAt seatIndex: Int,
+        canvas: CGSize,
+        betFrames: [CGRect?]
+    ) -> (start: CGPoint, end: CGPoint)? {
+        let seats = PokerTableLayout.positions(for: canvas)
+        guard seats.indices.contains(seatIndex) else { return nil }
+        let seat = seats[seatIndex]
+        let potFrame = PokerTableLayout.potFrame(for: canvas)
+        let pot = CGPoint(x: potFrame.midX, y: potFrame.midY)
+
+        switch animationPresentation.event?.kind {
+        case .postBlind, .moveCommitmentToPot:
+            guard betFrames.indices.contains(seatIndex),
+                  let betFrame = betFrames[seatIndex] else { return nil }
+            return (seat, CGPoint(x: betFrame.midX, y: betFrame.midY))
+        case .returnUncalledBet:
+            guard betFrames.indices.contains(seatIndex),
+                  let betFrame = betFrames[seatIndex] else { return nil }
+            return (CGPoint(x: betFrame.midX, y: betFrame.midY), seat)
+        case .awardPot:
+            return (pot, seat)
+        default:
+            return nil
         }
     }
 
@@ -516,25 +598,57 @@ struct PokerTableView: View {
             animationPresentation.advance(token: sequence)
             animationResetTask = Task { @MainActor in
                 try? await Task.sleep(
-                    for: .milliseconds(event.kind == .awardPot ? 560 : 220)
+                    for: .milliseconds(animationResetMilliseconds(for: event.kind, reduceMotion: true))
                 )
                 guard !Task.isCancelled else { return }
                 animationPresentation.reset(token: sequence)
             }
             return
         }
-        let duration = event.kind == .awardPot ? 0.52 : 0.22
+        let duration = animationDuration(for: event.kind, reduceMotion: false)
         withAnimation(.easeInOut(duration: duration)) {
             animationPresentation.advance(token: sequence)
         }
         animationResetTask = Task { @MainActor in
             try? await Task.sleep(
-                for: .milliseconds(event.kind == .awardPot ? 560 : 220)
+                for: .milliseconds(animationResetMilliseconds(for: event.kind, reduceMotion: false))
             )
             guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.12)) {
                 animationPresentation.reset(token: sequence)
             }
+        }
+    }
+
+    private func animationDuration(
+        for kind: TableAnimationKind,
+        reduceMotion: Bool
+    ) -> Double {
+        switch kind {
+        case .postBlind, .moveCommitmentToPot:
+            reduceMotion ? 0.30 : 0.52
+        case .returnUncalledBet:
+            reduceMotion ? 0.38 : 0.54
+        case .awardPot:
+            reduceMotion ? 0.44 : 0.70
+        default:
+            0.22
+        }
+    }
+
+    private func animationResetMilliseconds(
+        for kind: TableAnimationKind,
+        reduceMotion: Bool
+    ) -> Int {
+        switch kind {
+        case .postBlind, .moveCommitmentToPot:
+            reduceMotion ? 360 : 620
+        case .returnUncalledBet:
+            reduceMotion ? 460 : 620
+        case .awardPot:
+            reduceMotion ? 600 : 780
+        default:
+            240
         }
     }
 

@@ -128,6 +128,29 @@ final class PokerTableInteractionTests: XCTestCase {
         XCTAssertEqual(presentation.awardProgress, 0)
     }
 
+    func testChipFlightClustersKeepStaggeredProgressWithReducedMotion() throws {
+        let seat = try SeatID(3)
+        var presentation = TableAnimationPresentation()
+        presentation.begin(
+            .moveCommitmentToPot(seat: seat, amount: try Chips(600)),
+            token: 12
+        )
+        presentation.advance(token: 12, progress: 0.55)
+
+        let normal = (0..<4).map {
+            presentation.chipFlightProgress(at: $0, reduceMotion: false)
+        }
+        let reduced = (0..<4).map {
+            presentation.chipFlightProgress(at: $0, reduceMotion: true)
+        }
+
+        XCTAssertGreaterThan(normal[0], normal[3])
+        XCTAssertGreaterThan(reduced[0], reduced[3])
+        XCTAssertGreaterThan(reduced[3], 0)
+        XCTAssertEqual(presentation.chipFlightSeat, seat)
+        XCTAssertEqual(presentation.chipFlightAmount, try Chips(600))
+    }
+
     func testOlderAwardResetDoesNotClearNewerWinnerAnnouncement() throws {
         let winner = try SeatID(3)
         var presentation = TableAnimationPresentation()

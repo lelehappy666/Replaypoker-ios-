@@ -100,9 +100,9 @@ struct TableAnimationPresentation: Equatable {
         progress = 0
     }
 
-    mutating func advance(token: Int) {
+    mutating func advance(token: Int, progress newProgress: CGFloat = 1) {
         guard activeToken == token, event != nil else { return }
-        progress = 1
+        progress = min(max(newProgress, 0), 1)
     }
 
     mutating func reset(token: Int) {
@@ -152,6 +152,38 @@ struct TableAnimationPresentation: Equatable {
         case .returnUncalledBet: -7 * progress
         default: 0
         }
+    }
+
+    var chipFlightSeat: SeatID? {
+        switch event {
+        case let .postBlind(seat, _),
+             let .moveCommitmentToPot(seat, _),
+             let .returnUncalledBet(seat, _),
+             let .awardPot(seat, _):
+            seat
+        default:
+            nil
+        }
+    }
+
+    var chipFlightAmount: Chips? {
+        switch event {
+        case let .postBlind(_, amount),
+             let .moveCommitmentToPot(_, amount),
+             let .returnUncalledBet(_, amount),
+             let .awardPot(_, amount):
+            amount
+        default:
+            nil
+        }
+    }
+
+    func chipFlightProgress(at index: Int, reduceMotion: Bool) -> CGFloat {
+        guard chipFlightSeat != nil, index >= 0, index < 4 else { return 0 }
+        let delayStep: CGFloat = reduceMotion ? 0.04 : 0.08
+        let delay = CGFloat(index) * delayStep
+        let availableProgress = max(1 - delay, 0.001)
+        return min(max((progress - delay) / availableProgress, 0), 1)
     }
 
     func winnerScale(for seat: SeatID) -> CGFloat {

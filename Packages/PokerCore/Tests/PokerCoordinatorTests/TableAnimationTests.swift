@@ -359,7 +359,7 @@ import Testing
     }
 }
 
-@Test func 减少动态时派彩保留公告时长而其他结算动画为零() throws {
+@Test func 减少动态时筹码移动与派彩仍保留飞行时间() throws {
     let seat = try SeatID(4)
     #expect(CashTableAnimationTiming.duration(
         for: .awardPot(seat: seat, amount: try Chips(800)),
@@ -375,7 +375,12 @@ import Testing
         for: .returnUncalledBet(seat: seat, amount: try Chips(50)),
         street: nil,
         reduceMotion: true
-    ) == .zero)
+    ) == .milliseconds(460))
+    #expect(CashTableAnimationTiming.duration(
+        for: .moveCommitmentToPot(seat: seat, amount: try Chips(200)),
+        street: nil,
+        reduceMotion: true
+    ) == .milliseconds(360))
 }
 
 @Test func 聚合派彩溢出时拒绝映射() throws {

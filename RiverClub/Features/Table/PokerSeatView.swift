@@ -307,6 +307,33 @@ enum PokerTableLayout {
             y: start.y + (target.y - start.y) * clampedProgress
         )
     }
+
+    static func chipFlightPosition(
+        from start: CGPoint,
+        to end: CGPoint,
+        progress: CGFloat,
+        arcOffset: CGFloat
+    ) -> CGPoint {
+        let progress = min(max(progress, 0), 1)
+        guard start != end else { return start }
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let length = max((dx * dx + dy * dy).squareRoot(), 0.001)
+        let midpoint = CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
+        let control = CGPoint(
+            x: midpoint.x - dy / length * arcOffset,
+            y: midpoint.y + dx / length * arcOffset
+        )
+        let remaining = 1 - progress
+        return CGPoint(
+            x: remaining * remaining * start.x
+                + 2 * remaining * progress * control.x
+                + progress * progress * end.x,
+            y: remaining * remaining * start.y
+                + 2 * remaining * progress * control.y
+                + progress * progress * end.y
+        )
+    }
 }
 
 struct PokerSeatView: View {
