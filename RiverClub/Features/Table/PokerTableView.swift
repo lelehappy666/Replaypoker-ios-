@@ -108,6 +108,11 @@ struct PokerTableView: View {
                         ZStack {
                             PokerSeatView(
                                 seat: seat,
+                                displayStackAmount: animationPresentation.displayedStack(
+                                    finalAmount: seat.stack.rawValue,
+                                    seat: seat.id,
+                                    reduceMotion: reduceMotion
+                                ),
                                 secondsRemaining: seat.isCurrentActor
                                     ? state.secondsRemaining
                                     : nil,
@@ -132,20 +137,25 @@ struct PokerTableView: View {
 
                 ForEach(Array(state.seats.enumerated()), id: \.element.id) { index, seat in
                     if positions.indices.contains(index),
-                       seat.committedThisStreet.rawValue > 0,
                        betFrames.indices.contains(index),
                        let betFrame = betFrames[index] {
+                        let displayCommitment = animationPresentation.displayedCommitment(
+                            finalAmount: seat.committedThisStreet.rawValue,
+                            seat: seat.id,
+                            reduceMotion: reduceMotion
+                        )
                         ZStack {
                             CasinoChipPileView(
-                                amount: seat.committedThisStreet.rawValue,
+                                amount: displayCommitment,
                                 scale: PokerTableLayout.betScale(for: canvas),
-                                stackCount: seat.committedThisStreet.rawValue >= 500 ? 2 : 1
+                                stackCount: displayCommitment >= 500 ? 2 : 1
                             )
                         }
                         .frame(width: betFrame.width, height: betFrame.height)
                         .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("table.bet.\(index)")
                         .position(x: betFrame.midX, y: betFrame.midY)
+                        .opacity(displayCommitment > 0 ? 1 : 0)
                     }
                 }
 
@@ -205,6 +215,10 @@ struct PokerTableView: View {
         let currentHandFrame = PokerTableLayout.currentHandFrame(for: canvas)
         let potFrame = PokerTableLayout.potFrame(for: canvas)
 
+        let displayPot = animationPresentation.displayedPot(
+            finalAmount: state.pot.rawValue,
+            reduceMotion: reduceMotion
+        )
         return GeometryReader { proxy in
             if let currentHandText {
                 Text(currentHandText)
@@ -253,11 +267,11 @@ struct PokerTableView: View {
             )
 
             VStack(spacing: 1) {
-                Text("底池 \(CasinoChipAmountPresentation.text(for: state.pot.rawValue))")
+                Text("底池 \(CasinoChipAmountPresentation.text(for: displayPot))")
                     .font(.caption.monospacedDigit().weight(.bold))
                     .foregroundStyle(RCTheme.primaryText)
                 CasinoChipPileView(
-                    amount: state.pot.rawValue,
+                    amount: displayPot,
                     scale: 0.82,
                     showsAmount: false,
                     stackCount: 5
@@ -599,7 +613,11 @@ struct PokerTableView: View {
             )
         }
         if reduceMotion {
-            animationPresentation.advance(token: sequence)
+            withAnimation(
+                .linear(duration: animationDuration(for: event.kind, reduceMotion: true))
+            ) {
+                animationPresentation.advance(token: sequence)
+            }
             animationResetTask = Task { @MainActor in
                 try? await Task.sleep(
                     for: .milliseconds(animationResetMilliseconds(for: event.kind, reduceMotion: true))

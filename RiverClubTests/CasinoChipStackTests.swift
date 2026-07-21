@@ -96,4 +96,21 @@ final class CasinoChipStackTests: XCTestCase {
             CasinoChipAmountPresentation.text(for: 12_000)
         )
     }
+
+    func testPileHeightIncreasesWithAmountAndStaysBounded() {
+        XCTAssertEqual(
+            CasinoChipPileLayout.stackHeights(amount: 0, stackCount: 3),
+            []
+        )
+        let low = CasinoChipPileLayout.stackHeights(amount: 100, stackCount: 3)
+        let medium = CasinoChipPileLayout.stackHeights(amount: 2_000, stackCount: 3)
+        let high = CasinoChipPileLayout.stackHeights(amount: 20_000, stackCount: 3)
+
+        XCTAssertLessThan(low.reduce(0, +), medium.reduce(0, +))
+        XCTAssertLessThan(medium.reduce(0, +), high.reduce(0, +))
+        XCTAssertLessThanOrEqual(
+            high.max() ?? 0,
+            CasinoChipPileLayout.maximumStackHeight
+        )
+    }
 }

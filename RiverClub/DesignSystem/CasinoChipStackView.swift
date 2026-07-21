@@ -155,11 +155,42 @@ struct CasinoChipStackView: View {
 
 /// 用于牌桌玩家资产、座位筹码和底池的多色赌场筹码堆。
 /// 金额仍以完整数字展示，筹码颜色用于增强真实牌桌的视觉层次。
-struct CasinoChipPileView: View {
-    let amount: Int
+enum CasinoChipPileLayout {
+    static let maximumStackHeight = 6
+
+    static func stackHeights(amount: Int, stackCount: Int) -> [Int] {
+        guard amount > 0, stackCount > 0 else { return [] }
+        let totalChips: Int
+        switch amount {
+        case ..<100: totalChips = 2
+        case ..<500: totalChips = 3
+        case ..<1_000: totalChips = 4
+        case ..<5_000: totalChips = 7
+        case ..<20_000: totalChips = 10
+        default: totalChips = 13
+        }
+        let visibleStacks = min(stackCount, totalChips)
+        var heights = Array(repeating: 0, count: visibleStacks)
+        for index in 0..<totalChips {
+            let stack = index % visibleStacks
+            if heights[stack] < maximumStackHeight {
+                heights[stack] += 1
+            }
+        }
+        return heights
+    }
+}
+
+struct CasinoChipPileView: View, @preconcurrency Animatable {
+    private var animatedAmount: CGFloat
     let scale: CGFloat
     let showsAmount: Bool
     let stackCount: Int
+
+    var animatableData: CGFloat {
+        get { animatedAmount }
+        set { animatedAmount = newValue }
+    }
 
     init(
         amount: Int,
@@ -167,24 +198,33 @@ struct CasinoChipPileView: View {
         showsAmount: Bool = true,
         stackCount: Int = 3
     ) {
-        self.amount = amount
+        animatedAmount = CGFloat(max(amount, 0))
         self.scale = scale
         self.showsAmount = showsAmount
         self.stackCount = min(max(stackCount, 1), 5)
     }
 
+    private var amount: Int {
+        max(Int(animatedAmount.rounded()), 0)
+    }
+
+    private var stackHeights: [Int] {
+        CasinoChipPileLayout.stackHeights(amount: amount, stackCount: stackCount)
+    }
+
     var body: some View {
         VStack(spacing: 2) {
             HStack(alignment: .bottom, spacing: -7) {
-                ForEach(Array(denominations.prefix(stackCount).enumerated()), id: \.offset) { stackIndex, denomination in
+                ForEach(Array(stackHeights.enumerated()), id: \.offset) { stackIndex, stackHeight in
+                    let denomination = denominations[stackIndex]
                     ZStack(alignment: .bottom) {
-                        ForEach(0..<(2 + stackIndex % 3), id: \.self) { chipIndex in
+                        ForEach(0..<stackHeight, id: \.self) { chipIndex in
                             CasinoChipView(denomination: denomination)
                                 .offset(y: -CGFloat(chipIndex) * 3)
                                 .zIndex(Double(chipIndex))
                         }
                     }
-                    .frame(width: 30, height: 28)
+                    .frame(width: 30, height: 38)
                     .zIndex(Double(stackIndex))
                 }
             }

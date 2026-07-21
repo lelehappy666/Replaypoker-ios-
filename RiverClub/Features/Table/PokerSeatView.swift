@@ -338,6 +338,7 @@ enum PokerTableLayout {
 
 struct PokerSeatView: View {
     let seat: TableSeatState
+    let displayStackAmount: Int
     let secondsRemaining: Int?
     let isWinner: Bool
     let reduceMotion: Bool
@@ -435,13 +436,13 @@ struct PokerSeatView: View {
     private var seatChipLine: some View {
         HStack(spacing: 4) {
             CasinoChipPileView(
-                amount: seat.stack.rawValue,
+                amount: displayStackAmount,
                 scale: 0.62,
                 showsAmount: false,
                 stackCount: 2
             )
             .frame(width: 34, height: 22)
-            Text(CasinoChipAmountPresentation.text(for: seat.stack.rawValue))
+            Text(CasinoChipAmountPresentation.text(for: displayStackAmount))
                 .font(.system(size: 9, weight: .semibold, design: .monospaced))
                 .foregroundStyle(RCTheme.primaryText)
                 .lineLimit(1)
