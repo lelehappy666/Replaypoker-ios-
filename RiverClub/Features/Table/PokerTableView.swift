@@ -10,6 +10,8 @@ struct PokerTableView: View {
     let sendIntent: @MainActor (TableIntent) async throws -> Void
     var onRequestLeave: () -> Void = {}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage(TableSoundPreference.storageKey)
+    private var tableSoundEnabled = TableSoundPreference.defaultEnabled
     @State private var actionRequest = TableActionRequestModel()
     @State private var animationPresentation = TableAnimationPresentation()
     @State private var animationResetTask: Task<Void, Never>?
@@ -50,11 +52,15 @@ struct PokerTableView: View {
         #endif
         .onDisappear {
             cancelViewTasks()
+            TableSoundPlayer.shared.stop()
         }
         .onChange(of: state.phase) { _, phase in
             if phase == .suspended {
                 actionTask?.cancel()
                 retryTask?.cancel()
+            }
+            if phase == .waitingForHuman, tableSoundEnabled {
+                TableSoundPlayer.shared.play(.turn)
             }
         }
     }
@@ -616,6 +622,9 @@ struct PokerTableView: View {
         }
 
         animationPresentation.begin(event, token: sequence)
+        if tableSoundEnabled, let cue = TableSoundCue.cue(for: event) {
+            TableSoundPlayer.shared.play(cue)
+        }
         if uiTestingWinnerAnnouncementLogEnabled,
            case let .awardPot(seat, amount) = event {
             uiTestingWinnerAnnouncements.append(

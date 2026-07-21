@@ -5,6 +5,8 @@ struct ProfileView: View {
     let balance: Int
     @State private var loadState: LoadableState<ProfileSummary> = .loading
     @State private var statusMessage: String?
+    @AppStorage(TableSoundPreference.storageKey)
+    private var tableSoundEnabled = TableSoundPreference.defaultEnabled
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -68,7 +70,7 @@ struct ProfileView: View {
                         profileLink("牌局记录", icon: "clock.arrow.circlepath")
                         profileLink("成就徽章", icon: "medal")
                         profileLink("账户与安全", icon: "lock.shield")
-                        profileLink("声音与震动", icon: "speaker.wave.2")
+                        soundPreferenceToggle
                     }
                     .accessibilityIdentifier("profile.settings")
 
@@ -97,6 +99,21 @@ struct ProfileView: View {
         }
         .buttonStyle(.bordered)
         .tint(RCTheme.gold)
+    }
+
+    private var soundPreferenceToggle: some View {
+        Toggle(isOn: $tableSoundEnabled) {
+            Label("牌桌音效", systemImage: "speaker.wave.2.fill")
+                .lineLimit(1)
+        }
+        .tint(RCTheme.gold)
+        .padding(.horizontal, 13)
+        .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
+        .background(RCTheme.surface.opacity(0.38), in: RoundedRectangle(cornerRadius: 8))
+        .onChange(of: tableSoundEnabled) { _, enabled in
+            if !enabled { TableSoundPlayer.shared.stop() }
+        }
+        .accessibilityIdentifier("profile.tableSound")
     }
 
     @MainActor
