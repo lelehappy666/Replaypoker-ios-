@@ -223,6 +223,44 @@ struct CasinoChipPileView: View {
     }
 }
 
+/// 牌桌右上角账户余额专用筹码堆。
+/// 固定占位并裁切在自身边界内，避免筹码向下覆盖顶部座位手牌。
+struct CasinoWalletChipPileView: View {
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            walletStack(.five, count: 5)
+                .offset(x: 1, y: -5)
+                .zIndex(1)
+            walletStack(.fiveHundred, count: 5)
+                .offset(x: 22, y: -8)
+                .zIndex(2)
+            walletStack(.twentyFive, count: 3)
+                .offset(x: 40, y: 2)
+                .zIndex(4)
+            walletStack(.oneHundred, count: 4)
+                .offset(x: 57, y: -1)
+                .zIndex(3)
+        }
+        .frame(width: 86, height: 48, alignment: .bottomLeading)
+        .clipped()
+        .accessibilityHidden(true)
+    }
+
+    private func walletStack(
+        _ denomination: CasinoChipDenomination,
+        count: Int
+    ) -> some View {
+        ZStack(alignment: .bottom) {
+            ForEach(0..<count, id: \.self) { index in
+                CasinoChipView(denomination: denomination)
+                    .offset(y: -CGFloat(index) * 4)
+                    .zIndex(Double(index))
+            }
+        }
+        .frame(width: 30, height: 38, alignment: .bottom)
+    }
+}
+
 private struct CasinoChipView: View {
     let denomination: CasinoChipDenomination
 

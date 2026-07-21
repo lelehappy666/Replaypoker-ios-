@@ -426,21 +426,25 @@ struct PokerTableView: View {
 
             Spacer()
 
-            HStack(spacing: 5) {
-                CasinoChipPileView(
-                    amount: balance,
-                    scale: 0.72,
-                    showsAmount: false,
-                    stackCount: 4
-                )
-                .frame(width: 70, height: 36)
+            HStack(spacing: 2) {
+                CasinoWalletChipPileView()
+                    .frame(width: 86, height: 48)
+
                 Text(CasinoChipAmountPresentation.text(for: balance))
                     .font(.headline.monospacedDigit().weight(.bold))
                     .foregroundStyle(RCTheme.gold)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+                    .frame(width: 76, alignment: .trailing)
             }
-            .padding(.horizontal, 10)
-            .frame(minHeight: 42)
+            .padding(.horizontal, 8)
+            .frame(width: 178, height: 50)
             .background(RCTheme.surface.opacity(0.82), in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(RCTheme.primaryText.opacity(0.13), lineWidth: 1)
+            }
+            .clipped()
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("table.balance")
 
