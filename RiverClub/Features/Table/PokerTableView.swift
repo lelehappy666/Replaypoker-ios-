@@ -22,6 +22,8 @@ struct PokerTableView: View {
     @State private var actionTask: Task<Void, Never>?
     @State private var retryTask: Task<Void, Never>?
     @State private var uiTestingWinnerAnnouncements: [String] = []
+    @State private var socialModel = TableSocialInteractionModel()
+    @State private var socialPanelMode: TableSocialPanelMode?
 
     private var state: TableViewState { coordinator.state }
 
@@ -128,7 +130,10 @@ struct PokerTableView: View {
                                     : nil,
                                 isWinner: state.winners.contains(seat.id),
                                 reduceMotion: reduceMotion,
-                                animation: animationPresentation
+                                animation: animationPresentation,
+                                bubble: socialModel.visibleBubbles.last {
+                                    $0.seat == seat.id
+                                }
                             )
                         }
                         .frame(
@@ -182,6 +187,23 @@ struct PokerTableView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                     .padding(.leading, 28)
                     .padding(.bottom, 18)
+
+                if let socialPanelMode {
+                    TableSocialPanel(
+                        mode: socialPanelMode,
+                        onSend: sendSocialContent,
+                        onClose: { self.socialPanelMode = nil }
+                    )
+                    .frame(
+                        maxWidth: .infinity,
+                        maxHeight: .infinity,
+                        alignment: .bottomLeading
+                    )
+                    .padding(.leading, 76)
+                    .padding(.bottom, 18)
+                    .transition(.scale(scale: 0.94, anchor: .bottomLeading).combined(with: .opacity))
+                    .zIndex(6)
+                }
 
                 phaseControls
                     .frame(
@@ -489,8 +511,12 @@ struct PokerTableView: View {
 
     private var chatControls: some View {
         VStack(spacing: 4) {
-            Button("聊天", systemImage: "bubble.left.fill") {}
-            Button("表情", systemImage: "face.smiling") {}
+            Button("聊天", systemImage: "bubble.left.fill") {
+                socialPanelMode = socialPanelMode == .messages ? nil : .messages
+            }
+            Button("表情", systemImage: "face.smiling") {
+                socialPanelMode = socialPanelMode == .reactions ? nil : .reactions
+            }
         }
         .labelStyle(.iconOnly)
         .buttonStyle(.bordered)
@@ -499,6 +525,23 @@ struct PokerTableView: View {
         .frame(width: 40)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("牌桌聊天和表情")
+    }
+
+    private func sendSocialContent(_ content: TableSocialContent) {
+        guard let human = state.seats.first(where: \.isHuman) else { return }
+        let eligibleBots = state.seats
+            .filter {
+                !$0.isHuman && !$0.hasFolded && $0.stack.rawValue > 0
+            }
+            .map(\.id)
+        socialPanelMode = nil
+        Task {
+            _ = await socialModel.send(
+                content,
+                humanSeat: human.id,
+                eligibleBots: eligibleBots
+            )
+        }
     }
 
     @ViewBuilder
@@ -612,6 +655,7 @@ struct PokerTableView: View {
         actionTask = nil
         retryTask = nil
         animationResetTask = nil
+        socialModel.clear()
     }
 
     private func present(_ event: TableAnimationEvent?, sequence: Int) {

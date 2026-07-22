@@ -351,6 +351,7 @@ struct PokerSeatView: View {
     let isWinner: Bool
     let reduceMotion: Bool
     let animation: TableAnimationPresentation
+    let bubble: TableBubble?
 
     var body: some View {
         Group {
@@ -370,6 +371,26 @@ struct PokerSeatView: View {
             radius: 8
         )
         .opacity(seat.hasFolded ? 0.48 : 1)
+        .overlay(alignment: .top) {
+            if let bubble {
+                Text(bubble.text)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Color.black)
+                    .lineLimit(1)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(RCTheme.primaryText, in: Capsule())
+                    .overlay(alignment: .bottomLeading) {
+                        Circle()
+                            .fill(RCTheme.primaryText)
+                            .frame(width: 5, height: 5)
+                            .offset(x: 10, y: 3)
+                    }
+                    .offset(y: -13)
+                    .transition(.scale.combined(with: .opacity))
+                    .accessibilityIdentifier("table.bubble.\(seat.id.rawValue)")
+            }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityDescription)
     }
