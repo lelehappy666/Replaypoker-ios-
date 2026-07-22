@@ -89,6 +89,71 @@ final class TableActionRequestModel {
     }
 }
 
+struct ChipFlightParticle: Equatable, Identifiable {
+    let id: Int
+    let delay: CGFloat
+    let arcHeight: CGFloat
+    let landingOffset: CGSize
+    let rotation: Angle
+    let chipCount: Int
+}
+
+struct ChipFlightParticlePresentation: Equatable, Identifiable {
+    let particle: ChipFlightParticle
+    let progress: CGFloat
+    let landingScale: CGFloat
+
+    var id: Int { particle.id }
+}
+
+struct ChipFlightTimeline: Equatable {
+    let particles: [ChipFlightParticle]
+
+    init(amount: Int, eventToken: Int) {
+        let count: Int
+        switch amount {
+        case ..<500: count = 5
+        case ..<5_000: count = 6
+        default: count = 7
+        }
+        let direction: CGFloat = eventToken.isMultiple(of: 2) ? 1 : -1
+        particles = (0..<count).map { index in
+            let alternating: CGFloat = index.isMultiple(of: 2) ? 1 : -1
+            return ChipFlightParticle(
+                id: index,
+                delay: CGFloat(index) * 0.052,
+                arcHeight: direction * alternating * (8 + CGFloat(index) * 2.3),
+                landingOffset: CGSize(
+                    width: CGFloat((index % 3) - 1) * 2.2,
+                    height: CGFloat(index.isMultiple(of: 2) ? -1 : 1) * 1.4
+                ),
+                rotation: .degrees(Double((index - count / 2) * 9)),
+                chipCount: 2 + (index % 3)
+            )
+        }
+    }
+
+    func presentation(
+        globalProgress: CGFloat,
+        reduceMotion: Bool
+    ) -> [ChipFlightParticlePresentation] {
+        particles.map { particle in
+            let delay = reduceMotion ? particle.delay * 0.35 : particle.delay
+            let available = max(1 - delay, 0.001)
+            let linear = min(max((globalProgress - delay) / available, 0), 1)
+            let remaining = 1 - linear
+            let eased = 1 - remaining * remaining * remaining
+            let landingProgress = min(max((linear - 0.84) / 0.16, 0), 1)
+            let bounce = 4 * landingProgress * (1 - landingProgress)
+            return ChipFlightParticlePresentation(
+                particle: particle,
+                progress: reduceMotion ? linear : eased,
+                landingScale: reduceMotion ? 1 : 1 - bounce * 0.10
+            )
+        }
+    }
+}
+
 struct TableAnimationPresentation: Equatable {
     private(set) var event: TableAnimationEvent?
     private(set) var activeToken = 0
@@ -146,6 +211,10 @@ struct TableAnimationPresentation: Equatable {
         awardTargetSeat == nil ? 0 : progress
     }
 
+    var chipFlightGlobalProgress: CGFloat {
+        chipFlightSeat == nil ? 0 : progress
+    }
+
     var chipOffset: CGFloat {
         switch event?.kind {
         case .moveCommitmentToPot: 7 * progress
@@ -179,19 +248,29 @@ struct TableAnimationPresentation: Equatable {
     }
 
     func chipFlightProgress(at index: Int, reduceMotion: Bool) -> CGFloat {
-        guard chipFlightSeat != nil, index >= 0, index < 4 else { return 0 }
-        let delayStep: CGFloat = reduceMotion ? 0.04 : 0.08
-        let delay = CGFloat(index) * delayStep
-        let availableProgress = max(1 - delay, 0.001)
-        return min(max((progress - delay) / availableProgress, 0), 1)
+        guard let timeline = chipFlightTimeline,
+              timeline.particles.indices.contains(index)
+        else { return 0 }
+        return timeline.presentation(
+            globalProgress: progress,
+            reduceMotion: reduceMotion
+        )[index].progress
     }
 
     func chipArrivalProgress(reduceMotion: Bool) -> CGFloat {
-        guard chipFlightSeat != nil else { return 1 }
-        let total = (0..<4).reduce(CGFloat.zero) {
-            $0 + chipFlightProgress(at: $1, reduceMotion: reduceMotion)
-        }
-        return min(max(total / 4, 0), 1)
+        guard let timeline = chipFlightTimeline else { return 1 }
+        let presentations = timeline.presentation(
+            globalProgress: progress,
+            reduceMotion: reduceMotion
+        )
+        guard !presentations.isEmpty else { return 1 }
+        let total = presentations.reduce(CGFloat.zero) { $0 + $1.progress }
+        return min(max(total / CGFloat(presentations.count), 0), 1)
+    }
+
+    private var chipFlightTimeline: ChipFlightTimeline? {
+        guard let amount = chipFlightAmount?.rawValue else { return nil }
+        return ChipFlightTimeline(amount: amount, eventToken: activeToken)
     }
 
     func displayedStack(

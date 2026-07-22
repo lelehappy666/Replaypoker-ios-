@@ -309,44 +309,45 @@ struct PokerTableView: View {
                forSeatAt: seatIndex,
                canvas: canvas,
                betFrames: betFrames
-           ) {
+            ) {
             let center = PokerTableLayout.centerBoardRegion(for: canvas)
-            let arcOffsets: [CGFloat] = [-10, -4, 5, 11]
-            let flightDuration = reduceMotion ? 0.30 : 0.46
+            let timeline = ChipFlightTimeline(
+                amount: amount.rawValue,
+                eventToken: animationPresentation.activeToken
+            )
+            let particles = timeline.presentation(
+                globalProgress: animationPresentation.chipFlightGlobalProgress,
+                reduceMotion: reduceMotion
+            )
 
             ZStack {
-                ForEach(0..<4, id: \.self) { index in
-                    let progress = animationPresentation.chipFlightProgress(
-                        at: index,
-                        reduceMotion: reduceMotion
-                    )
+                ForEach(particles) { presentation in
+                    let particle = presentation.particle
+                    let progress = presentation.progress
                     let position = PokerTableLayout.chipFlightPosition(
                         from: endpoints.start,
                         to: endpoints.end,
                         progress: progress,
-                        arcOffset: arcOffsets[index] * (reduceMotion ? 0.55 : 1)
+                        arcOffset: particle.arcHeight * (reduceMotion ? 0.35 : 1)
                     )
 
                     CasinoFlyingChipClusterView(
                         amount: amount.rawValue,
-                        clusterIndex: index
+                        clusterIndex: particle.id,
+                        chipCount: particle.chipCount
                     )
                     .equatable()
                     .frame(width: 34, height: 24)
-                    .rotationEffect(.degrees(Double(index - 1) * 4 * progress))
-                    .position(position)
-                    .opacity(progress > 0.001 ? 1 : 0)
-                    .animation(
-                        .easeInOut(duration: flightDuration)
-                            .delay(Double(index) * (reduceMotion ? 0.025 : 0.05)),
-                        value: progress
+                    .scaleEffect(presentation.landingScale)
+                    .rotationEffect(particle.rotation * progress)
+                    .position(
+                        x: position.x + particle.landingOffset.width * progress,
+                        y: position.y + particle.landingOffset.height * progress
                     )
+                    .opacity(progress > 0.001 ? 1 : 0)
                 }
 
-                let amountProgress = animationPresentation.chipFlightProgress(
-                    at: 1,
-                    reduceMotion: reduceMotion
-                )
+                let amountProgress = particles[min(1, particles.count - 1)].progress
                 Text(CasinoChipAmountPresentation.text(for: amount.rawValue))
                     .font(.caption2.monospacedDigit().weight(.bold))
                     .foregroundStyle(RCTheme.primaryText)
@@ -362,10 +363,6 @@ struct PokerTableView: View {
                         )
                     )
                     .opacity(amountProgress > 0.001 ? 1 : 0)
-                    .animation(
-                        .easeInOut(duration: flightDuration).delay(reduceMotion ? 0.025 : 0.05),
-                        value: amountProgress
-                    )
             }
             .allowsHitTesting(false)
             .accessibilityElement(children: .contain)

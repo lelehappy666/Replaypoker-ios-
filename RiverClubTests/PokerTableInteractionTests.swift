@@ -151,6 +151,29 @@ final class PokerTableInteractionTests: XCTestCase {
         XCTAssertEqual(presentation.chipFlightAmount, try Chips(600))
     }
 
+    func testCasinoChipFlightTimelineCreatesFiveToSevenStaggeredClusters() {
+        let timeline = ChipFlightTimeline(amount: 2_300, eventToken: 9)
+
+        XCTAssertTrue((5...7).contains(timeline.particles.count))
+        XCTAssertEqual(
+            timeline.particles.map(\.delay).sorted(),
+            timeline.particles.map(\.delay)
+        )
+        XCTAssertEqual(Set(timeline.particles.map(\.arcHeight)).count, timeline.particles.count)
+        XCTAssertTrue(timeline.particles.allSatisfy { $0.chipCount >= 2 })
+    }
+
+    func testCasinoChipFlightTimelineUsesDeterministicSharedProgress() {
+        let timeline = ChipFlightTimeline(amount: 2_300, eventToken: 9)
+
+        let first = timeline.presentation(globalProgress: 0.56, reduceMotion: false)
+        let second = timeline.presentation(globalProgress: 0.56, reduceMotion: false)
+
+        XCTAssertEqual(first, second)
+        XCTAssertGreaterThan(first.first?.progress ?? 0, first.last?.progress ?? 0)
+        XCTAssertTrue(first.allSatisfy { (0...1).contains($0.progress) })
+    }
+
     func testChipFlightDisplayAmountsConserveChipsDuringBetAndAward() throws {
         let seat = try SeatID(2)
         var presentation = TableAnimationPresentation()

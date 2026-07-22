@@ -270,11 +270,12 @@ struct CasinoChipPileView: View, @preconcurrency Animatable {
 struct CasinoFlyingChipClusterView: View, Equatable {
     let amount: Int
     let clusterIndex: Int
+    var chipCount = 3
 
     var body: some View {
         Canvas { context, size in
             let chipDenomination = self.denomination
-            let visibleChips = clusterIndex.isMultiple(of: 2) ? 3 : 2
+            let visibleChips = min(max(chipCount, 2), 4)
             let chipWidth = min(size.width - 4, 30)
             let chipHeight = min(size.height * 0.38, 10)
             let originX = (size.width - chipWidth) / 2
