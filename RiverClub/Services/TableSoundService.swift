@@ -10,6 +10,9 @@ enum TableSoundPreference {
 enum TableSoundCue: Equatable {
     case deal
     case chips
+    case chipSlide
+    case chipLandLight
+    case chipLandHeavy
     case turn
     case win
 
@@ -27,9 +30,49 @@ enum TableSoundCue: Equatable {
     }
 }
 
+struct TableChipSoundSequence: Equatable {
+    struct Step: Equatable {
+        let delay: TimeInterval
+        let cue: TableSoundCue
+    }
+
+    let steps: [Step]
+
+    static let standard = TableChipSoundSequence(steps: [
+        Step(delay: 0, cue: .chipSlide),
+        Step(delay: 0.11, cue: .chipLandLight),
+        Step(delay: 0.24, cue: .chipLandHeavy),
+    ])
+}
+
+struct TableSoundSequenceGate: Equatable {
+    let minimumInterval: TimeInterval
+    private var lastAcceptedTime: TimeInterval?
+
+    init(minimumInterval: TimeInterval) {
+        self.minimumInterval = minimumInterval
+    }
+
+    mutating func accept(now: TimeInterval) -> Bool {
+        if let lastAcceptedTime,
+           now - lastAcceptedTime < minimumInterval {
+            return false
+        }
+        lastAcceptedTime = now
+        return true
+    }
+}
+
 @MainActor protocol TableSoundPlaying: AnyObject {
     func play(_ cue: TableSoundCue)
+    func playChipSequence()
     func stop()
+}
+
+@MainActor extension TableSoundPlaying {
+    func playChipSequence() {
+        play(.chips)
+    }
 }
 
 @MainActor final class TableSoundPlayer: TableSoundPlaying {
@@ -42,6 +85,8 @@ enum TableSoundCue: Equatable {
         channels: 1
     )!
     private var isConfigured = false
+    private var chipSequenceTask: Task<Void, Never>?
+    private var chipSequenceGate = TableSoundSequenceGate(minimumInterval: 0.20)
 
     private init() {}
 
@@ -57,7 +102,28 @@ enum TableSoundCue: Equatable {
         }
     }
 
+    func playChipSequence() {
+        guard chipSequenceGate.accept(now: ProcessInfo.processInfo.systemUptime) else {
+            return
+        }
+        chipSequenceTask?.cancel()
+        chipSequenceTask = Task { @MainActor in
+            var previousDelay: TimeInterval = 0
+            for step in TableChipSoundSequence.standard.steps {
+                let wait = max(step.delay - previousDelay, 0)
+                if wait > 0 {
+                    try? await Task.sleep(for: .seconds(wait))
+                }
+                guard !Task.isCancelled else { return }
+                play(step.cue)
+                previousDelay = step.delay
+            }
+        }
+    }
+
     func stop() {
+        chipSequenceTask?.cancel()
+        chipSequenceTask = nil
         player.stop()
     }
 
@@ -106,6 +172,9 @@ enum TableSoundCue: Equatable {
         switch cue {
         case .deal: 0.13
         case .chips: 0.16
+        case .chipSlide: 0.08
+        case .chipLandLight: 0.06
+        case .chipLandHeavy: 0.10
         case .turn: 0.22
         case .win: 0.48
         }
@@ -131,6 +200,17 @@ enum TableSoundCue: Equatable {
                 ? Float(sin(2 * .pi * 2_430 * time)) * secondFade
                 : 0
             return (first * 0.16 + second * 0.11 + noise * fade * 0.025)
+        case .chipSlide:
+            let scrape = noise * fade * 0.08
+            let ceramic = Float(sin(2 * .pi * 1_320 * time)) * fade * 0.035
+            return scrape + ceramic
+        case .chipLandLight:
+            let click = Float(sin(2 * .pi * 2_250 * time)) * fade * 0.13
+            return click + noise * fade * 0.018
+        case .chipLandHeavy:
+            let body = Float(sin(2 * .pi * 1_180 * time)) * fade * 0.15
+            let edge = Float(sin(2 * .pi * 2_760 * time)) * fade * 0.07
+            return body + edge + noise * fade * 0.025
         case .turn:
             let frequency = progress < 0.52 ? 660.0 : 880.0
             return Float(sin(2 * .pi * frequency * time)) * fade * 0.12

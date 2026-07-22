@@ -12,6 +12,10 @@ struct PokerTableView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(TableSoundPreference.storageKey)
     private var tableSoundEnabled = TableSoundPreference.defaultEnabled
+    @AppStorage(TableExperiencePreference.chipAnimationEnabledKey)
+    private var chipAnimationEnabled = TableExperienceSettings.recommended.chipAnimationEnabled
+    @AppStorage(TableExperiencePreference.animationSpeedKey)
+    private var animationSpeedRawValue = TableExperienceSettings.recommended.speed.rawValue
     @State private var actionRequest = TableActionRequestModel()
     @State private var animationPresentation = TableAnimationPresentation()
     @State private var animationResetTask: Task<Void, Never>?
@@ -301,7 +305,8 @@ struct PokerTableView: View {
         canvas: CGSize,
         betFrames: [CGRect?]
     ) -> some View {
-        if let targetSeat = animationPresentation.chipFlightSeat,
+        if chipAnimationEnabled,
+           let targetSeat = animationPresentation.chipFlightSeat,
            let amount = animationPresentation.chipFlightAmount,
            amount.rawValue > 0,
            let seatIndex = state.seats.firstIndex(where: { $0.id == targetSeat }),
@@ -618,14 +623,26 @@ struct PokerTableView: View {
         }
 
         animationPresentation.begin(event, token: sequence)
-        if tableSoundEnabled, let cue = TableSoundCue.cue(for: event) {
-            TableSoundPlayer.shared.play(cue)
+        if tableSoundEnabled {
+            if event.kind == .postBlind
+                || event.kind == .moveCommitmentToPot
+                || event.kind == .returnUncalledBet
+                || event.kind == .awardPot {
+                TableSoundPlayer.shared.playChipSequence()
+            } else if let cue = TableSoundCue.cue(for: event) {
+                TableSoundPlayer.shared.play(cue)
+            }
         }
         if uiTestingWinnerAnnouncementLogEnabled,
            case let .awardPot(seat, amount) = event {
             uiTestingWinnerAnnouncements.append(
                 "\(seat.rawValue)|\(displayName(for: seat))|\(amount.rawValue)"
             )
+        }
+        if !chipAnimationEnabled, animationPresentation.chipFlightSeat != nil {
+            animationPresentation.advance(token: sequence)
+            animationPresentation.reset(token: sequence)
+            return
         }
         if reduceMotion {
             withAnimation(
@@ -661,32 +678,38 @@ struct PokerTableView: View {
         for kind: TableAnimationKind,
         reduceMotion: Bool
     ) -> Double {
+        let speed = TableAnimationSpeed(rawValue: animationSpeedRawValue) ?? .standard
+        let baseDuration: Double
         switch kind {
         case .postBlind, .moveCommitmentToPot:
-            reduceMotion ? 0.30 : 0.52
+            baseDuration = reduceMotion ? 0.30 : 0.52
         case .returnUncalledBet:
-            reduceMotion ? 0.38 : 0.54
+            baseDuration = reduceMotion ? 0.38 : 0.54
         case .awardPot:
-            reduceMotion ? 0.44 : 0.70
+            baseDuration = reduceMotion ? 0.44 : 0.70
         default:
-            0.22
+            baseDuration = 0.22
         }
+        return baseDuration * speed.durationMultiplier
     }
 
     private func animationResetMilliseconds(
         for kind: TableAnimationKind,
         reduceMotion: Bool
     ) -> Int {
+        let speed = TableAnimationSpeed(rawValue: animationSpeedRawValue) ?? .standard
+        let baseMilliseconds: Int
         switch kind {
         case .postBlind, .moveCommitmentToPot:
-            reduceMotion ? 360 : 620
+            baseMilliseconds = reduceMotion ? 360 : 620
         case .returnUncalledBet:
-            reduceMotion ? 460 : 620
+            baseMilliseconds = reduceMotion ? 460 : 620
         case .awardPot:
-            reduceMotion ? 600 : 780
+            baseMilliseconds = reduceMotion ? 600 : 780
         default:
-            240
+            baseMilliseconds = 240
         }
+        return Int((Double(baseMilliseconds) * speed.durationMultiplier).rounded())
     }
 
     private var uiTestingWinnerAnnouncementLogEnabled: Bool {

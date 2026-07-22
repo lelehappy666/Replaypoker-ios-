@@ -28,4 +28,23 @@ final class TableSoundServiceTests: XCTestCase {
         XCTAssertTrue(TableSoundPreference.defaultEnabled)
         XCTAssertFalse(TableSoundPreference.storageKey.isEmpty)
     }
+
+    func testChipSequenceUsesSlideAndTwoDifferentLandingSounds() {
+        XCTAssertEqual(
+            TableChipSoundSequence.standard.steps.map(\.cue),
+            [.chipSlide, .chipLandLight, .chipLandHeavy]
+        )
+        XCTAssertEqual(
+            TableChipSoundSequence.standard.steps.map(\.delay),
+            TableChipSoundSequence.standard.steps.map(\.delay).sorted()
+        )
+    }
+
+    func testChipSequenceGateRejectsOverlappingSequence() {
+        var gate = TableSoundSequenceGate(minimumInterval: 0.20)
+
+        XCTAssertTrue(gate.accept(now: 10.0))
+        XCTAssertFalse(gate.accept(now: 10.1))
+        XCTAssertTrue(gate.accept(now: 10.21))
+    }
 }
