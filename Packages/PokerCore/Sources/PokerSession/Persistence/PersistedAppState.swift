@@ -2,7 +2,7 @@ import Foundation
 import PokerCore
 
 package struct PersistedAppState: Codable, Equatable, Sendable {
-    package static let currentVersion = 4
+    package static let currentVersion = 5
 
     package var version: Int
     package var ledger: EntertainmentChipLedger
@@ -14,6 +14,7 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
     package var usedHandIDs: Set<HandID>
     package var usedSessionIDs: Set<SessionID>
     package var settlementReceipts: [BusinessID: SettlementReceipt]
+    package var tournamentSessions: [TournamentID: TournamentSession]
 
     package init(
         version: Int = currentVersion,
@@ -25,7 +26,8 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
         commandReceipts: [BusinessID: CommandReceipt] = [:],
         usedHandIDs: Set<HandID> = [],
         usedSessionIDs: Set<SessionID> = [],
-        settlementReceipts: [BusinessID: SettlementReceipt] = [:]
+        settlementReceipts: [BusinessID: SettlementReceipt] = [:],
+        tournamentSessions: [TournamentID: TournamentSession] = [:]
     ) {
         self.version = version
         self.ledger = ledger
@@ -67,6 +69,7 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
         self.usedHandIDs = inferredHandIDs
         self.usedSessionIDs = inferredSessionIDs
         self.settlementReceipts = inferredSettlements
+        self.tournamentSessions = tournamentSessions
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -80,6 +83,7 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
         case usedHandIDs
         case usedSessionIDs
         case settlementReceipts
+        case tournamentSessions
     }
 
     package init(from decoder: Decoder) throws {
@@ -163,6 +167,19 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
             )
         } catch {
             throw Self.corrupt(decoder, "结算收据索引无效", underlyingError: error)
+        }
+        let encodedTournaments = try container.decodeIfPresent(
+            [String: TournamentSession].self,
+            forKey: .tournamentSessions
+        ) ?? [:]
+        do {
+            tournamentSessions = try Dictionary(uniqueKeysWithValues:
+                encodedTournaments.map { key, session in
+                    (try TournamentID(key), session)
+                }
+            )
+        } catch {
+            throw Self.corrupt(decoder, "锦标赛索引无效", underlyingError: error)
         }
 
         if decodedVersion == 1 {
@@ -295,11 +312,22 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
             }),
             forKey: .settlementReceipts
         )
+        try container.encode(
+            Dictionary(uniqueKeysWithValues: tournamentSessions.map {
+                ($0.key.rawValue, $0.value)
+            }),
+            forKey: .tournamentSessions
+        )
     }
 
     private func validate() throws {
         guard version == Self.currentVersion else {
             throw PokerSessionError.unsupportedVersion(version)
+        }
+
+        for (id, session) in tournamentSessions {
+            guard id == session.id else { throw PokerSessionError.corruptSnapshot }
+            try session.validate()
         }
 
         var handNumbersBySession: [SessionID: Set<Int>] = [:]

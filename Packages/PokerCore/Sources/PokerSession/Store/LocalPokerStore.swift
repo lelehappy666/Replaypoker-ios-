@@ -50,6 +50,12 @@ public final class LocalPokerStore {
         committed.activeCashSession?.view
     }
 
+    public var tournamentSessions: [TournamentSessionView] {
+        committed.tournamentSessions.values
+            .map(\.view)
+            .sorted { $0.id.rawValue < $1.id.rawValue }
+    }
+
     public var spectatorObservation: SpectatorObservation? {
         committed.activeCashSession?.spectatorObservation()
     }
