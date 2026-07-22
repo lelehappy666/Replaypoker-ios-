@@ -55,6 +55,7 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
             case let .cashOut(sessionID, _, _): inferredSessionIDs.insert(sessionID)
             case .legacyCashBuyIn, .legacyCashOut: break
             case .legacyLedgerOnly: break
+            case .tournamentRegistration, .tournamentCancellation, .tournamentPrize: break
             }
         }
         var inferredSettlements = settlementReceipts
@@ -204,6 +205,8 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
                 case let .cashOut(sessionID, _, _): usedSessionIDs.insert(sessionID)
                 case .legacyCashBuyIn, .legacyCashOut: break
                 case .legacyLedgerOnly: break
+                case .tournamentRegistration, .tournamentCancellation,
+                     .tournamentPrize: break
                 }
             }
             for record in records.values {
@@ -251,7 +254,8 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
                     }
                     segmentHasBuyIn = false
                     openMigratedBuyInIDs.removeAll()
-                case .dailyGift, .bankruptcyRelief, .welcomeBalanceTopUp:
+                case .dailyGift, .bankruptcyRelief, .welcomeBalanceTopUp,
+                     .tournamentEntry, .tournamentRefund, .tournamentPrize:
                     break
                 }
             }
@@ -428,7 +432,8 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
             case .cashOut:
                 segmentHasBuyIn = false
                 openLegacyBuyInIDs.removeAll()
-            case .dailyGift, .bankruptcyRelief, .welcomeBalanceTopUp:
+            case .dailyGift, .bankruptcyRelief, .welcomeBalanceTopUp,
+                 .tournamentEntry, .tournamentRefund, .tournamentPrize:
                 break
             }
         }
@@ -513,11 +518,44 @@ package struct PersistedAppState: Codable, Equatable, Sendable {
                 guard let entry = ledgerEntriesByID[id], entry.reason == reason else {
                     throw PokerSessionError.corruptSnapshot
                 }
+            case let .tournamentRegistration(request, result):
+                guard let entry = ledgerEntriesByID[id],
+                      entry.reason == .tournamentEntry(tournament: request.id),
+                      entry.delta == -request.entryFee.rawValue,
+                      result.id == request.id,
+                      result.entryFee == request.entryFee,
+                      result.phase == .registered
+                else {
+                    throw PokerSessionError.corruptSnapshot
+                }
+            case let .tournamentCancellation(tournament, result):
+                guard let entry = ledgerEntriesByID[id],
+                      entry.reason == .tournamentRefund(tournament: tournament),
+                      entry.delta == result.entryFee.rawValue,
+                      result.id == tournament,
+                      result.phase == .registered
+                else {
+                    throw PokerSessionError.corruptSnapshot
+                }
+            case let .tournamentPrize(tournament, rank, amount, result):
+                guard let entry = ledgerEntriesByID[id],
+                      entry.reason == .tournamentPrize(
+                        tournament: tournament,
+                        rank: rank
+                      ),
+                      entry.delta == amount.rawValue,
+                      result.id == tournament,
+                      result.phase == .finished,
+                      result.humanRank == rank
+                else {
+                    throw PokerSessionError.corruptSnapshot
+                }
             }
         }
         for entry in ledger.entries {
             switch entry.reason {
-            case .cashBuyIn, .cashOut:
+            case .cashBuyIn, .cashOut, .tournamentEntry, .tournamentRefund,
+                 .tournamentPrize:
                 guard commandReceipts[entry.businessID] != nil else {
                     throw PokerSessionError.corruptSnapshot
                 }

@@ -7,6 +7,9 @@ public enum LedgerReason: Codable, Equatable, Sendable {
     case dailyGift(day: LocalDay)
     case bankruptcyRelief(day: LocalDay)
     case welcomeBalanceTopUp(version: Int, target: Chips)
+    case tournamentEntry(tournament: TournamentID)
+    case tournamentRefund(tournament: TournamentID)
+    case tournamentPrize(tournament: TournamentID, rank: Int)
 }
 
 public struct LedgerEntry: Codable, Equatable, Sendable {
@@ -159,6 +162,54 @@ public struct EntertainmentChipLedger: Codable, Equatable, Sendable {
         return try apply(id: id, reason: reason, delta: delta, at: timestamp)
     }
 
+    public mutating func registerTournament(
+        amount: Chips,
+        tournament: TournamentID,
+        id: BusinessID,
+        at timestamp: Date
+    ) throws -> LedgerEntry {
+        guard amount.rawValue >= 0 else { throw PokerSessionError.invalidBuyIn }
+        return try apply(
+            id: id,
+            reason: .tournamentEntry(tournament: tournament),
+            delta: -amount.rawValue,
+            at: timestamp
+        )
+    }
+
+    public mutating func refundTournament(
+        amount: Chips,
+        tournament: TournamentID,
+        id: BusinessID,
+        at timestamp: Date
+    ) throws -> LedgerEntry {
+        guard amount.rawValue >= 0 else { throw PokerSessionError.invalidBuyIn }
+        return try apply(
+            id: id,
+            reason: .tournamentRefund(tournament: tournament),
+            delta: amount.rawValue,
+            at: timestamp
+        )
+    }
+
+    public mutating func awardTournamentPrize(
+        amount: Chips,
+        tournament: TournamentID,
+        rank: Int,
+        id: BusinessID,
+        at timestamp: Date
+    ) throws -> LedgerEntry {
+        guard amount.rawValue > 0, rank > 0 else {
+            throw PokerSessionError.invalidBuyIn
+        }
+        return try apply(
+            id: id,
+            reason: .tournamentPrize(tournament: tournament, rank: rank),
+            delta: amount.rawValue,
+            at: timestamp
+        )
+    }
+
     private mutating func apply(
         id: BusinessID,
         reason: LedgerReason,
@@ -259,6 +310,18 @@ public struct EntertainmentChipLedger: Codable, Equatable, Sendable {
                       welcomeTopUpVersions.insert(version).inserted
                 else {
                     throw Self.corruptLedger(decoder, "Invalid welcome balance top-up entry")
+                }
+            case .tournamentEntry:
+                guard entry.delta <= 0 else {
+                    throw Self.corruptLedger(decoder, "Invalid tournament entry delta")
+                }
+            case .tournamentRefund:
+                guard entry.delta >= 0 else {
+                    throw Self.corruptLedger(decoder, "Invalid tournament refund delta")
+                }
+            case let .tournamentPrize(_, rank):
+                guard rank > 0, entry.delta > 0 else {
+                    throw Self.corruptLedger(decoder, "Invalid tournament prize entry")
                 }
             }
 

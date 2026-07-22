@@ -263,6 +263,20 @@ package enum CommandReceipt: Codable, Equatable, Sendable {
     )
     case legacyCashOut(reason: LedgerReason)
     case legacyLedgerOnly(reason: LedgerReason)
+    case tournamentRegistration(
+        request: TournamentRegistrationRequest,
+        result: TournamentSessionView
+    )
+    case tournamentCancellation(
+        tournament: TournamentID,
+        result: TournamentSessionView
+    )
+    case tournamentPrize(
+        tournament: TournamentID,
+        rank: Int,
+        amount: Chips,
+        result: TournamentSessionView
+    )
 }
 
 package struct SettlementReceipt: Codable, Equatable, Sendable {

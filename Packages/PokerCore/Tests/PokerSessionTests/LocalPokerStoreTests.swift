@@ -952,7 +952,8 @@ private func savedLegacyGenericVersionTwoState(
             oldState.commandReceipts[entry.businessID] = .legacyLedgerOnly(
                 reason: entry.reason
             )
-        case .dailyGift, .bankruptcyRelief, .welcomeBalanceTopUp:
+        case .dailyGift, .bankruptcyRelief, .welcomeBalanceTopUp,
+             .tournamentEntry, .tournamentRefund, .tournamentPrize:
             break
         }
     }

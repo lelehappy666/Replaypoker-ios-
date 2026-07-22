@@ -155,7 +155,8 @@ public final class LocalPokerStore {
                     amount: amount
                 )
             case .rebuy, .zeroStackLeave, .cashOut, .legacyCashOut,
-                 .legacyLedgerOnly:
+                 .legacyLedgerOnly, .tournamentRegistration,
+                 .tournamentCancellation, .tournamentPrize:
                 throw PokerSessionError.businessIDConflict
             }
         }
@@ -205,6 +206,141 @@ public final class LocalPokerStore {
             state.usedSessionIDs.insert(request.sessionID)
             state.commandReceipts[businessID] = .sitDown(
                 request: request,
+                result: session.view
+            )
+            return session.view
+        }
+    }
+
+    public func registerForTournament(
+        _ request: TournamentRegistrationRequest,
+        businessID: BusinessID
+    ) throws -> TournamentSessionView {
+        if let receipt = committed.commandReceipts[businessID] {
+            guard case let .tournamentRegistration(storedRequest, result) = receipt,
+                  storedRequest == request
+            else {
+                throw PokerSessionError.businessIDConflict
+            }
+            return result
+        }
+        try requireAvailableForLedgerCommand(businessID)
+        guard ledgerEntry(for: businessID) == nil else {
+            throw PokerSessionError.businessIDConflict
+        }
+
+        return try transact { state in
+            guard state.tournamentSessions[request.id] == nil else {
+                throw PokerSessionError.invalidLifecycle
+            }
+            let session = try TournamentSession(
+                id: request.id,
+                phase: .registered,
+                entryFee: request.entryFee,
+                blindLevels: request.blindLevels,
+                stacks: request.stacks,
+                humanSeat: request.humanSeat
+            )
+            _ = try state.ledger.registerTournament(
+                amount: request.entryFee,
+                tournament: request.id,
+                id: businessID,
+                at: clock.now
+            )
+            state.tournamentSessions[request.id] = session
+            state.commandReceipts[businessID] = .tournamentRegistration(
+                request: request,
+                result: session.view
+            )
+            return session.view
+        }
+    }
+
+    public func cancelTournamentRegistration(
+        _ id: TournamentID,
+        businessID: BusinessID
+    ) throws -> TournamentSessionView {
+        if let receipt = committed.commandReceipts[businessID] {
+            guard case let .tournamentCancellation(tournament, result) = receipt,
+                  tournament == id
+            else {
+                throw PokerSessionError.businessIDConflict
+            }
+            return result
+        }
+        try requireAvailableForLedgerCommand(businessID)
+        guard ledgerEntry(for: businessID) == nil else {
+            throw PokerSessionError.businessIDConflict
+        }
+
+        return try transact { state in
+            guard let session = state.tournamentSessions[id],
+                  session.phase == .registered,
+                  state.ledger.entries.contains(where: {
+                      $0.reason == .tournamentEntry(tournament: id)
+                          && $0.delta == -session.entryFee.rawValue
+                  })
+            else {
+                throw PokerSessionError.invalidLifecycle
+            }
+            _ = try state.ledger.refundTournament(
+                amount: session.entryFee,
+                tournament: id,
+                id: businessID,
+                at: clock.now
+            )
+            state.tournamentSessions.removeValue(forKey: id)
+            state.commandReceipts[businessID] = .tournamentCancellation(
+                tournament: id,
+                result: session.view
+            )
+            return session.view
+        }
+    }
+
+    public func awardTournamentPrize(
+        _ id: TournamentID,
+        rank: Int,
+        amount: Chips,
+        businessID: BusinessID
+    ) throws -> TournamentSessionView {
+        if let receipt = committed.commandReceipts[businessID] {
+            guard case let .tournamentPrize(
+                tournament,
+                storedRank,
+                storedAmount,
+                result
+            ) = receipt,
+                  tournament == id,
+                  storedRank == rank,
+                  storedAmount == amount
+            else {
+                throw PokerSessionError.businessIDConflict
+            }
+            return result
+        }
+        try requireAvailableForLedgerCommand(businessID)
+        guard ledgerEntry(for: businessID) == nil else {
+            throw PokerSessionError.businessIDConflict
+        }
+
+        return try transact { state in
+            guard var session = state.tournamentSessions[id] else {
+                throw PokerSessionError.invalidLifecycle
+            }
+            try session.finishPrize(rank: rank)
+            _ = try state.ledger.awardTournamentPrize(
+                amount: amount,
+                tournament: id,
+                rank: rank,
+                id: businessID,
+                at: clock.now
+            )
+            state.tournamentSessions[id] = session
+            state.commandReceipts[businessID] = .tournamentPrize(
+                tournament: id,
+                rank: rank,
+                amount: amount,
                 result: session.view
             )
             return session.view
@@ -364,7 +500,8 @@ public final class LocalPokerStore {
                     throw PokerSessionError.businessIDConflict
                 }
                 return
-            case .legacyCashBuyIn, .legacyLedgerOnly:
+            case .legacyCashBuyIn, .legacyLedgerOnly, .tournamentRegistration,
+                 .tournamentCancellation, .tournamentPrize:
                 throw PokerSessionError.businessIDConflict
             }
         }

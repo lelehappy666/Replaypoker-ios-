@@ -3,6 +3,7 @@ import PokerCore
 package struct TournamentSession: Codable, Equatable, Sendable {
     package let id: TournamentID
     package private(set) var phase: TournamentPhase
+    package let entryFee: Chips
     package let blindLevels: [BlindLevel]
     package private(set) var blindLevelIndex: Int
     package private(set) var stacks: [SeatID: Chips]
@@ -12,6 +13,7 @@ package struct TournamentSession: Codable, Equatable, Sendable {
     package init(
         id: TournamentID,
         phase: TournamentPhase,
+        entryFee: Chips = Chips(rawValue: 0)!,
         blindLevels: [BlindLevel],
         blindLevelIndex: Int = 0,
         stacks: [SeatID: Chips],
@@ -20,6 +22,7 @@ package struct TournamentSession: Codable, Equatable, Sendable {
     ) throws {
         self.id = id
         self.phase = phase
+        self.entryFee = entryFee
         self.blindLevels = blindLevels
         self.blindLevelIndex = blindLevelIndex
         self.stacks = stacks
@@ -32,6 +35,7 @@ package struct TournamentSession: Codable, Equatable, Sendable {
         TournamentSessionView(
             id: id,
             phase: phase,
+            entryFee: entryFee,
             blindLevels: blindLevels,
             blindLevelIndex: blindLevelIndex,
             stacks: stacks,
@@ -45,15 +49,27 @@ package struct TournamentSession: Codable, Equatable, Sendable {
         let rankedSeats = Set(ranking)
         guard stacks.count == 9,
               stacks[humanSeat] != nil,
+              entryFee.rawValue >= 0,
               !blindLevels.isEmpty,
               blindLevels.allSatisfy(\.isValid),
               blindLevels.indices.contains(blindLevelIndex),
               rankedSeats.count == ranking.count,
               rankedSeats.isSubset(of: seats),
-              ranking.count < stacks.count
+              ranking.count <= stacks.count,
+              phase == .finished || phase == .prizePending || ranking.count < stacks.count
         else {
             throw PokerSessionError.corruptSnapshot
         }
+    }
+
+    package mutating func finishPrize(rank: Int) throws {
+        guard phase == .prizePending,
+              view.humanRank == rank
+        else {
+            throw PokerSessionError.invalidLifecycle
+        }
+        phase = .finished
+        try validate()
     }
 
     package init(from decoder: Decoder) throws {
@@ -62,6 +78,7 @@ package struct TournamentSession: Codable, Equatable, Sendable {
         try self.init(
             id: storage.id,
             phase: storage.phase,
+            entryFee: storage.entryFee,
             blindLevels: storage.blindLevels,
             blindLevelIndex: storage.blindLevelIndex,
             stacks: storage.stacks,
@@ -79,6 +96,7 @@ package struct TournamentSession: Codable, Equatable, Sendable {
     private struct Storage: Codable {
         let id: TournamentID
         let phase: TournamentPhase
+        let entryFee: Chips
         let blindLevels: [BlindLevel]
         let blindLevelIndex: Int
         let stacks: [SeatID: Chips]
@@ -88,6 +106,7 @@ package struct TournamentSession: Codable, Equatable, Sendable {
         init(_ session: TournamentSession) {
             id = session.id
             phase = session.phase
+            entryFee = session.entryFee
             blindLevels = session.blindLevels
             blindLevelIndex = session.blindLevelIndex
             stacks = session.stacks
