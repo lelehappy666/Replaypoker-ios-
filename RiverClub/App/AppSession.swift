@@ -144,6 +144,8 @@ final class AppSession {
     private(set) var botSettings: BotSettings
     private(set) var frozenBotSettings: BotSettings?
     private(set) var botSettingsError: String?
+    private(set) var tableExperienceSettings: TableExperienceSettings
+    private(set) var tableExperienceSettingsError: String?
     private(set) var tableStartupError: String?
     private(set) var isTableDeparturePresented = false
     private(set) var isLeavingTable = false
@@ -152,6 +154,8 @@ final class AppSession {
     private(set) var abandonedCashSessionError: String?
     private(set) var handHistoryState = HandHistoryViewState()
     @ObservationIgnored private let botSettingsRepository: any BotSettingsPersisting
+    @ObservationIgnored private let tableExperienceSettingsRepository:
+        any TableExperienceSettingsPersisting
     @ObservationIgnored private let dependencies: AppSessionDependencies
     private var tableState = TableSessionState()
     private var cashTableJoinAttempt: CashTableJoinAttempt?
@@ -172,10 +176,13 @@ final class AppSession {
     init(
         pokerStore: LocalPokerStore,
         botSettingsRepository: any BotSettingsPersisting,
+        tableExperienceSettingsRepository: any TableExperienceSettingsPersisting =
+            MemoryTableExperienceSettingsRepository(),
         dependencies: AppSessionDependencies = .live
     ) {
         self.pokerStore = pokerStore
         self.botSettingsRepository = botSettingsRepository
+        self.tableExperienceSettingsRepository = tableExperienceSettingsRepository
         self.dependencies = dependencies
         do {
             botSettings = try botSettingsRepository.load()
@@ -183,6 +190,13 @@ final class AppSession {
         } catch {
             botSettings = .recommended
             botSettingsError = "机器人设置读取失败，请检查设置文件或恢复推荐设置。"
+        }
+        do {
+            tableExperienceSettings = try tableExperienceSettingsRepository.load()
+            tableExperienceSettingsError = nil
+        } catch {
+            tableExperienceSettings = .recommended
+            tableExperienceSettingsError = "牌桌设置读取失败，已使用推荐设置。"
         }
     }
 
@@ -207,6 +221,7 @@ final class AppSession {
             directory: sessionDirectory,
             clock: AppSessionClock(),
             botSettingsRepository: try BotSettingsRepository.applicationSupport(),
+            tableExperienceSettingsRepository: TableExperienceSettingsRepository(),
             dependencies: .live
         )
     }
@@ -215,6 +230,8 @@ final class AppSession {
         directory: URL,
         clock: any SessionClock,
         botSettingsRepository: any BotSettingsPersisting,
+        tableExperienceSettingsRepository: any TableExperienceSettingsPersisting =
+            TableExperienceSettingsRepository(),
         dependencies: AppSessionDependencies
     ) throws -> AppSession {
         let store = try LocalPokerStore.open(
@@ -225,6 +242,7 @@ final class AppSession {
         return AppSession(
             pokerStore: store,
             botSettingsRepository: botSettingsRepository,
+            tableExperienceSettingsRepository: tableExperienceSettingsRepository,
             dependencies: dependencies
         )
     }
@@ -278,6 +296,8 @@ final class AppSession {
             directory: directory,
             clock: AppSessionClock(),
             botSettingsRepository: MemoryBotSettingsRepository(initial: .recommended),
+            tableExperienceSettingsRepository:
+                MemoryTableExperienceSettingsRepository(),
             dependencies: AppSessionDependencies(
                 nextSessionID: {
                     try SessionID(ids.nextSessionID())
@@ -800,6 +820,19 @@ final class AppSession {
         try botSettingsRepository.save(settings)
         botSettings = settings
         botSettingsError = nil
+    }
+
+    func saveTableExperienceSettings(
+        _ settings: TableExperienceSettings
+    ) throws {
+        do {
+            try tableExperienceSettingsRepository.save(settings)
+            tableExperienceSettings = settings
+            tableExperienceSettingsError = nil
+        } catch {
+            tableExperienceSettingsError = "牌桌设置保存失败，请重试。"
+            throw error
+        }
     }
 
     @discardableResult

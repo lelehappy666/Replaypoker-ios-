@@ -23,4 +23,20 @@ final class TableExperienceSettingsTests: XCTestCase {
 
         XCTAssertEqual(try repository.load(), .recommended)
     }
+
+    @MainActor
+    func testAppSessionSavesTableSettingsAndAppliesThemImmediately() throws {
+        let session = try AppSessionFixture().session
+        let settings = TableExperienceSettings(
+            chipAnimationEnabled: false,
+            speed: .fast,
+            currentHandHintEnabled: false,
+            autoTopUpEnabled: true
+        )
+
+        try session.saveTableExperienceSettings(settings)
+
+        XCTAssertEqual(session.tableExperienceSettings, settings)
+        XCTAssertNil(session.tableExperienceSettingsError)
+    }
 }

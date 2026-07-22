@@ -118,7 +118,12 @@ struct AppRootView: View {
                             coordinator: coordinator,
                             table: table,
                             balance: session.chipBalance,
+                            tableExperienceSettings: session.tableExperienceSettings,
+                            botSettings: session.botSettings,
                             sendIntent: session.sendTableIntent,
+                            onSaveTableExperienceSettings:
+                                session.saveTableExperienceSettings,
+                            onSaveBotSettings: session.saveBotSettings,
                             onRequestLeave: session.requestTableDeparture
                         )
                     }

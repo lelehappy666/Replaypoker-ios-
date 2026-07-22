@@ -1,4 +1,5 @@
 import Foundation
+import PokerBot
 import PokerCoordinator
 import PokerCore
 import SwiftUI
@@ -7,15 +8,15 @@ struct PokerTableView: View {
     @Bindable var coordinator: CashTableCoordinator
     let table: PokerTableSummary
     let balance: Int
+    let tableExperienceSettings: TableExperienceSettings
+    let botSettings: BotSettings
     let sendIntent: @MainActor (TableIntent) async throws -> Void
+    let onSaveTableExperienceSettings: (TableExperienceSettings) throws -> Void
+    let onSaveBotSettings: (BotSettings) throws -> Void
     var onRequestLeave: () -> Void = {}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage(TableSoundPreference.storageKey)
     private var tableSoundEnabled = TableSoundPreference.defaultEnabled
-    @AppStorage(TableExperiencePreference.chipAnimationEnabledKey)
-    private var chipAnimationEnabled = TableExperienceSettings.recommended.chipAnimationEnabled
-    @AppStorage(TableExperiencePreference.animationSpeedKey)
-    private var animationSpeedRawValue = TableExperienceSettings.recommended.speed.rawValue
     @State private var actionRequest = TableActionRequestModel()
     @State private var animationPresentation = TableAnimationPresentation()
     @State private var animationResetTask: Task<Void, Never>?
@@ -24,6 +25,7 @@ struct PokerTableView: View {
     @State private var uiTestingWinnerAnnouncements: [String] = []
     @State private var socialModel = TableSocialInteractionModel()
     @State private var socialPanelMode: TableSocialPanelMode?
+    @State private var isSettingsPresented = false
 
     private var state: TableViewState { coordinator.state }
 
@@ -214,6 +216,22 @@ struct PokerTableView: View {
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("table.betControls")
                     .position(x: action.midX, y: action.midY)
+
+                if isSettingsPresented {
+                    Color.black.opacity(0.56)
+                        .ignoresSafeArea()
+                        .onTapGesture { isSettingsPresented = false }
+                        .zIndex(8)
+                    TableSettingsSheet(
+                        experience: tableExperienceSettings,
+                        botSettings: botSettings,
+                        onSaveExperience: onSaveTableExperienceSettings,
+                        onSaveBotSettings: onSaveBotSettings,
+                        onClose: { isSettingsPresented = false }
+                    )
+                    .position(x: canvas.width / 2, y: canvas.height / 2)
+                    .zIndex(9)
+                }
             }
     }
 
@@ -327,7 +345,7 @@ struct PokerTableView: View {
         canvas: CGSize,
         betFrames: [CGRect?]
     ) -> some View {
-        if chipAnimationEnabled,
+        if tableExperienceSettings.chipAnimationEnabled,
            let targetSeat = animationPresentation.chipFlightSeat,
            let amount = animationPresentation.chipFlightAmount,
            amount.rawValue > 0,
@@ -440,6 +458,7 @@ struct PokerTableView: View {
     }
 
     private var currentHandText: String? {
+        guard tableExperienceSettings.currentHandHintEnabled else { return nil }
         guard let human = state.seats.first(where: \.isHuman) else {
             return nil
         }
@@ -499,7 +518,10 @@ struct PokerTableView: View {
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("table.balance")
 
-            Button("设置", systemImage: "gearshape") {}
+            Button("设置", systemImage: "gearshape") {
+                socialPanelMode = nil
+                isSettingsPresented = true
+            }
                 .labelStyle(.iconOnly)
                 .frame(width: settings.width, height: settings.height)
                 .foregroundStyle(RCTheme.primaryText)
@@ -683,7 +705,8 @@ struct PokerTableView: View {
                 "\(seat.rawValue)|\(displayName(for: seat))|\(amount.rawValue)"
             )
         }
-        if !chipAnimationEnabled, animationPresentation.chipFlightSeat != nil {
+        if !tableExperienceSettings.chipAnimationEnabled,
+           animationPresentation.chipFlightSeat != nil {
             animationPresentation.advance(token: sequence)
             animationPresentation.reset(token: sequence)
             return
@@ -722,7 +745,7 @@ struct PokerTableView: View {
         for kind: TableAnimationKind,
         reduceMotion: Bool
     ) -> Double {
-        let speed = TableAnimationSpeed(rawValue: animationSpeedRawValue) ?? .standard
+        let speed = tableExperienceSettings.speed
         let baseDuration: Double
         switch kind {
         case .postBlind, .moveCommitmentToPot:
@@ -741,7 +764,7 @@ struct PokerTableView: View {
         for kind: TableAnimationKind,
         reduceMotion: Bool
     ) -> Int {
-        let speed = TableAnimationSpeed(rawValue: animationSpeedRawValue) ?? .standard
+        let speed = tableExperienceSettings.speed
         let baseMilliseconds: Int
         switch kind {
         case .postBlind, .moveCommitmentToPot:
